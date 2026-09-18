@@ -9,6 +9,8 @@ $("authForm").onsubmit=async e=>{
  const r=await fetch("/api/"+(mode==="login"?"login":"register"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:$("username").value,password:$("password").value})});
  const d=await r.json();if(!r.ok){$("authError").textContent=d.error||"Erreur";return}
  token=d.token;localStorage.setItem("letchat_token",token);me=d.user;updateMyProfileUI();showChat();
+
+function updateMyProfileUI(){ if(!me)return; $('myName').textContent=me.username; $('myAvatar').textContent=me.avatar||'🙂'; $('myStatusLabel').textContent=me.status||'En ligne'; }
 };
 async function showChat(){
  if(!token)return;
@@ -55,6 +57,24 @@ function addPrivateMessage(m){
  $("messages").appendChild(e);scroll();
 }
 $("generalRoom").onclick=loadMessages;
+$("profileBtn").onclick=async()=>{
+  const r=await fetch("/api/me",{headers:{Authorization:"Bearer "+token}}); if(!r.ok)return;
+  me=(await r.json()).user; updateMyProfileUI();
+  $("profileAvatarInput").value=me.avatar||"🙂";
+  $("profileStatus").value=me.status||"";
+  $("profileBio").value=me.bio||"";
+  $("profileTitle").textContent="Profil de "+me.username;
+  $("profileMeta").textContent="Membre depuis "+new Date(me.createdAt).toLocaleDateString("fr-FR");
+  $("profileError").textContent=""; $("profileModal").classList.remove("hidden");
+};
+$("closeProfile").onclick=()=>$("profileModal").classList.add("hidden");
+$("profileModal").addEventListener("click",e=>{if(e.target.id==="profileModal")$("profileModal").classList.add("hidden")});
+$("saveProfile").onclick=async()=>{
+  const body={avatar:$("profileAvatarInput").value.trim(),status:$("profileStatus").value.trim(),bio:$("profileBio").value.trim()};
+  const r=await fetch("/api/me",{method:"PATCH",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const d=await r.json(); if(!r.ok){$("profileError").textContent=d.error||"Erreur";return}
+  me=d.user; updateMyProfileUI(); $("profileModal").classList.add("hidden"); loadUsers();
+};
 $("messageForm").onsubmit=e=>{
  e.preventDefault();const text=$("messageInput").value.trim();if(!text||!socket)return;
  if(privateUser){
