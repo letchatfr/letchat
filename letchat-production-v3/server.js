@@ -60,7 +60,14 @@ async function initDb(){
    created_at TIMESTAMPTZ DEFAULT NOW()
  )`);
  await query(`CREATE INDEX IF NOT EXISTS messages_created_idx ON messages(created_at)`);
- await query(`CREATE INDEX IF NOT EXISTS private_messages_idx ON private_messages(conversation_id,created_at)`);
+ await query(`CREATE INDEX IF NOT EXISTS private_messages_idx ON private_messages(conversation_id,created_at)`); await query(`CREATE TABLE IF NOT EXISTS friendships(
+  id BIGSERIAL PRIMARY KEY,
+  sender_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  receiver_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(sender_id,receiver_id)
+)`);
 }
 
 async function findUser(uid){
