@@ -295,28 +295,7 @@ async function loadUsers() {
           button.disabled = false;
           button.textContent = "Ajouter";
           return;
-        }
-
-        button.textContent = "Demandée";
-        button.disabled = true;
-
-      } catch (err) {
-        console.error(err);
-        alert("Erreur réseau.");
-        button.disabled = false;
-        button.textContent = "Ajouter";
-      }
-    };
-  });
-
-  });
-
-  const a = await r.json();
-
-  if (!r.ok) return;
-
-  $("onlineCount").textContent =
-    a.filter((x) => x.online).length;
+       
 
   $("users").innerHTML = a.map((u) => `
     <div class="user" data-id="${esc(u.id)}">
@@ -337,7 +316,7 @@ async function openPrivate(uid) {
   const r = await fetch("/api/users", {
     headers: {
       Authorization: "Bearer " + token
-    }
+    
   });
 
   const a = await r.json();
