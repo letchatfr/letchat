@@ -24,7 +24,7 @@ const memoryUsers=new Map(), memoryMessages=[];
 const online=new Map();
 
 function id(){return Math.random().toString(36).slice(2)+Date.now().toString(36)}
-function pub(u){return {id:String(u.id),username:u.username,avatar:u.avatar||"",createdAt:u.created_at||u.createdAt}}
+function pub(u){return {id:String(u.id),username:u.username,avatar:u.avatar||"",bio:u.bio||"",status:u.status||"",createdAt:u.created_at||u.createdAt}}
 function makeToken(u){return jwt.sign({id:String(u.id)},JWT_SECRET,{expiresIn:"7d"})}
 async function query(sql,params=[]){return pool.query(sql,params)}
 
@@ -37,6 +37,8 @@ async function initDb(){
    avatar TEXT DEFAULT '',
    created_at TIMESTAMPTZ DEFAULT NOW()
  )`);
+ await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''`);
+ await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(80) DEFAULT ''`);
  await query(`CREATE TABLE IF NOT EXISTS messages(
    id BIGSERIAL PRIMARY KEY,
    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -128,6 +130,20 @@ app.post("/api/login",async(req,res)=>{
 });
 
 app.get("/api/me",auth,(req,res)=>res.json({user:pub(req.user)}));
+app.patch("/api/me",auth,async(req,res)=>{
+ try{
+   const bio=String(req.body.bio??"").trim().slice(0,300);
+   const status=String(req.body.status??"").trim().slice(0,80);
+   const avatar=String(req.body.avatar??"").trim().slice(0,2);
+   if(pool){
+     const r=await query("UPDATE users SET bio=$1,status=$2,avatar=$3 WHERE id=$4 RETURNING *",[bio,status,avatar,req.user.id]);
+     return res.json({user:pub(r.rows[0])});
+   }
+   req.user.bio=bio;req.user.status=status;req.user.avatar=avatar;
+   memoryUsers.set(String(req.user.id),req.user);
+   res.json({user:pub(req.user)});
+ }catch(e){console.error(e);res.status(500).json({error:"Impossible de modifier le profil."})}
+});
 
 app.get("/api/users",auth,async(req,res)=>{
  try{
