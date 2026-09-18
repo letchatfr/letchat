@@ -252,6 +252,77 @@ async function loadUsers() {
       <div class="avatar">
         ${esc((u.username || "?").slice(0, 1).toUpperCase())}
       </div>
+
+      <span>${esc(u.username)}</span>
+
+      ${u.online ? "<small>●</small>" : ""}
+
+      ${
+        String(u.id) !== String(me.id)
+          ? `<button class="add-friend" data-id="${esc(u.id)}">
+               Ajouter
+             </button>`
+          : ""
+      }
+    </div>
+  `).join("");
+
+  document.querySelectorAll(".user").forEach((x) => {
+    x.onclick = () => openPrivate(x.dataset.id);
+  });
+
+  document.querySelectorAll(".add-friend").forEach((button) => {
+    button.onclick = async (e) => {
+      e.stopPropagation();
+
+      const userId = button.dataset.id;
+
+      button.disabled = true;
+      button.textContent = "Envoi...";
+
+      try {
+        const r = await fetch("/api/friends/" + userId, {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + token
+          }
+        });
+
+        const d = await r.json();
+
+        if (!r.ok) {
+          alert(d.error || "Impossible d'envoyer la demande.");
+          button.disabled = false;
+          button.textContent = "Ajouter";
+          return;
+        }
+
+        button.textContent = "Demandée";
+        button.disabled = true;
+
+      } catch (err) {
+        console.error(err);
+        alert("Erreur réseau.");
+        button.disabled = false;
+        button.textContent = "Ajouter";
+      }
+    };
+  });
+}
+  });
+
+  const a = await r.json();
+
+  if (!r.ok) return;
+
+  $("onlineCount").textContent =
+    a.filter((x) => x.online).length;
+
+  $("users").innerHTML = a.map((u) => `
+    <div class="user" data-id="${esc(u.id)}">
+      <div class="avatar">
+        ${esc((u.username || "?").slice(0, 1).toUpperCase())}
+      </div>
       <span>${esc(u.username)}</span>
       ${u.online ? "<small>●</small>" : ""}
     </div>
