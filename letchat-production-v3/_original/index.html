@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Letchat</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#eef2f7;color:#18212f}
+.app{height:100vh;display:flex;overflow:hidden}.sidebar{width:290px;background:#101827;color:#fff;padding:20px;display:flex;flex-direction:column}.logo{font-size:26px;font-weight:800}.tag{color:#9eabc0;font-size:13px;margin:6px 0 22px}.room{background:#26344a;border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer}.room.active{background:#3b82f6}.users-title{margin:19px 0 8px;color:#9eabc0;font-size:11px;text-transform:uppercase;letter-spacing:1px}.user{display:flex;align-items:center;gap:9px;padding:8px 5px;border-radius:8px;cursor:pointer;font-size:14px}.user:hover{background:#1d293b}.dot{width:9px;height:9px;border-radius:50%;background:#64748b}.dot.on{background:#22c55e}.private-list{overflow:auto}.account{margin-top:auto;border-top:1px solid #293548;padding-top:14px;cursor:pointer}.account-row{display:flex;gap:10px;align-items:center}.mini{width:36px;height:36px;border-radius:50%;background:#334155;display:grid;place-items:center;font-weight:800}.main{flex:1;display:flex;flex-direction:column;background:#fff}.top{height:72px;border-bottom:1px solid #e5eaf0;display:flex;align-items:center;justify-content:space-between;padding:0 28px}.title{font-weight:800;font-size:19px}.online{color:#64748b;font-size:13px}.messages{flex:1;overflow:auto;padding:26px 8%;background:#fbfcfe}.msg{display:flex;gap:11px;margin-bottom:20px}.msg.mine{flex-direction:row-reverse}.avatar{width:40px;height:40px;border-radius:50%;background:#dbeafe;color:#2563eb;display:grid;place-items:center;font-weight:800;flex:none}.bubble{max-width:74%}.meta{font-size:13px;font-weight:800}.time{font-weight:400;color:#94a3b8;margin-left:8px}.text{margin-top:4px;background:#f1f5f9;border-radius:0 12px 12px 12px;padding:10px 13px;line-height:1.45}.mine .text{background:#3b82f6;color:#fff;border-radius:12px 0 12px 12px}.composer{display:flex;gap:10px;padding:15px 8%;border-top:1px solid #e5eaf0}.composer input{flex:1;padding:13px 15px;border:1px solid #d4dce7;border-radius:12px;font-size:15px;outline:none}.composer button{border:0;border-radius:12px;background:#2563eb;color:#fff;padding:0 20px;font-weight:800}.modal{position:fixed;inset:0;background:#0f172acc;display:grid;place-items:center;z-index:10}.card{width:min(430px,92vw);background:#fff;border-radius:20px;padding:30px}.card h2{margin:0 0 7px}.card p{color:#64748b}.card input{display:block;width:100%;margin:8px 0;padding:12px;border:1px solid #d8e0ea;border-radius:10px}.card button{width:100%;padding:12px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer;margin-top:8px}.switch{text-align:center;color:#2563eb;margin-top:12px;cursor:pointer;font-size:13px}.notice{min-height:20px;color:#b91c1c;font-size:13px}.empty{color:#64748b;text-align:center;margin-top:50px}
+@media(max-width:700px){.sidebar{display:none}.messages{padding:20px 14px}.composer{padding:12px}.top{padding:0 15px}.bubble{max-width:82%}}
+</style>
+</head>
+<body>
+<div class="modal" id="auth">
+  <div class="card">
+    <h2 id="authTitle">Créer ton compte</h2>
+    <p id="authDesc">Ton compte permet de retrouver tes conversations sur Letchat.</p>
+    <div class="notice" id="authMsg"></div>
+    <input id="pseudo" maxlength="20" placeholder="Pseudo">
+    <input id="email" type="email" placeholder="E-mail">
+    <input id="password" type="password" placeholder="Mot de passe (8 caractères minimum)">
+    <button id="authBtn" onclick="submitAuth()">Créer mon compte</button>
+    <div class="switch" id="authSwitch" onclick="toggleAuth()">J’ai déjà un compte</div>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo">💬 Letchat</div>
+    <div class="tag">Le tchat général, simplement.</div>
+    <div class="room active" id="generalRoom" onclick="openGeneral()"># Général</div>
+    <div class="room"># Rencontre <small>bientôt</small></div>
+    <div class="room"># Discussion <small>bientôt</small></div>
+    <div class="users-title">Utilisateurs</div>
+    <div id="users" class="private-list"></div>
+    <div class="users-title">Messages privés</div>
+    <div id="privateList" class="private-list"></div>
+    <div class="account" onclick="showProfile()">
+      <div class="account-row"><div class="mini" id="mini">?</div><div><div id="mePseudo">Invité</div><small id="mePlan">Gratuit</small></div></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="top"><div class="title" id="chatTitle"># Général</div><div class="online" id="onlineText">🟢 0 en ligne</div></header>
+    <section class="messages" id="messages"></section>
+    <form class="composer" onsubmit="send(event)"><input id="message" autocomplete="off" placeholder="Écrire un message..."><button>Envoyer</button></form>
+  </main>
+</div>
+
+<script>
+let state={token:null,user:null,active:"general",users:[],online:new Set(),socket:null};
+const $=id=>document.getElementById(id);
+
+function esc(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));}
+function authHeaders(){return {Authorization:"Bearer "+state.token,"Content-Type":"application/json"};}
+function api(url,opts={}){return fetch(url,{...opts,headers:{...(opts.headers||{}),Authorization:"Bearer "+state.token,"Content-Type":"application/json"}}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Erreur");return d;});}
+
+function toggleAuth(){
+  const login=$("authTitle").textContent==="Se connecter";
+  $("authTitle").textContent=login?"Créer ton compte":"Se connecter";
+  $("authDesc").textContent=login?"Ton compte permet de retrouver tes conversations sur Letchat.":"Connecte-toi pour retrouver tes conversations.";
+  $("authBtn").textContent=login?"Créer mon compte":"Se connecter";
+  $("authSwitch").textContent=login?"J’ai déjà un compte":"Créer un nouveau compte";
+  $("pseudo").style.display=login?"none":"block";
+  $("authMsg").textContent="";
+}
+async function submitAuth(){
+  try{
+    $("authMsg").textContent="";
+    const login=$("authTitle").textContent==="Se connecter";
+    const body={email:$("email").value.trim(),password:$("password").value};
+    if(!login)body.pseudo=$("pseudo").value.trim();
+    const data=await fetch(login?"/api/login":"/api/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error);return d;});
+    state.token=data.token;state.user=data.user;localStorage.setItem("letchat_token",state.token);localStorage.setItem("letchat_user",JSON.stringify(state.user));
+    $("auth").style.display="none"; setup();
+  }catch(e){$("authMsg").textContent=e.message;}
+}
+function updateAccount(){
+  $("mini").textContent=state.user.pseudo[0].toUpperCase();
+  $("mePseudo").textContent=state.user.pseudo;
+  $("mePlan").textContent=state.user.plan==="Gratuit"?"Compte gratuit":"⭐ "+state.user.plan;
+}
+async function setup(){
+  updateAccount();
+  await loadUsers();
+  await openGeneral();
+  state.socket=io({auth:{token:state.token}});
+  state.socket.on("presence:update",ids=>{state.online=new Set(ids.map(Number));renderUsers();});
+  state.socket.on("message:new",evt=>{
+    if(evt.room==="general" && state.active==="general")appendMessage(evt.message);
+    if(evt.room==="private" && state.active===evt.partnerId)appendMessage(evt.message);
+    loadUsers();
+  });
+}
+async function loadUsers(){
+  const d=await api("/api/users");state.users=d.users;renderUsers();
+}
+function renderUsers(){
+  $("users").innerHTML=state.users.map(u=>`<div class="user" onclick="openPrivate(${u.id})"><span class="dot ${state.online.has(u.id)?"on":""}"></span>${esc(u.pseudo)}</div>`).join("")||'<div style="color:#94a3b8;font-size:13px;padding:5px">Aucun autre utilisateur</div>';
+  const connected=state.online.size + (state.socket?(!state.online.has(state.user.id)?1:0):0);
+  $("onlineText").textContent=`🟢 ${connected} en ligne`;
+}
+function appendMessage(m){
+  const mine=Number(m.sender_id)===Number(state.user.id);
+  const html=`<div class="msg ${mine?"mine":""}"><div class="avatar">${esc(m.sender[0].toUpperCase())}</div><div class="bubble"><div class="meta">${esc(m.sender)}<span class="time">${new Date(m.created_at).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</span></div><div class="text">${esc(m.body)}</div></div></div>`;
+  $("messages").insertAdjacentHTML("beforeend",html);$("messages").scrollTop=$("messages").scrollHeight;
+}
+function render(list){
+  $("messages").innerHTML=list.length?"":"<div class='empty'>Aucun message pour le moment.</div>";
+  list.forEach(appendMessage);
+}
+async function openGeneral(){
+  state.active="general";$("chatTitle").textContent="# Général";$("message").placeholder="Écrire un message...";
+  try{render((await api("/api/messages/general")).messages);}catch(e){$("messages").innerHTML="<div class='empty'>Impossible de charger les messages.</div>";}
+}
+async function openPrivate(id){
+  state.active=Number(id);const u=state.users.find(x=>x.id===Number(id));if(!u)return;
+  $("chatTitle").textContent="🔒 "+u.pseudo;$("message").placeholder="Message privé à "+u.pseudo+"...";
+  try{render((await api("/api/messages/private/"+id)).messages);}catch(e){$("messages").innerHTML="<div class='empty'>Impossible de charger la conversation.</div>";}
+}
+function send(e){
+  e.preventDefault();const body=$("message").value.trim();if(!body||!state.socket)return;
+  const recipientId=state.active==="general"?null:Number(state.active);
+  state.socket.emit("message:send",{body,recipientId},r=>{if(!r?.ok)alert(r?.error||"Erreur d'envoi");});
+  $("message").value="";
+}
+function showProfile(){alert(`Compte : ${state.user?.pseudo||""}\\nPlan : ${state.user?.plan||"Gratuit"}`);}
+async function boot(){
+  const token=localStorage.getItem("letchat_token");
+  if(!token){$("auth").style.display="grid";return;}
+  try{
+    state.token=token;
+    state.user=JSON.parse(localStorage.getItem("letchat_user")||"null");
+    const d=await api("/api/me");state.user=d.user;$("auth").style.display="none";setup();
+  }catch{localStorage.removeItem("letchat_token");$("auth").style.display="grid";}
+}
+boot();
+</script>
+</body>
+</html>

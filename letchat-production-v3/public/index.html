@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Letchat</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<section id="auth" class="auth">
+ <div class="auth-card">
+  <div class="logo">💬 <span>Letchat</span></div>
+  <p class="subtitle">Discutez en temps réel.</p>
+  <div class="tabs">
+   <button class="tab active" data-mode="login">Connexion</button>
+   <button class="tab" data-mode="register">Inscription</button>
+  </div>
+  <form id="authForm">
+   <input id="username" placeholder="Pseudo" autocomplete="username" required>
+   <input id="password" type="password" placeholder="Mot de passe" autocomplete="current-password" required>
+   <button class="primary" id="authSubmit">Se connecter</button>
+   <p id="authError" class="error"></p>
+  </form>
+ </div>
+</section>
+
+<section id="chat" class="chat hidden">
+ <aside class="sidebar">
+  <div class="brand">💬 <b>Letchat</b></div>
+  <button class="room active" id="generalRoom">🌐 <span>Tchat général</span></button>
+  <div class="side-title">Utilisateurs</div>
+  <div id="users"></div>
+  <div class="profile">
+   <div id="myAvatar" class="avatar">🙂</div>
+   <div><b id="myName"></b><small>En ligne</small></div>
+   <button id="logout">↪</button>
+  </div>
+ </aside>
+ <main class="main">
+  <header class="chat-header">
+   <div><h1 id="roomTitle">Tchat général</h1><p><span class="dot"></span> <span id="onlineCount">0</span> en ligne</p></div>
+  </header>
+  <div id="messages" class="messages"></div>
+  <div id="typing" class="typing"></div>
+  <form id="messageForm" class="composer">
+   <input id="messageInput" maxlength="2000" placeholder="Écrire un message..." autocomplete="off">
+   <button class="send">➤</button>
+  </form>
+ </main>
+</section>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
