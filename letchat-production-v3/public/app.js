@@ -8,13 +8,13 @@ $("authForm").onsubmit=async e=>{
  e.preventDefault();
  const r=await fetch("/api/"+(mode==="login"?"login":"register"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:$("username").value,password:$("password").value})});
  const d=await r.json();if(!r.ok){$("authError").textContent=d.error||"Erreur";return}
- token=d.token;localStorage.setItem("letchat_token",token);me=d.user;showChat();
+ token=d.token;localStorage.setItem("letchat_token",token);me=d.user;updateMyProfileUI();showChat();
 };
 async function showChat(){
  if(!token)return;
  const r=await fetch("/api/me",{headers:{Authorization:"Bearer "+token}});
  if(!r.ok){localStorage.removeItem("letchat_token");token=null;return}
- me=(await r.json()).user;$("auth").classList.add("hidden");$("chat").classList.remove("hidden");$("myName").textContent=me.username;
+ me=(await r.json()).user;updateMyProfileUI();$("auth").classList.add("hidden");$("chat").classList.remove("hidden");$("myName").textContent=me.username;
  connect();loadMessages();loadUsers();
 }
 function connect(){
