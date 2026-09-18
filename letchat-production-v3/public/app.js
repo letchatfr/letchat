@@ -10,13 +10,13 @@ $("authForm").onsubmit=async e=>{
  const d=await r.json();if(!r.ok){$("authError").textContent=d.error||"Erreur";return}
  token=d.token;localStorage.setItem("letchat_token",token);me=d.user;updateProfileUI();showChat();
 
-function updateMyProfileUI(){ if(!me)return; $('myName').textContent=me.username; $('myAvatar').textContent=me.avatar||'🙂'; $('myStatusLabel').textContent=me.status||'En ligne'; }
+function (){ if(!me)return; $('myName').textContent=me.username; $('myAvatar').textContent=me.avatar||'🙂'; $('myStatusLabel').textContent=me.status||'En ligne'; }
 };
 async function showChat(){
  if(!token)return;
  const r=await fetch("/api/me",{headers:{Authorization:"Bearer "+token}});
  if(!r.ok){localStorage.removeItem("letchat_token");token=null;return}
- me=(await r.json()).user;updateMyProfileUI();$("auth").classList.add("hidden");$("chat").classList.remove("hidden");$("myName").textContent=me.username;
+ me=(await r.json()).user;();$("auth").classList.add("hidden");$("chat").classList.remove("hidden");$("myName").textContent=me.username;
  connect();loadMessages();loadUsers();
 }
 function connect(){
@@ -59,7 +59,7 @@ function addPrivateMessage(m){
 $("generalRoom").onclick=loadMessages;
 $("profileBtn").onclick=async()=>{
   const r=await fetch("/api/me",{headers:{Authorization:"Bearer "+token}}); if(!r.ok)return;
-  me=(await r.json()).user; updateMyProfileUI();
+  me=(await r.json()).user; ();
   $("profileAvatarInput").value=me.avatar||"🙂";
   $("profileStatus").value=me.status||"";
   $("profileBio").value=me.bio||"";
@@ -73,7 +73,7 @@ $("saveProfile").onclick=async()=>{
   const body={avatar:$("profileAvatarInput").value.trim(),status:$("profileStatus").value.trim(),bio:$("profileBio").value.trim()};
   const r=await fetch("/api/me",{method:"PATCH",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(body)});
   const d=await r.json(); if(!r.ok){$("profileError").textContent=d.error||"Erreur";return}
-  me=d.user; updateMyProfileUI(); $("profileModal").classList.add("hidden"); loadUsers();
+  me=d.user; (); $("profileModal").classList.add("hidden"); loadUsers();
 };
 $("messageForm").onsubmit=e=>{
  e.preventDefault();const text=$("messageInput").value.trim();if(!text||!socket)return;
