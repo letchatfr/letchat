@@ -32,8 +32,8 @@
   <div id="users"></div>
   <div class="profile">
    <div id="myAvatar" class="avatar">🙂</div>
-   <div><b id="myName"></b><small>En ligne</small></div>
-   <button id="logout">↪</button>
+   <div class="my-profile-click"><b id="myName"></b><small id="myStatusLabel">En ligne</small></div>
+   <button id="profileBtn" title="Mon profil">✎</button><button id="logout">↪</button>
   </div>
  </aside>
  <main class="main">
@@ -48,6 +48,19 @@
   </form>
  </main>
 </section>
+<div id="profileModal" class="modal hidden">
+ <div class="modal-card">
+  <button id="closeProfile" class="close">×</button>
+  <div class="profile-big" id="profileAvatar">🙂</div>
+  <h2 id="profileTitle">Mon profil</h2>
+  <p id="profileMeta" class="muted"></p>
+  <label>Avatar</label><input id="profileAvatarInput" maxlength="2" placeholder="🙂">
+  <label>Statut</label><input id="profileStatus" maxlength="80" placeholder="Disponible pour discuter…">
+  <label>Présentation</label><textarea id="profileBio" maxlength="300" placeholder="Quelques mots sur vous…"></textarea>
+  <button id="saveProfile" class="primary">Enregistrer</button>
+  <p id="profileError" class="error"></p>
+ </div>
+</div>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/app.js"></script>
 </body>
