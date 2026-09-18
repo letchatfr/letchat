@@ -308,7 +308,7 @@ async function loadUsers() {
       }
     };
   });
-}
+
   });
 
   const a = await r.json();
