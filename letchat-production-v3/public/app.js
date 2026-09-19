@@ -7,25 +7,30 @@ let privateUser = null;
 
 const $ = (id) => document.getElementById(id);
 
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
     '"': "&quot;",
     "'": "&#039;"
-  }[c]));
+  }[char]));
 }
 
-function setMode(m) {
-  mode = m;
+function setMode(newMode) {
+  mode = newMode;
 
-  document.querySelectorAll(".tab").forEach((x) => {
-    x.classList.toggle("active", x.dataset.mode === m);
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.classList.toggle(
+      "active",
+      tab.dataset.mode === newMode
+    );
   });
 
   $("authSubmit").textContent =
-    m === "login" ? "Se connecter" : "Créer mon compte";
+    newMode === "login"
+      ? "Se connecter"
+      : "Créer mon compte";
 
   $("authError").textContent = "";
 }
@@ -33,98 +38,159 @@ function setMode(m) {
 function updateProfileUI() {
   if (!me) return;
 
-  $("myName").textContent = me.username || "";
-  $("myAvatar").textContent = me.avatar || "🙂";
-  $("myStatusLabel").textContent = me.status || "En ligne";
+  $("myName").textContent =
+    me.username || "";
 
-  $("profileAvatar").textContent = me.avatar || "🙂";
-  $("profileTitle").textContent = "Profil de " + (me.username || "");
+  $("myAvatar").textContent =
+    me.avatar || "🙂";
+
+  $("myStatusLabel").textContent =
+    me.status || "En ligne";
+
+  $("profileAvatar").textContent =
+    me.avatar || "🙂";
+
+  $("profileTitle").textContent =
+    "Profil de " + (me.username || "");
 }
 
-document.querySelectorAll(".tab").forEach((x) => {
-  x.onclick = () => setMode(x.dataset.mode);
+
+/* =========================
+   CONNEXION / INSCRIPTION
+   ========================= */
+
+document.querySelectorAll(".tab").forEach((tab) => {
+  tab.onclick = () => {
+    setMode(tab.dataset.mode);
+  };
 });
 
-$("authForm").onsubmit = async (e) => {
-  e.preventDefault();
+$("authForm").onsubmit = async (event) => {
+  event.preventDefault();
 
   $("authError").textContent = "";
 
+  const username =
+    $("username").value.trim();
+
+  const password =
+    $("password").value;
+
   try {
-    const r = await fetch(
-      "/api/" + (mode === "login" ? "login" : "register"),
+    const response = await fetch(
+      mode === "login"
+        ? "/api/login"
+        : "/api/register",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          username: $("username").value.trim(),
-          password: $("password").value
+          username,
+          password
         })
       }
     );
 
-    const d = await r.json();
+    const data = await response.json();
 
-    if (!r.ok) {
-      $("authError").textContent = d.error || "Erreur";
+    if (!response.ok) {
+      $("authError").textContent =
+        data.error || "Erreur de connexion.";
       return;
     }
 
-    token = d.token;
-    localStorage.setItem("letchat_token", token);
+    token = data.token;
 
-    me = d.user;
+    localStorage.setItem(
+      "letchat_token",
+      token
+    );
+
+    me = data.user;
 
     updateProfileUI();
 
     await showChat();
 
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error(error);
+
     $("authError").textContent =
       "Impossible de contacter le serveur.";
   }
 };
 
+
+/* =========================
+   AFFICHAGE DU CHAT
+   ========================= */
+
 async function showChat() {
-  if (!token) return;
+  if (!token) {
+    return;
+  }
 
   try {
-    const r = await fetch("/api/me", {
-      headers: {
-        Authorization: "Bearer " + token
+    const response = await fetch(
+      "/api/me",
+      {
+        headers: {
+          Authorization: "Bearer " + token
+        }
       }
-    });
+    );
 
-    if (!r.ok) {
-      localStorage.removeItem("letchat_token");
+    if (!response.ok) {
+      localStorage.removeItem(
+        "letchat_token"
+      );
+
       token = null;
       me = null;
 
-      $("auth").classList.remove("hidden");
-      $("chat").classList.add("hidden");
+      $("auth").classList.remove(
+        "hidden"
+      );
+
+      $("chat").classList.add(
+        "hidden"
+      );
 
       return;
     }
 
-    me = (await r.json()).user;
+    const data =
+      await response.json();
+
+    me = data.user;
 
     updateProfileUI();
 
-    $("auth").classList.add("hidden");
-    $("chat").classList.remove("hidden");
+    $("auth").classList.add(
+      "hidden"
+    );
+
+    $("chat").classList.remove(
+      "hidden"
+    );
 
     connect();
 
     await loadMessages();
+
     await loadUsers();
 
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error(error);
   }
 }
+
+
+/* =========================
+   SOCKET.IO
+   ========================= */
 
 function connect() {
   if (socket) {
@@ -137,328 +203,686 @@ function connect() {
     }
   });
 
-  socket.on("message:new", (m) => {
-    if (!privateUser) {
-      addMessage(m);
+  socket.on(
+    "connect",
+    () => {
+      console.log(
+        "Letchat connecté"
+      );
     }
-  });
+  );
 
-  socket.on("private:new", (m) => {
-    if (
-      privateUser &&
-      (
-        String(m.senderId) === String(privateUser.id) ||
-        String(m.toUserId) === String(privateUser.id)
-      )
-    ) {
-      addPrivateMessage(m);
+  socket.on(
+    "connect_error",
+    (error) => {
+      console.error(
+        "Erreur Socket.IO :",
+        error.message
+      );
     }
-  });
+  );
 
-  socket.on("presence", () => {
-    loadUsers();
-  });
-
-  socket.on("typing", (d) => {
-    if (!privateUser) {
-      $("typing").textContent = d.username + " écrit…";
+  socket.on(
+    "message:new",
+    (message) => {
+      if (!privateUser) {
+        addMessage(message);
+      }
     }
-  });
+  );
 
-  socket.on("stop-typing", () => {
-    $("typing").textContent = "";
-  });
+  socket.on(
+    "private:new",
+    (message) => {
+      if (!privateUser) {
+        return;
+      }
 
-  socket.on("connect_error", (err) => {
-    console.error("Socket error:", err.message);
-  });
+      const fromCurrentUser =
+        String(message.senderId) ===
+        String(me.id);
+
+      const fromPrivateUser =
+        String(message.senderId) ===
+        String(privateUser.id);
+
+      const toPrivateUser =
+        String(message.toUserId) ===
+        String(privateUser.id);
+
+      if (
+        fromCurrentUser &&
+        toPrivateUser
+      ) {
+        addPrivateMessage(message);
+        return;
+      }
+
+      if (fromPrivateUser) {
+        addPrivateMessage(message);
+      }
+    }
+  );
+
+  socket.on(
+    "presence",
+    () => {
+      loadUsers();
+    }
+  );
+
+  socket.on(
+    "typing",
+    (data) => {
+      if (privateUser) {
+        return;
+      }
+
+      $("typing").textContent =
+        (data.username || "Quelqu'un") +
+        " écrit…";
+    }
+  );
+
+  socket.on(
+    "stop-typing",
+    () => {
+      $("typing").textContent = "";
+    }
+  );
 }
+
+
+/* =========================
+   TCHAT GÉNÉRAL
+   ========================= */
 
 async function loadMessages() {
   privateUser = null;
 
-  $("roomTitle").textContent = "Tchat général";
-  $("messageInput").placeholder = "Écrire un message...";
+  $("roomTitle").textContent =
+    "Tchat général";
 
-  const r = await fetch("/api/messages", {
-    headers: {
-      Authorization: "Bearer " + token
+  $("messageInput").placeholder =
+    "Écrire un message...";
+
+  $("typing").textContent = "";
+
+  const response = await fetch(
+    "/api/messages",
+    {
+      headers: {
+        Authorization:
+          "Bearer " + token
+      }
     }
-  });
+  );
 
-  const a = await r.json();
+  const data =
+    await response.json();
 
-  if (!r.ok) return;
+  if (!response.ok) {
+    return;
+  }
 
   $("messages").innerHTML = "";
 
-  a.forEach(addMessage);
+  data.forEach((message) => {
+    addMessage(message);
+  });
 
-  scroll();
+  scrollMessages();
 }
 
-function addMessage(m) {
+function addMessage(message) {
   if (
     document.querySelector(
-      '[data-msg="' + m.id + '"]'
+      '[data-message-id="' +
+      message.id +
+      '"]'
     )
   ) {
     return;
   }
 
-  const e = document.createElement("div");
+  const element =
+    document.createElement("div");
 
-  e.dataset.msg = m.id;
-
-  e.className =
+  element.className =
     "message" +
     (
-      String(m.userId) === String(me.id)
+      String(message.userId) ===
+      String(me.id)
         ? " mine"
         : ""
     );
 
-  e.innerHTML =
-    `<div class="meta">` +
-    `${esc(m.username)} · ` +
-    `${new Date(m.createdAt).toLocaleTimeString("fr-FR", {
-      hour: "2-digit",
-      minute: "2-digit"
-    })}` +
-    `</div>` +
-    `<div class="text">${esc(m.text)}</div>`;
+  element.dataset.messageId =
+    message.id;
 
-  $("messages").appendChild(e);
+  const time =
+    new Date(
+      message.createdAt
+    ).toLocaleTimeString(
+      "fr-FR",
+      {
+        hour: "2-digit",
+        minute: "2-digit"
+      }
+    );
 
-  scroll();
-}
+  element.innerHTML =
+    '<div class="meta">' +
+      esc(message.username) +
+      " · " +
+      time +
+    "</div>" +
+    '<div class="text">' +
+      esc(message.text) +
+    "</div>";
 
-async function loadUsers() 
-  const r = await fetch("/api/users", {
-    headers: {
-      Authorization: "Bearer " + token
-    
-  });
-
-  const a = await r.json();
-
-  if (!r.ok) return;
-
-  privateUser = a.find(
-    (x) => String(x.id) === String(uid)
+  $("messages").appendChild(
+    element
   );
 
+  scrollMessages();
+}
+
+
+/* =========================
+   UTILISATEURS
+   ========================= */
+
+async function loadUsers() {
+  try {
+    const response = await fetch(
+      "/api/users",
+      {
+        headers: {
+          Authorization:
+            "Bearer " + token
+        }
+      }
+    );
+
+    const users =
+      await response.json();
+
+    if (!response.ok) {
+      return;
+    }
+
+    const onlineUsers =
+      users.filter(
+        (user) => user.online
+      );
+
+    $("onlineCount").textContent =
+      onlineUsers.length;
+
+    $("users").innerHTML = "";
+
+    users.forEach((user) => {
+      const element =
+        document.createElement("div");
+
+      element.className = "user";
+
+      element.dataset.id =
+        user.id;
+
+      const avatar =
+        user.avatar ||
+        (
+          user.username || "?"
+        )
+          .slice(0, 1)
+          .toUpperCase();
+
+      element.innerHTML =
+        '<div class="avatar">' +
+          esc(avatar) +
+        "</div>" +
+        "<span>" +
+          esc(user.username) +
+        "</span>" +
+        (
+          user.online
+            ? "<small>●</small>"
+            : ""
+        );
+
+      element.onclick = () => {
+        openPrivate(user.id);
+      };
+
+      $("users").appendChild(
+        element
+      );
+    });
+
+  } catch (error) {
+    console.error(
+      "Erreur utilisateurs :",
+      error
+    );
+  }
+}
+
+
+/* =========================
+   MESSAGE PRIVÉ
+   ========================= */
+
+async function openPrivate(userId) {
   if (
-    !privateUser ||
-    String(privateUser.id) === String(me.id)
+    String(userId) ===
+    String(me.id)
   ) {
     return;
   }
 
-  $("roomTitle").textContent =
-    "Message avec " + privateUser.username;
-
-  $("messageInput").placeholder =
-    "Message privé…";
-
-  $("messages").innerHTML = "";
-
-  const p = await fetch(
-    "/api/private/" +
-    encodeURIComponent(privateUser.id),
-    {
-      headers: {
-        Authorization: "Bearer " + token
+  try {
+    const response = await fetch(
+      "/api/users",
+      {
+        headers: {
+          Authorization:
+            "Bearer " + token
+        }
       }
+    );
+
+    const users =
+      await response.json();
+
+    if (!response.ok) {
+      return;
     }
-  );
 
-  const msgs = await p.json();
+    privateUser =
+      users.find(
+        (user) =>
+          String(user.id) ===
+          String(userId)
+      );
 
-  if (p.ok && Array.isArray(msgs)) {
-    msgs.forEach(addPrivateMessage);
+    if (!privateUser) {
+      return;
+    }
+
+    $("roomTitle").textContent =
+      "Message avec " +
+      privateUser.username;
+
+    $("messageInput").placeholder =
+      "Message privé…";
+
+    $("typing").textContent = "";
+
+    $("messages").innerHTML = "";
+
+    const messagesResponse =
+      await fetch(
+        "/api/private/" +
+        encodeURIComponent(
+          privateUser.id
+        ),
+        {
+          headers: {
+            Authorization:
+              "Bearer " + token
+          }
+        }
+      );
+
+    const messages =
+      await messagesResponse.json();
+
+    if (
+      messagesResponse.ok &&
+      Array.isArray(messages)
+    ) {
+      messages.forEach(
+        (message) => {
+          addPrivateMessage(
+            message
+          );
+        }
+      );
+    }
+
+    scrollMessages();
+
+  } catch (error) {
+    console.error(
+      "Erreur message privé :",
+      error
+    );
   }
-
-  scroll();
 }
 
-function addPrivateMessage(m) {
-  const e = document.createElement("div");
+function addPrivateMessage(message) {
+  const element =
+    document.createElement("div");
 
-  e.className =
+  element.className =
     "message" +
     (
-      String(m.senderId) === String(me.id)
+      String(message.senderId) ===
+      String(me.id)
         ? " mine"
         : ""
     );
 
-  e.innerHTML =
-    `<div class="meta">` +
-    `${esc(m.username)} · ` +
-    `${new Date(m.createdAt).toLocaleTimeString("fr-FR", {
-      hour: "2-digit",
-      minute: "2-digit"
-    })}` +
-    `</div>` +
-    `<div class="text">${esc(m.text)}</div>`;
+  const time =
+    new Date(
+      message.createdAt
+    ).toLocaleTimeString(
+      "fr-FR",
+      {
+        hour: "2-digit",
+        minute: "2-digit"
+      }
+    );
 
-  $("messages").appendChild(e);
+  element.innerHTML =
+    '<div class="meta">' +
+      esc(message.username) +
+      " · " +
+      time +
+    "</div>" +
+    '<div class="text">' +
+      esc(message.text) +
+    "</div>";
 
-  scroll();
+  $("messages").appendChild(
+    element
+  );
+
+  scrollMessages();
 }
+
+
+/* =========================
+   RETOUR AU TCHAT GÉNÉRAL
+   ========================= */
 
 $("generalRoom").onclick = () => {
   loadMessages();
 };
 
-$("profileBtn").onclick = async () => {
-  try {
-    const r = await fetch("/api/me", {
-      headers: {
-        Authorization: "Bearer " + token
+
+/* =========================
+   PROFIL
+   ========================= */
+
+$("profileBtn").onclick =
+  async () => {
+
+    try {
+      const response =
+        await fetch(
+          "/api/me",
+          {
+            headers: {
+              Authorization:
+                "Bearer " + token
+            }
+          }
+        );
+
+      if (!response.ok) {
+        return;
       }
-    });
 
-    if (!r.ok) return;
+      const data =
+        await response.json();
 
-    me = (await r.json()).user;
+      me = data.user;
 
-    updateProfileUI();
+      updateProfileUI();
 
-    $("profileAvatarInput").value =
-      me.avatar || "🙂";
+      $("profileAvatarInput").value =
+        me.avatar || "🙂";
 
-    $("profileStatus").value =
-      me.status || "";
+      $("profileStatus").value =
+        me.status || "";
 
-    $("profileBio").value =
-      me.bio || "";
+      $("profileBio").value =
+        me.bio || "";
 
-    $("profileTitle").textContent =
-      "Profil de " + me.username;
+      $("profileTitle").textContent =
+        "Profil de " +
+        me.username;
 
-    $("profileMeta").textContent =
-      "Membre depuis " +
-      new Date(me.createdAt).toLocaleDateString("fr-FR");
+      if (me.createdAt) {
+        $("profileMeta").textContent =
+          "Membre depuis " +
+          new Date(
+            me.createdAt
+          ).toLocaleDateString(
+            "fr-FR"
+          );
+      } else {
+        $("profileMeta").textContent =
+          "";
+      }
 
-    $("profileError").textContent = "";
+      $("profileError").textContent =
+        "";
 
-    $("profileModal").classList.remove("hidden");
+      $("profileModal").classList.remove(
+        "hidden"
+      );
 
-  } catch (err) {
-    console.error(err);
-  }
-};
-
-$("closeProfile").onclick = () => {
-  $("profileModal").classList.add("hidden");
-};
-
-$("profileModal").addEventListener("click", (e) => {
-  if (e.target.id === "profileModal") {
-    $("profileModal").classList.add("hidden");
-  }
-});
-
-$("saveProfile").onclick = async () => {
-  const body = {
-    avatar: $("profileAvatarInput").value.trim(),
-    status: $("profileStatus").value.trim(),
-    bio: $("profileBio").value.trim()
+    } catch (error) {
+      console.error(error);
+    }
   };
 
-  try {
-    const r = await fetch("/api/me", {
-      method: "PATCH",
-      headers: {
-        Authorization: "Bearer " + token,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body)
-    });
 
-    const d = await r.json();
+$("closeProfile").onclick = () => {
+  $("profileModal").classList.add(
+    "hidden"
+  );
+};
 
-    if (!r.ok) {
+
+$("profileModal").addEventListener(
+  "click",
+  (event) => {
+
+    if (
+      event.target.id ===
+      "profileModal"
+    ) {
+      $("profileModal").classList.add(
+        "hidden"
+      );
+    }
+
+  }
+);
+
+
+$("saveProfile").onclick =
+  async () => {
+
+    const body = {
+      avatar:
+        $("profileAvatarInput")
+          .value
+          .trim(),
+
+      status:
+        $("profileStatus")
+          .value
+          .trim(),
+
+      bio:
+        $("profileBio")
+          .value
+          .trim()
+    };
+
+    try {
+      const response =
+        await fetch(
+          "/api/me",
+          {
+            method: "PATCH",
+
+            headers: {
+              Authorization:
+                "Bearer " + token,
+
+              "Content-Type":
+                "application/json"
+            },
+
+            body:
+              JSON.stringify(body)
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        $("profileError").textContent =
+          data.error ||
+          "Impossible de modifier le profil.";
+
+        return;
+      }
+
+      me = data.user;
+
+      updateProfileUI();
+
+      $("profileModal").classList.add(
+        "hidden"
+      );
+
+      await loadUsers();
+
+    } catch (error) {
+      console.error(error);
+
       $("profileError").textContent =
-        d.error || "Erreur";
+        "Erreur réseau.";
+    }
+  };
+
+
+/* =========================
+   ENVOI DES MESSAGES
+   ========================= */
+
+$("messageForm").onsubmit =
+  (event) => {
+
+    event.preventDefault();
+
+    const text =
+      $("messageInput")
+        .value
+        .trim();
+
+    if (!text || !socket) {
       return;
     }
 
-    me = d.user;
+    if (privateUser) {
 
-    updateProfileUI();
+      socket.emit(
+        "private:send",
+        {
+          toUserId:
+            privateUser.id,
 
-    $("profileModal").classList.add("hidden");
+          text
+        },
+        (result) => {
 
-    await loadUsers();
+          if (result?.ok) {
+            $("messageInput")
+              .value = "";
+          } else if (result?.error) {
+            console.error(
+              result.error
+            );
+          }
 
-  } catch (err) {
-    console.error(err);
-
-    $("profileError").textContent =
-      "Erreur réseau.";
-  }
-};
-
-$("messageForm").onsubmit = (e) => {
-  e.preventDefault();
-
-  const text =
-    $("messageInput").value.trim();
-
-  if (!text || !socket) return;
-
-  if (privateUser) {
-
-    socket.emit(
-      "private:send",
-      {
-        toUserId: privateUser.id,
-        text
-      },
-      (r) => {
-        if (r?.ok) {
-          $("messageInput").value = "";
         }
-      }
-    );
+      );
 
-  } else {
+    } else {
 
-    socket.emit(
-      "message:send",
-      { text },
-      (r) => {
-        if (r?.ok) {
-          $("messageInput").value = "";
+      socket.emit(
+        "message:send",
+        {
+          text
+        },
+        (result) => {
+
+          if (result?.ok) {
+            $("messageInput")
+              .value = "";
+          } else if (result?.error) {
+            console.error(
+              result.error
+            );
+          }
+
         }
-      }
-    );
+      );
 
-  }
-};
+    }
+  };
+
+
+/* =========================
+   INDICATEUR "ÉCRIT..."
+   ========================= */
 
 $("messageInput").addEventListener(
   "input",
   () => {
 
-    if (!socket) return;
+    if (!socket) {
+      return;
+    }
 
     socket.emit("typing");
 
-    clearTimeout(typingTimer);
+    clearTimeout(
+      typingTimer
+    );
 
-    typingTimer = setTimeout(() => {
-      socket.emit("stop-typing");
-    }, 800);
-
+    typingTimer =
+      setTimeout(
+        () => {
+          socket.emit(
+            "stop-typing"
+          );
+        },
+        800
+      );
   }
 );
 
+
+/* =========================
+   DÉCONNEXION
+   ========================= */
+
 $("logout").onclick = () => {
-  localStorage.removeItem("letchat_token");
+
+  localStorage.removeItem(
+    "letchat_token"
+  );
 
   if (socket) {
     socket.disconnect();
@@ -467,9 +891,22 @@ $("logout").onclick = () => {
   location.reload();
 };
 
-function scroll() {
-  $("messages").scrollTop =
-    $("messages").scrollHeight;
+
+/* =========================
+   SCROLL
+   ========================= */
+
+function scrollMessages() {
+  const messages =
+    $("messages");
+
+  messages.scrollTop =
+    messages.scrollHeight;
 }
+
+
+/* =========================
+   DÉMARRAGE
+   ========================= */
 
 showChat();
