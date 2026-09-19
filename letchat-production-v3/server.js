@@ -158,7 +158,59 @@ app.get("/api/users",auth,async(req,res)=>{
    res.json(list.map(u=>({...pub(u),online:online.has(String(u.id))})));
  }catch(e){res.status(500).json({error:"Erreur serveur."})}
 });
+app.post("/api/friends/:id",auth,async(req,res)=>{
+  try{
+    const receiverId=String(req.params.id);
 
+    if(receiverId===String(req.user.id)){
+      return res.status(400).json({
+        error:"Impossible de vous ajouter vous-même."
+      });
+    }
+
+    const receiver=await findUser(receiverId);
+
+    if(!receiver){
+      return res.status(404).json({
+        error:"Utilisateur introuvable."
+      });
+    }
+
+    const existing=await query(
+      `SELECT id,status
+       FROM friendships
+       WHERE (sender_id=$1 AND receiver_id=$2)
+          OR (sender_id=$2 AND receiver_id=$1)
+       LIMIT 1`,
+      [req.user.id,receiverId]
+    );
+
+    if(existing.rowCount){
+      return res.status(409).json({
+        error:"Une demande existe déjà."
+      });
+    }
+
+    const result=await query(
+      `INSERT INTO friendships
+       (sender_id,receiver_id,status)
+       VALUES($1,$2,'pending')
+       RETURNING id,sender_id,receiver_id,status,created_at`,
+      [req.user.id,receiverId]
+    );
+
+    res.status(201).json({
+      ok:true,
+      friendship:result.rows[0]
+    });
+
+  }catch(error){
+    console.error(error);
+    res.status(500).json({
+      error:"Impossible d'envoyer la demande d'ami."
+    });
+  }
+});
 app.get("/api/messages",auth,async(req,res)=>{
  try{
    if(pool){
