@@ -74,6 +74,10 @@ await pool.query(`
   ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS sender_id TEXT;
   ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS recipient_id TEXT;
   ALTER TABLE private_messages
+    DROP CONSTRAINT IF EXISTS private_messages_sender_id_fkey;
+  ALTER TABLE private_messages
+    DROP CONSTRAINT IF EXISTS private_messages_recipient_id_fkey;
+  ALTER TABLE private_messages
     ALTER COLUMN sender_id TYPE TEXT USING sender_id::TEXT;
   ALTER TABLE private_messages
     ALTER COLUMN recipient_id TYPE TEXT USING recipient_id::TEXT;
