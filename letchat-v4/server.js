@@ -9,7 +9,18 @@ const app=express(),server=http.createServer(app),io=new Server(server,{maxHttpB
 const projectId=process.env.FIREBASE_PROJECT_ID||"letchat-1d79d";
 const jwks=createRemoteJWKSet(new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"));
 const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.NODE_ENV==="production"?{rejectUnauthorized:false}:false});
-await pool.query(`CREATE TABLE IF NOT EXISTS messagesawait pool.query(`
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS messages (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    author TEXT NOT NULL,
+    photo TEXT,
+    body TEXT NOT NULL DEFAULT '',
+    media_data BYTEA,
+    media_type TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
   ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_id TEXT;
   ALTER TABLE messages ADD COLUMN IF NOT EXISTS author TEXT;
   ALTER TABLE messages ADD COLUMN IF NOT EXISTS photo TEXT;
@@ -24,7 +35,10 @@ await pool.query(`CREATE TABLE IF NOT EXISTS messagesawait pool.query(`
     author = COALESCE(author, 'Ancien utilisateur'),
     body = COALESCE(body, ''),
     created_at = COALESCE(created_at, NOW());
-`);(id BIGSERIAL PRIMARY KEY,user_id TEXT NOT NULL,author TEXT NOT NULL,photo TEXT,body TEXT NOT NULL DEFAULT '',media_data BYTEA,media_type TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);`);
+
+  CREATE INDEX IF NOT EXISTS idx_messages_created
+  ON messages(created_at);
+`);
 app.use("/__/auth", async (req, res) => {
   try {
     const target = new URL(
