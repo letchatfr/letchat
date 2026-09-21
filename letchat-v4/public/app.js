@@ -1,7 +1,8 @@
-import{initializeApp}from"https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";import{getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
+import{initializeApp}from"https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";import{getAuth,GoogleAuthProvider,signInWithRedirect,getRedirectResult,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
 const config={apiKey:"AIzaSyCfOel5JKgjxmVslddn_Xdar1XR_vb2Cgs",authDomain:"letchat-1d79d.firebaseapp.com",projectId:"letchat-1d79d",storageBucket:"letchat-1d79d.firebasestorage.app",messagingSenderId:"289359647477",appId:"1:289359647477:web:893d579c6bf94b98226bbc",measurementId:"G-L3Z35BP6FG"};
 const auth=getAuth(initializeApp(config)),provider=new GoogleAuthProvider(),$=s=>document.querySelector(s);let user,token,socket,stream,peers=new Map(),typingTimer;
-$("#googleLogin").onclick=()=>signInWithPopup(auth,provider).catch(e=>alert(e.message));$("#logout").onclick=()=>signOut(auth);
+$("#googleLogin").onclick=()=>signInWithRedirect(auth,provider).catch(e=>alert(e.message));$("#logout").onclick=()=>signOut(auth);
+getRedirectResult(auth).catch(e=>alert(`Connexion Google impossible : ${e.message}`));
 onAuthStateChanged(auth,async u=>{if(!u){$("#login").classList.remove("hidden");$("#app").classList.add("hidden");socket?.disconnect();return}user=u;token=await u.getIdToken();$("#login").classList.add("hidden");$("#app").classList.remove("hidden");$("#meName").textContent=u.displayName||u.email;$("#mePhoto").src=u.photoURL||"";connect();load()});
 const api=async(path,opt={})=>{token=await user.getIdToken();opt.headers={...opt.headers,Authorization:`Bearer ${token}`};const r=await fetch(path,opt);if(!r.ok)throw new Error((await r.json()).error||"Erreur");return r};
 async function load(){try{const rows=await(await api("/api/messages")).json();render(rows)}catch(e){showError(e.message)}}
