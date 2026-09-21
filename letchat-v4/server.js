@@ -58,6 +58,25 @@ await pool.query(`
   );
 `);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS private_messages (
+    id BIGSERIAL PRIMARY KEY,
+    sender_id TEXT NOT NULL,
+    recipient_id TEXT NOT NULL,
+    sender_name TEXT NOT NULL,
+    sender_photo TEXT,
+    body TEXT NOT NULL DEFAULT '',
+    media_data BYTEA,
+    media_type TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '1 hour')
+  );
+  CREATE INDEX IF NOT EXISTS idx_private_conversation
+  ON private_messages(sender_id, recipient_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_private_expires
+  ON private_messages(expires_at);
+`);
+
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
@@ -229,12 +248,84 @@ app.post("/api/messages", auth, async (req, res, next) => {
   }
 });
 
+app.get("/api/private/:otherId", auth, async (req, res, next) => {
+  try {
+    const otherId = String(req.params.otherId || "").slice(0, 200);
+    const { rows } = await pool.query(
+      `SELECT id, sender_id AS user_id, sender_name AS author,
+              sender_photo AS photo, body, media_type, created_at, expires_at,
+              (media_data IS NOT NULL) AS has_media
+       FROM private_messages
+       WHERE expires_at > NOW()
+         AND ((sender_id=$1 AND recipient_id=$2)
+           OR (sender_id=$2 AND recipient_id=$1))
+       ORDER BY id DESC LIMIT 100`,
+      [req.user.id, otherId]
+    );
+    res.json(rows.reverse().map(row => ({ ...row, private: true })));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/private-media/:id", auth, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT media_data, media_type FROM private_messages
+       WHERE id=$1 AND expires_at > NOW()
+         AND (sender_id=$2 OR recipient_id=$2)`,
+      [req.params.id, req.user.id]
+    );
+    if (!rows[0]?.media_data) return res.sendStatus(404);
+    res.type(rows[0].media_type)
+      .set("Cache-Control", "private, no-store")
+      .send(rows[0].media_data);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/private", auth, async (req, res, next) => {
+  try {
+    const recipientId = String(req.body.recipientId || "").slice(0, 200);
+    const body = String(req.body.body || "").trim().slice(0, 4000);
+    const mediaType = String(req.body.mediaType || "");
+    const media = req.body.mediaBase64
+      ? Buffer.from(String(req.body.mediaBase64), "base64") : null;
+    if (!recipientId || recipientId === req.user.id) {
+      return res.status(400).json({ error: "Destinataire incorrect" });
+    }
+    if (!body && !media) return res.status(400).json({ error: "Message vide" });
+    if (media && media.length > 8e6) {
+      return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
+    }
+    if (media && !/^(image|video)\//.test(mediaType)) {
+      return res.status(415).json({ error: "Format non accepté" });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO private_messages
+       (sender_id,recipient_id,sender_name,sender_photo,body,media_data,media_type)
+       VALUES($1,$2,$3,$4,$5,$6,$7)
+       RETURNING id, sender_id AS user_id, sender_name AS author,
+                 sender_photo AS photo, body, media_type, created_at, expires_at,
+                 (media_data IS NOT NULL) AS has_media`,
+      [req.user.id, recipientId, req.user.name, req.user.photo, body, media, mediaType || null]
+    );
+    const message = { ...rows[0], private: true, recipient_id: recipientId };
+    io.to(`user:${req.user.id}`).to(`user:${recipientId}`).emit("private-message", message);
+    res.status(201).json(message);
+  } catch (error) {
+    next(error);
+  }
+});
+
 const online = new Map();
 
 function emitPresence(room) {
   const people = [...online.values()]
     .filter(entry => entry.room === room)
     .map(entry => ({
+      id: entry.user.id,
       name: entry.user.name,
       photo: entry.user.photo,
       location: entry.user.profile?.location_visible ? {
@@ -259,6 +350,7 @@ io.use(async (socket, next) => {
 });
 
 io.on("connection", socket => {
+  socket.join(`user:${socket.user.id}`);
   socket.room = "cafe";
   socket.join(socket.room);
   online.set(socket.id, { user: socket.user, room: socket.room });
@@ -299,6 +391,14 @@ async function deleteExpiredMessages() {
       "DELETE FROM letchat_messages WHERE expires_at <= NOW() RETURNING id"
     );
     if (rows.length) io.emit("messages-expired", rows.map(row => String(row.id)));
+    const deletedPrivate = await pool.query(
+      "DELETE FROM private_messages WHERE expires_at <= NOW() RETURNING id, sender_id, recipient_id"
+    );
+    for (const row of deletedPrivate.rows) {
+      const payload = [String(row.id)];
+      io.to(`user:${row.sender_id}`).to(`user:${row.recipient_id}`)
+        .emit("private-messages-expired", payload);
+    }
   } catch (error) {
     console.error("Suppression des messages expirés :", error);
   }
