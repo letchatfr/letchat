@@ -15,7 +15,68 @@ $("#attach").onclick=()=>$("#file").click();$("#cameraBtn").onclick=()=>$("#came
 function showError(t){$("#error").textContent=t;$("#error").classList.remove("hidden");setTimeout(()=>$("#error").classList.add("hidden"),4000)}
 function connect(){socket=io({auth:{token}});socket.on("message",addMessage);socket.on("presence",list=>{$("#onlineCount").textContent=list.length;$("#people").innerHTML=list.map(p=>`<div class="person"><img src="${p.photo||""}"><div><strong>${safe(p.name)}</strong><small>En ligne</small></div></div>`).join("")});socket.on("typing",d=>$("#typing").textContent=d.active?`${d.name} écrit…`:"");socket.on("webrtc",handleSignal)}
 function peer(id){if(peers.has(id))return peers.get(id);const pc=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]});stream?.getTracks().forEach(t=>pc.addTrack(t,stream));pc.onicecandidate=e=>e.candidate&&socket.emit("webrtc",{target:id,data:{type:"ice",candidate:e.candidate}});pc.ontrack=e=>addRemote(id,e.streams[0]);peers.set(id,pc);return pc}
-async function handleSignal({from,data}){const pc=peer(from);if(data.type==="join"){const o=await pc.createOffer();await pc.setLocalDescription(o);socket.emit("webrtc",{target:from,data:{type:"offer",sdp:o}})}else if(data.type==="offer"){await pc.setRemoteDescription(data.sdp);const a=await pc.createAnswer();await pc.setLocalDescription(a);socket.emit("webrtc",{target:from,data:{type:"answer",sdp:a}})}else if(data.type==="answer")await pc.setRemoteDescription(data.sdp);else if(data.type==="ice")try{await pc.addIceCandidate(data.candidate)}catch{}else if(data.type==="leave"){pc.close();peers.delete(from);document.getElementById(`v-${from}`)?.remove()}}
+async function startMedia() {
+  if (stream) return true;
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true
+    });
+
+    $("#localVideo").srcObject = stream;
+    $("#call").classList.remove("hidden");
+    return true;
+  } catch {
+    showError("Autorisez la caméra et le micro");
+    return false;
+  }
+}
+
+async function handleSignal({ from, data }) {
+  if (data.type === "leave") {
+    const old = peers.get(from);
+    old?.close();
+    peers.delete(from);
+    document.getElementById(`v-${from}`)?.remove();
+    return;
+  }
+
+  if (
+    (data.type === "join" || data.type === "offer") &&
+    !(await startMedia())
+  ) {
+    return;
+  }
+
+  const pc = peer(from);
+
+  if (data.type === "join") {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    socket.emit("webrtc", {
+      target: from,
+      data: { type: "offer", sdp: offer }
+    });
+  } else if (data.type === "offer") {
+    await pc.setRemoteDescription(data.sdp);
+
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    socket.emit("webrtc", {
+      target: from,
+      data: { type: "answer", sdp: answer }
+    });
+  } else if (data.type === "answer") {
+    await pc.setRemoteDescription(data.sdp);
+  } else if (data.type === "ice") {
+    try {
+      await pc.addIceCandidate(data.candidate);
+    } catch {}
+  }
+}
 function addRemote(id,s){let d=document.getElementById(`v-${id}`);if(!d){d=document.createElement("div");d.id=`v-${id}`;d.className="video";d.innerHTML=`<video autoplay playsinline></video><span>Participant</span>`;$("#videoGrid").append(d)}d.querySelector("video").srcObject=s}
 $("#callBtn").onclick=async()=>{try{stream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});$("#localVideo").srcObject=stream;$("#call").classList.remove("hidden");socket.emit("webrtc",{target:null,data:{type:"join"}})}catch{showError("Autorisez la caméra et le micro")}};
 function hang(){socket.emit("webrtc",{target:null,data:{type:"leave"}});stream?.getTracks().forEach(t=>t.stop());peers.forEach(p=>p.close());peers.clear();document.querySelectorAll("#videoGrid .video:not(:first-child)").forEach(x=>x.remove());$("#call").classList.add("hidden")}
