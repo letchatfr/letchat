@@ -31,11 +31,16 @@ await pool.query(`
     media_data BYTEA,
     media_type TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '1 hour')
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '48 hours')
   );
   ALTER TABLE letchat_messages
   ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ
-  NOT NULL DEFAULT (NOW() + INTERVAL '1 hour');
+  NOT NULL DEFAULT (NOW() + INTERVAL '48 hours');
+  ALTER TABLE letchat_messages
+  ALTER COLUMN expires_at SET DEFAULT (NOW() + INTERVAL '48 hours');
+  UPDATE letchat_messages
+  SET expires_at = created_at + INTERVAL '48 hours'
+  WHERE expires_at < created_at + INTERVAL '48 hours';
   ALTER TABLE letchat_messages
   ADD COLUMN IF NOT EXISTS room TEXT NOT NULL DEFAULT 'cafe';
   CREATE INDEX IF NOT EXISTS idx_letchat_messages_created
@@ -69,8 +74,13 @@ await pool.query(`
     media_data BYTEA,
     media_type TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '1 hour')
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '48 hours')
   );
+  ALTER TABLE letchat_private_messages
+  ALTER COLUMN expires_at SET DEFAULT (NOW() + INTERVAL '48 hours');
+  UPDATE letchat_private_messages
+  SET expires_at = created_at + INTERVAL '48 hours'
+  WHERE expires_at < created_at + INTERVAL '48 hours';
   CREATE INDEX IF NOT EXISTS idx_letchat_private_conversation
   ON letchat_private_messages(sender_id, recipient_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_letchat_private_expires
