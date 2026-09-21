@@ -19,7 +19,7 @@ const pool = new pg.Pool({
   ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false
 });
 
-// Table propre Ã  cette version : aucun conflit avec les anciennes tables.
+// Table propre à cette version : aucun conflit avec les anciennes tables.
 await pool.query(`
   CREATE TABLE IF NOT EXISTS letchat_messages (
     id BIGSERIAL PRIMARY KEY,
@@ -44,7 +44,21 @@ await pool.query(`
   ON letchat_messages(expires_at);
 `);
 
-// Proxy Firebase nÃ©cessaire Ã  la connexion Google par redirection sur Render.
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS profiles (
+    user_id TEXT PRIMARY KEY,
+    email TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL,
+    photo TEXT,
+    region TEXT NOT NULL,
+    department TEXT NOT NULL,
+    city TEXT NOT NULL,
+    location_visible BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+`);
+
+// Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
     const target = new URL(req.originalUrl, `https://${projectId}.firebaseapp.com`);
@@ -104,6 +118,53 @@ async function auth(req, res, next) {
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
+app.get("/api/profile", auth, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT region, department, city, location_visible FROM profiles WHERE user_id = $1",
+      [req.user.id]
+    );
+    res.json(rows[0] || null);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/profile", auth, async (req, res, next) => {
+  try {
+    const clean = value => String(value || "").trim().slice(0, 100);
+    const region = clean(req.body.region);
+    const department = clean(req.body.department);
+    const city = clean(req.body.city);
+    const locationVisible = req.body.locationVisible !== false;
+    if (!region || !department || !city) {
+      return res.status(400).json({ error: "Région, département et ville obligatoires" });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO profiles
+       (user_id, email, display_name, photo, region, department, city, location_visible)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (user_id) DO UPDATE SET
+         email=EXCLUDED.email, display_name=EXCLUDED.display_name,
+         photo=EXCLUDED.photo, region=EXCLUDED.region,
+         department=EXCLUDED.department, city=EXCLUDED.city,
+         location_visible=EXCLUDED.location_visible, updated_at=NOW()
+       RETURNING region, department, city, location_visible`,
+      [req.user.id, req.user.email, req.user.name, req.user.photo, region, department, city, locationVisible]
+    );
+    for (const [socketId, entry] of online) {
+      if (entry.user.id === req.user.id) {
+        entry.user.profile = rows[0];
+        online.set(socketId, entry);
+        emitPresence(entry.room);
+      }
+    }
+    res.json(rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
 const allowedRooms = new Set(["cafe", "creatifs", "entraide"]);
 const getRoom = value => allowedRooms.has(String(value)) ? String(value) : "cafe";
 
@@ -152,7 +213,7 @@ app.post("/api/messages", auth, async (req, res, next) => {
       return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
     }
     if (media && !/^(image|video)\//.test(mediaType)) {
-      return res.status(415).json({ error: "Format non acceptÃ©" });
+      return res.status(415).json({ error: "Format non accepté" });
     }
 
     const query = await pool.query(
@@ -175,13 +236,26 @@ const online = new Map();
 function emitPresence(room) {
   const people = [...online.values()]
     .filter(entry => entry.room === room)
-    .map(entry => entry.user);
+    .map(entry => ({
+      name: entry.user.name,
+      photo: entry.user.photo,
+      location: entry.user.profile?.location_visible ? {
+        region: entry.user.profile.region,
+        department: entry.user.profile.department,
+        city: entry.user.profile.city
+      } : null
+    }));
   io.to(room).emit("presence", people);
 }
 
 io.use(async (socket, next) => {
   try {
     socket.user = await verify(socket.handshake.auth?.token);
+    const { rows } = await pool.query(
+      "SELECT region, department, city, location_visible FROM profiles WHERE user_id = $1",
+      [socket.user.id]
+    );
+    socket.user.profile = rows[0] || null;
     next();
   } catch {
     next(new Error("unauthorized"));
@@ -230,7 +304,7 @@ async function deleteExpiredMessages() {
     );
     if (rows.length) io.emit("messages-expired", rows.map(row => String(row.id)));
   } catch (error) {
-    console.error("Suppression des messages expirÃ©s :", error);
+    console.error("Suppression des messages expirés :", error);
   }
 }
 
@@ -250,4 +324,4 @@ app.use((_req, res) => {
   res.sendFile(new URL("./public/index.html", import.meta.url).pathname);
 });
 
-server.listen(port, () => console.log(`Letchat prÃªt sur le port ${port}`));
+server.listen(port, () => console.log(`Letchat prêt sur le port ${port}`));
