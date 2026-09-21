@@ -19,12 +19,13 @@ const pool = new pg.Pool({
   ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false
 });
 
-// Table propre à cette version : aucun conflit avec les anciennes tables.
+// Table propre Ã  cette version : aucun conflit avec les anciennes tables.
 await pool.query(`
   CREATE TABLE IF NOT EXISTS letchat_messages (
     id BIGSERIAL PRIMARY KEY,
     user_id TEXT NOT NULL,
     author TEXT NOT NULL,
+    room TEXT NOT NULL DEFAULT 'cafe',
     photo TEXT,
     body TEXT NOT NULL DEFAULT '',
     media_data BYTEA,
@@ -35,13 +36,15 @@ await pool.query(`
   ALTER TABLE letchat_messages
   ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ
   NOT NULL DEFAULT (NOW() + INTERVAL '1 hour');
+  ALTER TABLE letchat_messages
+  ADD COLUMN IF NOT EXISTS room TEXT NOT NULL DEFAULT 'cafe';
   CREATE INDEX IF NOT EXISTS idx_letchat_messages_created
   ON letchat_messages(created_at);
   CREATE INDEX IF NOT EXISTS idx_letchat_messages_expires
   ON letchat_messages(expires_at);
 `);
 
-// Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
+// Proxy Firebase nÃ©cessaire Ã  la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
     const target = new URL(req.originalUrl, `https://${projectId}.firebaseapp.com`);
@@ -101,15 +104,19 @@ async function auth(req, res, next) {
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
-app.get("/api/messages", auth, async (_req, res, next) => {
+const allowedRooms = new Set(["cafe", "creatifs", "entraide"]);
+const getRoom = value => allowedRooms.has(String(value)) ? String(value) : "cafe";
+
+app.get("/api/messages", auth, async (req, res, next) => {
   try {
+    const room = getRoom(req.query.room);
     const { rows } = await pool.query(`
-      SELECT id, user_id, author, photo, body, media_type, created_at, expires_at,
+      SELECT id, user_id, author, room, photo, body, media_type, created_at, expires_at,
              (media_data IS NOT NULL) AS has_media
       FROM letchat_messages
-      WHERE expires_at > NOW()
+      WHERE expires_at > NOW() AND room = $1
       ORDER BY id DESC LIMIT 100
-    `);
+    `, [room]);
     res.json(rows.reverse());
   } catch (error) {
     next(error);
@@ -134,6 +141,7 @@ app.get("/api/media/:id", auth, async (req, res, next) => {
 app.post("/api/messages", auth, async (req, res, next) => {
   try {
     const body = String(req.body.body || "").trim().slice(0, 4000);
+    const room = getRoom(req.body.room);
     const mediaType = String(req.body.mediaType || "");
     const media = req.body.mediaBase64
       ? Buffer.from(String(req.body.mediaBase64), "base64")
@@ -144,18 +152,18 @@ app.post("/api/messages", auth, async (req, res, next) => {
       return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
     }
     if (media && !/^(image|video)\//.test(mediaType)) {
-      return res.status(415).json({ error: "Format non accepté" });
+      return res.status(415).json({ error: "Format non acceptÃ©" });
     }
 
     const query = await pool.query(
       `INSERT INTO letchat_messages
-       (user_id, author, photo, body, media_data, media_type)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, user_id, author, photo, body, media_type, created_at, expires_at,
+       (user_id, author, room, photo, body, media_data, media_type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, user_id, author, room, photo, body, media_type, created_at, expires_at,
                  (media_data IS NOT NULL) AS has_media`,
-      [req.user.id, req.user.name, req.user.photo, body, media, mediaType || null]
+      [req.user.id, req.user.name, room, req.user.photo, body, media, mediaType || null]
     );
-    io.emit("message", query.rows[0]);
+    io.to(room).emit("message", query.rows[0]);
     res.status(201).json(query.rows[0]);
   } catch (error) {
     next(error);
@@ -163,6 +171,13 @@ app.post("/api/messages", auth, async (req, res, next) => {
 });
 
 const online = new Map();
+
+function emitPresence(room) {
+  const people = [...online.values()]
+    .filter(entry => entry.room === room)
+    .map(entry => entry.user);
+  io.to(room).emit("presence", people);
+}
 
 io.use(async (socket, next) => {
   try {
@@ -174,22 +189,37 @@ io.use(async (socket, next) => {
 });
 
 io.on("connection", socket => {
-  online.set(socket.id, socket.user);
-  io.emit("presence", [...online.values()]);
+  socket.room = "cafe";
+  socket.join(socket.room);
+  online.set(socket.id, { user: socket.user, room: socket.room });
+  emitPresence(socket.room);
+
+  socket.on("join-room", value => {
+    const nextRoom = getRoom(value);
+    const previousRoom = socket.room;
+    if (nextRoom === previousRoom) return emitPresence(nextRoom);
+    socket.leave(previousRoom);
+    socket.room = nextRoom;
+    socket.join(nextRoom);
+    online.set(socket.id, { user: socket.user, room: nextRoom });
+    emitPresence(previousRoom);
+    emitPresence(nextRoom);
+  });
 
   socket.on("typing", value => {
-    socket.broadcast.emit("typing", { name: socket.user.name, active: Boolean(value) });
+    socket.to(socket.room).emit("typing", { name: socket.user.name, active: Boolean(value) });
   });
 
   socket.on("webrtc", ({ target, data }) => {
     const signal = { from: socket.id, user: socket.user, data };
     if (target) io.to(target).emit("webrtc", signal);
-    else socket.broadcast.emit("webrtc", signal);
+    else socket.to(socket.room).emit("webrtc", signal);
   });
 
   socket.on("disconnect", () => {
+    const room = socket.room;
     online.delete(socket.id);
-    io.emit("presence", [...online.values()]);
+    emitPresence(room);
   });
 });
 
@@ -200,7 +230,7 @@ async function deleteExpiredMessages() {
     );
     if (rows.length) io.emit("messages-expired", rows.map(row => String(row.id)));
   } catch (error) {
-    console.error("Suppression des messages expirés :", error);
+    console.error("Suppression des messages expirÃ©s :", error);
   }
 }
 
@@ -220,4 +250,4 @@ app.use((_req, res) => {
   res.sendFile(new URL("./public/index.html", import.meta.url).pathname);
 });
 
-server.listen(port, () => console.log(`Letchat prêt sur le port ${port}`));
+server.listen(port, () => console.log(`Letchat prÃªt sur le port ${port}`));
