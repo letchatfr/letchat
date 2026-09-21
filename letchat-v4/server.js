@@ -201,14 +201,54 @@ app.put("/api/profile", auth, async (req, res, next) => {
 const allowedRooms = new Set(["cafe", "creatifs", "entraide"]);
 const getRoom = value => allowedRooms.has(String(value)) ? String(value) : "cafe";
 
+let meteredTurnCredential = null;
+let meteredTurnCredentialPromise = null;
+
+async function getMeteredTurnApiKey(domain, secretKey) {
+  const now = Date.now();
+  if (meteredTurnCredential?.apiKey && meteredTurnCredential.expiresAt > now) {
+    return meteredTurnCredential.apiKey;
+  }
+  if (!meteredTurnCredentialPromise) {
+    meteredTurnCredentialPromise = (async () => {
+      const expiryInSeconds = 24 * 60 * 60;
+      const response = await fetch(
+        `https://${domain}/api/v1/turn/credential?secretKey=${encodeURIComponent(secretKey)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", accept: "application/json" },
+          body: JSON.stringify({
+            expiryInSeconds,
+            label: `letchat-${Date.now()}`
+          })
+        }
+      );
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.apiKey) {
+        throw new Error(`Création TURN refusée (${response.status})`);
+      }
+      meteredTurnCredential = {
+        apiKey: result.apiKey,
+        expiresAt: Date.now() + (expiryInSeconds - 300) * 1000
+      };
+      console.log("Identifiant TURN créé. Propagation Metered : jusqu’à 2 minutes.");
+      return result.apiKey;
+    })().finally(() => {
+      meteredTurnCredentialPromise = null;
+    });
+  }
+  return meteredTurnCredentialPromise;
+}
+
 app.get("/api/turn-credentials", auth, async (_req, res, next) => {
   try {
     const domain = String(process.env.METERED_DOMAIN || "").trim()
       .replace(/^https?:\/\//, "").replace(/\/$/, "");
-    const apiKey = String(process.env.METERED_API_KEY || "").trim();
-    if (!domain || !apiKey || !/^[a-z0-9.-]+\.metered\.live$/i.test(domain)) {
+    const secretKey = String(process.env.METERED_API_KEY || "").trim();
+    if (!domain || !secretKey || !/^[a-z0-9.-]+\.metered\.live$/i.test(domain)) {
       return res.status(503).json({ error: "Serveur vidéo non configuré" });
     }
+    const apiKey = await getMeteredTurnApiKey(domain, secretKey);
     const response = await fetch(
       `https://${domain}/api/v1/turn/credentials?apiKey=${encodeURIComponent(apiKey)}`,
       { headers: { accept: "application/json" } }
