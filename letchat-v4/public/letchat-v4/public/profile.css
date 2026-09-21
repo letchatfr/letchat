@@ -13,3 +13,5 @@
 .profile-close { position: absolute; right: 16px; top: 14px; border: 0; background: none; font-size: 25px; }
 .profile-error { color: #a13f31; margin-top: 10px; }
 .account #profileBtn { font-size: 16px; }
+.person-button { width: 100%; border: 0; background: transparent; text-align: left; padding: 0; cursor: pointer; color: inherit; }
+.person-button:hover { background: #f6f2ed; border-radius: 10px; }
