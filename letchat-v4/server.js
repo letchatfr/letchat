@@ -10,7 +10,48 @@ const projectId=process.env.FIREBASE_PROJECT_ID||"letchat-1d79d";
 const jwks=createRemoteJWKSet(new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"));
 const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.NODE_ENV==="production"?{rejectUnauthorized:false}:false});
 await pool.query(`CREATE TABLE IF NOT EXISTS messages(id BIGSERIAL PRIMARY KEY,user_id TEXT NOT NULL,author TEXT NOT NULL,photo TEXT,body TEXT NOT NULL DEFAULT '',media_data BYTEA,media_type TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);`);
-app.use(helmet({contentSecurityPolicy:false}));app.use(express.json({limit:"9mb"}));app.use(express.static("public"));
+app.use("/__/auth", async (req, res) => {
+  try {
+    const target = new URL(
+      req.originalUrl,
+      `https://${projectId}.firebaseapp.com`
+    );
+
+    const headers = {
+      accept: req.headers.accept || "*/*",
+      "user-agent": req.headers["user-agent"] || "Letchat"
+    };
+
+    if (req.headers["content-type"]) {
+      headers["content-type"] = req.headers["content-type"];
+    }
+
+    const hasBody = !["GET", "HEAD"].includes(req.method);
+
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers,
+      body: hasBody ? req : undefined,
+      ...(hasBody ? { duplex: "half" } : {})
+    });
+
+    res.status(upstream.status);
+
+    upstream.headers.forEach((value, key) => {
+      if (
+        !["content-encoding", "content-length", "transfer-encoding", "connection"]
+          .includes(key.toLowerCase())
+      ) {
+        res.setHeader(key, value);
+      }
+    });
+
+    res.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch (error) {
+    console.error("Firebase auth proxy:", error);
+    res.status(502).send("Service de connexion temporairement indisponible");
+  }
+});app.use(helmet({contentSecurityPolicy:false}));app.use(express.json({limit:"9mb"}));app.use(express.static("public"));
 async function verify(token){const {payload}=await jwtVerify(token,jwks,{issuer:`https://securetoken.google.com/${projectId}`,audience:projectId});return{id:String(payload.sub),email:String(payload.email||""),name:String(payload.name||payload.email||"Utilisateur"),photo:typeof payload.picture==="string"?payload.picture:null};}
 async function auth(req,res,next){try{const token=req.headers.authorization?.replace(/^Bearer\s+/i,"")||req.query.t;if(!token)throw new Error();req.user=await verify(String(token));next()}catch{res.status(401).json({error:"Connexion requise"})}}
 app.get("/api/messages",auth,async(req,res)=>{const {rows}=await pool.query("SELECT id,user_id,author,photo,body,media_type,created_at,(media_data IS NOT NULL) AS has_media FROM messages ORDER BY id DESC LIMIT 100");res.json(rows.reverse())});
