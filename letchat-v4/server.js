@@ -8,25 +8,18 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 10e6 });
-
 const projectId = process.env.FIREBASE_PROJECT_ID || "letchat-1d79d";
 const port = process.env.PORT || 10000;
 
-const jwks = createRemoteJWKSet(
-  new URL(
-    "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
-  )
-);
-
+const jwks = createRemoteJWKSet(new URL(
+  "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+));
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl:
-    process.env.NODE_ENV === "production"
-      ? { rejectUnauthorized: false }
-      : false
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false
 });
 
-// Nouvelle table sans conflit avec les anciennes versions.
+// Table propre à cette version : aucun conflit avec les anciennes tables.
 await pool.query(`
   CREATE TABLE IF NOT EXISTS letchat_messages (
     id BIGSERIAL PRIMARY KEY,
@@ -36,32 +29,29 @@ await pool.query(`
     body TEXT NOT NULL DEFAULT '',
     media_data BYTEA,
     media_type TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '1 hour')
   );
-
+  ALTER TABLE letchat_messages
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ
+  NOT NULL DEFAULT (NOW() + INTERVAL '1 hour');
   CREATE INDEX IF NOT EXISTS idx_letchat_messages_created
   ON letchat_messages(created_at);
+  CREATE INDEX IF NOT EXISTS idx_letchat_messages_expires
+  ON letchat_messages(expires_at);
 `);
 
-// Proxy nécessaire à la connexion Google sur Render.
+// Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
-    const target = new URL(
-      req.originalUrl,
-      `https://${projectId}.firebaseapp.com`
-    );
-
+    const target = new URL(req.originalUrl, `https://${projectId}.firebaseapp.com`);
     const headers = {
       accept: req.headers.accept || "*/*",
       "user-agent": req.headers["user-agent"] || "Letchat"
     };
-
-    if (req.headers["content-type"]) {
-      headers["content-type"] = req.headers["content-type"];
-    }
+    if (req.headers["content-type"]) headers["content-type"] = req.headers["content-type"];
 
     const hasBody = !["GET", "HEAD"].includes(req.method);
-
     const upstream = await fetch(target, {
       method: req.method,
       headers,
@@ -70,26 +60,14 @@ app.use("/__/auth", async (req, res) => {
     });
 
     res.status(upstream.status);
-
     upstream.headers.forEach((value, key) => {
-      const ignoredHeaders = [
-        "content-encoding",
-        "content-length",
-        "transfer-encoding",
-        "connection"
-      ];
-
-      if (!ignoredHeaders.includes(key.toLowerCase())) {
-        res.setHeader(key, value);
-      }
+      const ignored = ["content-encoding", "content-length", "transfer-encoding", "connection"];
+      if (!ignored.includes(key.toLowerCase())) res.setHeader(key, value);
     });
-
     res.send(Buffer.from(await upstream.arrayBuffer()));
   } catch (error) {
     console.error("Firebase auth proxy:", error);
-    res
-      .status(502)
-      .send("Service de connexion temporairement indisponible");
+    res.status(502).send("Service de connexion temporairement indisponible");
   }
 });
 
@@ -102,7 +80,6 @@ async function verify(token) {
     issuer: `https://securetoken.google.com/${projectId}`,
     audience: projectId
   });
-
   return {
     id: String(payload.sub),
     email: String(payload.email || ""),
@@ -113,14 +90,8 @@ async function verify(token) {
 
 async function auth(req, res, next) {
   try {
-    const token =
-      req.headers.authorization?.replace(/^Bearer\s+/i, "") ||
-      req.query.t;
-
-    if (!token) {
-      throw new Error("Jeton absent");
-    }
-
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.query.t;
+    if (!token) throw new Error("Jeton absent");
     req.user = await verify(String(token));
     next();
   } catch {
@@ -128,27 +99,17 @@ async function auth(req, res, next) {
   }
 }
 
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true });
-});
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/api/messages", auth, async (_req, res, next) => {
   try {
     const { rows } = await pool.query(`
-      SELECT
-        id,
-        user_id,
-        author,
-        photo,
-        body,
-        media_type,
-        created_at,
-        (media_data IS NOT NULL) AS has_media
+      SELECT id, user_id, author, photo, body, media_type, created_at, expires_at,
+             (media_data IS NOT NULL) AS has_media
       FROM letchat_messages
-      ORDER BY id DESC
-      LIMIT 100
+      WHERE expires_at > NOW()
+      ORDER BY id DESC LIMIT 100
     `);
-
     res.json(rows.reverse());
   } catch (error) {
     next(error);
@@ -158,18 +119,11 @@ app.get("/api/messages", auth, async (_req, res, next) => {
 app.get("/api/media/:id", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT media_data, media_type
-       FROM letchat_messages
-       WHERE id = $1`,
+      "SELECT media_data, media_type FROM letchat_messages WHERE id = $1 AND expires_at > NOW()",
       [req.params.id]
     );
-
-    if (!rows[0]?.media_data) {
-      return res.sendStatus(404);
-    }
-
-    res
-      .type(rows[0].media_type)
+    if (!rows[0]?.media_data) return res.sendStatus(404);
+    res.type(rows[0].media_type)
       .set("Cache-Control", "private, max-age=86400")
       .send(rows[0].media_data);
   } catch (error) {
@@ -179,57 +133,28 @@ app.get("/api/media/:id", auth, async (req, res, next) => {
 
 app.post("/api/messages", auth, async (req, res, next) => {
   try {
-    const body = String(req.body.body || "")
-      .trim()
-      .slice(0, 4000);
-
+    const body = String(req.body.body || "").trim().slice(0, 4000);
     const mediaType = String(req.body.mediaType || "");
-
     const media = req.body.mediaBase64
       ? Buffer.from(String(req.body.mediaBase64), "base64")
       : null;
 
-    if (!body && !media) {
-      return res.status(400).json({
-        error: "Message vide"
-      });
-    }
-
+    if (!body && !media) return res.status(400).json({ error: "Message vide" });
     if (media && media.length > 8e6) {
-      return res.status(413).json({
-        error: "Fichier trop volumineux (8 Mo maximum)"
-      });
+      return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
     }
-
     if (media && !/^(image|video)\//.test(mediaType)) {
-      return res.status(415).json({
-        error: "Format non accepté"
-      });
+      return res.status(415).json({ error: "Format non accepté" });
     }
 
     const query = await pool.query(
       `INSERT INTO letchat_messages
-        (user_id, author, photo, body, media_data, media_type)
+       (user_id, author, photo, body, media_data, media_type)
        VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING
-        id,
-        user_id,
-        author,
-        photo,
-        body,
-        media_type,
-        created_at,
-        (media_data IS NOT NULL) AS has_media`,
-      [
-        req.user.id,
-        req.user.name,
-        req.user.photo,
-        body,
-        media,
-        mediaType || null
-      ]
+       RETURNING id, user_id, author, photo, body, media_type, created_at, expires_at,
+                 (media_data IS NOT NULL) AS has_media`,
+      [req.user.id, req.user.name, req.user.photo, body, media, mediaType || null]
     );
-
     io.emit("message", query.rows[0]);
     res.status(201).json(query.rows[0]);
   } catch (error) {
@@ -253,24 +178,13 @@ io.on("connection", socket => {
   io.emit("presence", [...online.values()]);
 
   socket.on("typing", value => {
-    socket.broadcast.emit("typing", {
-      name: socket.user.name,
-      active: Boolean(value)
-    });
+    socket.broadcast.emit("typing", { name: socket.user.name, active: Boolean(value) });
   });
 
   socket.on("webrtc", ({ target, data }) => {
-    const signal = {
-      from: socket.id,
-      user: socket.user,
-      data
-    };
-
-    if (target) {
-      io.to(target).emit("webrtc", signal);
-    } else {
-      socket.broadcast.emit("webrtc", signal);
-    }
+    const signal = { from: socket.id, user: socket.user, data };
+    if (target) io.to(target).emit("webrtc", signal);
+    else socket.broadcast.emit("webrtc", signal);
   });
 
   socket.on("disconnect", () => {
@@ -279,26 +193,31 @@ io.on("connection", socket => {
   });
 });
 
-// Toutes les erreurs API sont renvoyées en JSON.
+async function deleteExpiredMessages() {
+  try {
+    const { rows } = await pool.query(
+      "DELETE FROM letchat_messages WHERE expires_at <= NOW() RETURNING id"
+    );
+    if (rows.length) io.emit("messages-expired", rows.map(row => String(row.id)));
+  } catch (error) {
+    console.error("Suppression des messages expirés :", error);
+  }
+}
+
+await deleteExpiredMessages();
+setInterval(deleteExpiredMessages, 30000).unref();
+
 app.use("/api", (_req, res) => {
-  res.status(404).json({
-    error: "Route API introuvable"
-  });
+  res.status(404).json({ error: "Route API introuvable" });
 });
 
 app.use((error, _req, res, _next) => {
   console.error(error);
-  res.status(500).json({
-    error: "Erreur interne du serveur"
-  });
+  res.status(500).json({ error: "Erreur interne du serveur" });
 });
 
 app.use((_req, res) => {
-  res.sendFile(
-    new URL("./public/index.html", import.meta.url).pathname
-  );
+  res.sendFile(new URL("./public/index.html", import.meta.url).pathname);
 });
 
-server.listen(port, () => {
-  console.log(`Letchat prêt sur le port ${port}`);
-});
+server.listen(port, () => console.log(`Letchat prêt sur le port ${port}`));
