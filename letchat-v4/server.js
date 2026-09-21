@@ -201,6 +201,29 @@ app.put("/api/profile", auth, async (req, res, next) => {
 const allowedRooms = new Set(["cafe", "creatifs", "entraide"]);
 const getRoom = value => allowedRooms.has(String(value)) ? String(value) : "cafe";
 
+app.get("/api/turn-credentials", auth, async (_req, res, next) => {
+  try {
+    const domain = String(process.env.METERED_DOMAIN || "").trim()
+      .replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const apiKey = String(process.env.METERED_API_KEY || "").trim();
+    if (!domain || !apiKey || !/^[a-z0-9.-]+\.metered\.live$/i.test(domain)) {
+      return res.status(503).json({ error: "Serveur vidéo non configuré" });
+    }
+    const response = await fetch(
+      `https://${domain}/api/v1/turn/credentials?apiKey=${encodeURIComponent(apiKey)}`,
+      { headers: { accept: "application/json" } }
+    );
+    if (!response.ok) throw new Error(`Metered TURN a répondu ${response.status}`);
+    const iceServers = await response.json();
+    if (!Array.isArray(iceServers) || !iceServers.length) {
+      throw new Error("Identifiants TURN absents");
+    }
+    res.set("Cache-Control", "private, no-store").json(iceServers);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/messages", auth, async (req, res, next) => {
   try {
     const room = getRoom(req.query.room);
