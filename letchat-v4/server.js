@@ -121,7 +121,7 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.get("/api/profile", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      "SELECT region, department, city, location_visible FROM profiles WHERE user_id = $1",
+      "SELECT city, location_visible FROM profiles WHERE user_id = $1",
       [req.user.id]
     );
     res.json(rows[0] || null);
@@ -133,24 +133,22 @@ app.get("/api/profile", auth, async (req, res, next) => {
 app.put("/api/profile", auth, async (req, res, next) => {
   try {
     const clean = value => String(value || "").trim().slice(0, 100);
-    const region = clean(req.body.region);
-    const department = clean(req.body.department);
     const city = clean(req.body.city);
     const locationVisible = req.body.locationVisible !== false;
-    if (!region || !department || !city) {
-      return res.status(400).json({ error: "Région, département et ville obligatoires" });
+    if (!city) {
+      return res.status(400).json({ error: "Ville obligatoire" });
     }
     const { rows } = await pool.query(
       `INSERT INTO profiles
        (user_id, email, display_name, photo, region, department, city, location_visible)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       VALUES ($1,$2,$3,$4,'','',$5,$6)
        ON CONFLICT (user_id) DO UPDATE SET
          email=EXCLUDED.email, display_name=EXCLUDED.display_name,
-         photo=EXCLUDED.photo, region=EXCLUDED.region,
-         department=EXCLUDED.department, city=EXCLUDED.city,
+         photo=EXCLUDED.photo, region='',
+         department='', city=EXCLUDED.city,
          location_visible=EXCLUDED.location_visible, updated_at=NOW()
-       RETURNING region, department, city, location_visible`,
-      [req.user.id, req.user.email, req.user.name, req.user.photo, region, department, city, locationVisible]
+       RETURNING city, location_visible`,
+      [req.user.id, req.user.email, req.user.name, req.user.photo, city, locationVisible]
     );
     for (const [socketId, entry] of online) {
       if (entry.user.id === req.user.id) {
@@ -240,8 +238,6 @@ function emitPresence(room) {
       name: entry.user.name,
       photo: entry.user.photo,
       location: entry.user.profile?.location_visible ? {
-        region: entry.user.profile.region,
-        department: entry.user.profile.department,
         city: entry.user.profile.city
       } : null
     }));
@@ -252,7 +248,7 @@ io.use(async (socket, next) => {
   try {
     socket.user = await verify(socket.handshake.auth?.token);
     const { rows } = await pool.query(
-      "SELECT region, department, city, location_visible FROM profiles WHERE user_id = $1",
+      "SELECT city, location_visible FROM profiles WHERE user_id = $1",
       [socket.user.id]
     );
     socket.user.profile = rows[0] || null;
