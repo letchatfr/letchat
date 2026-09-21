@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: letchat
+    runtime: node
+    rootDir: letchat-production-v4-google
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: letchat-db
+          property: connectionString
+      - key: FIREBASE_PROJECT_ID
+        value: letchat-1d79d
+databases:
+  - name: letchat-db
+    plan: free
