@@ -59,7 +59,7 @@ await pool.query(`
 `);
 
 await pool.query(`
-  CREATE TABLE IF NOT EXISTS private_messages (
+  CREATE TABLE IF NOT EXISTS letchat_private_messages (
     id BIGSERIAL PRIMARY KEY,
     sender_id TEXT NOT NULL,
     recipient_id TEXT NOT NULL,
@@ -71,32 +71,10 @@ await pool.query(`
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '1 hour')
   );
-  ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS sender_id TEXT;
-  ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS recipient_id TEXT;
-  ALTER TABLE private_messages
-    DROP CONSTRAINT IF EXISTS private_messages_sender_id_fkey;
-  ALTER TABLE private_messages
-    DROP CONSTRAINT IF EXISTS private_messages_recipient_id_fkey;
-  ALTER TABLE private_messages
-    ALTER COLUMN sender_id TYPE TEXT USING sender_id::TEXT;
-  ALTER TABLE private_messages
-    ALTER COLUMN recipient_id TYPE TEXT USING recipient_id::TEXT;
-  ALTER TABLE private_messages
-    ADD COLUMN IF NOT EXISTS sender_name TEXT NOT NULL DEFAULT 'Utilisateur';
-  ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS sender_photo TEXT;
-  ALTER TABLE private_messages
-    ADD COLUMN IF NOT EXISTS body TEXT NOT NULL DEFAULT '';
-  ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS media_data BYTEA;
-  ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS media_type TEXT;
-  ALTER TABLE private_messages
-    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-  ALTER TABLE private_messages
-    ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ
-    NOT NULL DEFAULT (NOW() + INTERVAL '1 hour');
-  CREATE INDEX IF NOT EXISTS idx_private_conversation
-  ON private_messages(sender_id, recipient_id, created_at);
-  CREATE INDEX IF NOT EXISTS idx_private_expires
-  ON private_messages(expires_at);
+  CREATE INDEX IF NOT EXISTS idx_letchat_private_conversation
+  ON letchat_private_messages(sender_id, recipient_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_letchat_private_expires
+  ON letchat_private_messages(expires_at);
 `);
 
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
@@ -277,7 +255,7 @@ app.get("/api/private/:otherId", auth, async (req, res, next) => {
       `SELECT id, sender_id AS user_id, sender_name AS author,
               sender_photo AS photo, body, media_type, created_at, expires_at,
               (media_data IS NOT NULL) AS has_media
-       FROM private_messages
+       FROM letchat_private_messages
        WHERE expires_at > NOW()
          AND ((sender_id=$1 AND recipient_id=$2)
            OR (sender_id=$2 AND recipient_id=$1))
@@ -293,7 +271,7 @@ app.get("/api/private/:otherId", auth, async (req, res, next) => {
 app.get("/api/private-media/:id", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT media_data, media_type FROM private_messages
+      `SELECT media_data, media_type FROM letchat_private_messages
        WHERE id=$1 AND expires_at > NOW()
          AND (sender_id=$2 OR recipient_id=$2)`,
       [req.params.id, req.user.id]
@@ -325,7 +303,7 @@ app.post("/api/private", auth, async (req, res, next) => {
       return res.status(415).json({ error: "Format non accepté" });
     }
     const { rows } = await pool.query(
-      `INSERT INTO private_messages
+      `INSERT INTO letchat_private_messages
        (sender_id,recipient_id,sender_name,sender_photo,body,media_data,media_type)
        VALUES($1,$2,$3,$4,$5,$6,$7)
        RETURNING id, sender_id AS user_id, sender_name AS author,
@@ -414,7 +392,7 @@ async function deleteExpiredMessages() {
     );
     if (rows.length) io.emit("messages-expired", rows.map(row => String(row.id)));
     const deletedPrivate = await pool.query(
-      "DELETE FROM private_messages WHERE expires_at <= NOW() RETURNING id, sender_id, recipient_id"
+      "DELETE FROM letchat_private_messages WHERE expires_at <= NOW() RETURNING id, sender_id, recipient_id"
     );
     for (const row of deletedPrivate.rows) {
       const payload = [String(row.id)];
