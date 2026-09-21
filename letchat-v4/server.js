@@ -71,6 +71,20 @@ await pool.query(`
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '1 hour')
   );
+  ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS sender_id TEXT;
+  ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS recipient_id TEXT;
+  ALTER TABLE private_messages
+    ADD COLUMN IF NOT EXISTS sender_name TEXT NOT NULL DEFAULT 'Utilisateur';
+  ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS sender_photo TEXT;
+  ALTER TABLE private_messages
+    ADD COLUMN IF NOT EXISTS body TEXT NOT NULL DEFAULT '';
+  ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS media_data BYTEA;
+  ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS media_type TEXT;
+  ALTER TABLE private_messages
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  ALTER TABLE private_messages
+    ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ
+    NOT NULL DEFAULT (NOW() + INTERVAL '1 hour');
   CREATE INDEX IF NOT EXISTS idx_private_conversation
   ON private_messages(sender_id, recipient_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_private_expires
