@@ -252,7 +252,7 @@ app.get("/api/private/:otherId", auth, async (req, res, next) => {
   try {
     const otherId = String(req.params.otherId || "").slice(0, 200);
     const { rows } = await pool.query(
-      `SELECT id, sender_id AS user_id, sender_name AS author,
+      `SELECT id, sender_id AS user_id, recipient_id, sender_name AS author,
               sender_photo AS photo, body, media_type, created_at, expires_at,
               (media_data IS NOT NULL) AS has_media
        FROM letchat_private_messages
