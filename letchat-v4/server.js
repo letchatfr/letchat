@@ -109,7 +109,13 @@ app.use("/__/auth", async (req, res) => {
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: "9mb" }));
-app.use(express.static("public"));
+app.use(express.static("public", {
+  etag: false,
+  lastModified: false,
+  setHeaders(res) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  }
+}));
 
 async function verify(token) {
   const { payload } = await jwtVerify(token, jwks, {
