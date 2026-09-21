@@ -1,5 +1,5 @@
 import{initializeApp}from"https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";import{getAuth,GoogleAuthProvider,signInWithRedirect,getRedirectResult,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
-const config={apiKey:"AIzaSyCfOel5JKgjxmVslddn_Xdar1XR_vb2Cgs",authDomain:"letchat-1d79d.firebaseapp.com",projectId:"letchat-1d79d",storageBucket:"letchat-1d79d.firebasestorage.app",messagingSenderId:"289359647477",appId:"1:289359647477:web:893d579c6bf94b98226bbc",measurementId:"G-L3Z35BP6FG"};
+const config={apiKey:"AIzaSyCfOel5JKgjxmVslddn_Xdar1XR_vb2Cgs",authDomain:"letchat-ynyp.onrender.com",projectId:"letchat-1d79d",storageBucket:"letchat-1d79d.firebasestorage.app",messagingSenderId:"289359647477",appId:"1:289359647477:web:893d579c6bf94b98226bbc",measurementId:"G-L3Z35BP6FG"};
 const auth=getAuth(initializeApp(config)),provider=new GoogleAuthProvider(),$=s=>document.querySelector(s);let user,token,socket,stream,peers=new Map(),typingTimer;
 $("#googleLogin").onclick=()=>signInWithRedirect(auth,provider).catch(e=>alert(e.message));$("#logout").onclick=()=>signOut(auth);
 getRedirectResult(auth).catch(e=>alert(`Connexion Google impossible : ${e.message}`));
