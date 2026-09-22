@@ -288,7 +288,7 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
     res.status(400).send("Webhook incorrect");
   }
 });
-app.use(express.json({ limit: "9mb" }));
+app.use(express.json({ limit: "12mb" }));
 app.use(express.static("public", {
   etag: false,
   lastModified: false,
@@ -1108,7 +1108,7 @@ app.post("/api/messages", auth, requireAdult, requireRules, rateLimitAction("pub
     if (media && media.length > 8e6) {
       return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
     }
-    if (media && !/^(image|video)\//.test(mediaType)) {
+    if (media && !/^(image|video|audio)\//.test(mediaType)) {
       return res.status(415).json({ error: "Format non accepté" });
     }
     let reply = null;
@@ -1212,7 +1212,7 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
     if (media && media.length > 8e6) {
       return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
     }
-    if (media && !/^(image|video)\//.test(mediaType)) {
+    if (media && !/^(image|video|audio)\//.test(mediaType)) {
       return res.status(415).json({ error: "Format non accepté" });
     }
     let reply = null;
