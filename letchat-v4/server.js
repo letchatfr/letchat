@@ -87,6 +87,10 @@ await pool.query(`
   ALTER COLUMN expires_at SET DEFAULT (NOW() + INTERVAL '48 hours');
   ALTER TABLE letchat_private_messages
   ADD COLUMN IF NOT EXISTS reply_to_id BIGINT;
+  ALTER TABLE letchat_private_messages
+  ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+  ALTER TABLE letchat_private_messages
+  ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
   UPDATE letchat_private_messages
   SET expires_at = created_at + INTERVAL '48 hours'
   WHERE expires_at < created_at + INTERVAL '48 hours';
@@ -1150,6 +1154,7 @@ app.get("/api/private/:otherId", auth, requireAdult, async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.sender_name AS author,
               m.sender_photo AS photo, m.body, m.media_type, m.created_at, m.expires_at,
+              m.delivered_at, m.read_at,
               m.reply_to_id, parent.sender_name AS reply_author, parent.body AS reply_body,
               (m.media_data IS NOT NULL) AS has_media,
               COALESCE((SELECT jsonb_object_agg(x.emoji, x.total) FROM (
@@ -1232,6 +1237,7 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
        VALUES($1,$2,$3,$4,$5,$6,$7,$8)
        RETURNING id, sender_id AS user_id, sender_name AS author,
                  sender_photo AS photo, body, media_type, created_at, expires_at, reply_to_id,
+                 delivered_at, read_at,
                  (media_data IS NOT NULL) AS has_media`,
       [req.user.id, recipientId, req.user.name, req.user.photo, body, media, mediaType || null, reply?.id || null]
     );
@@ -1243,6 +1249,40 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
     );
     io.to(`user:${req.user.id}`).to(`user:${recipientId}`).emit("private-message", message);
     res.status(201).json(message);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/private/:otherId/delivered", auth, requireAdult, async (req, res, next) => {
+  try {
+    const otherId = String(req.params.otherId || "").slice(0, 200);
+    const { rows } = await pool.query(
+      `UPDATE letchat_private_messages
+       SET delivered_at=COALESCE(delivered_at,NOW())
+       WHERE sender_id=$1 AND recipient_id=$2 AND delivered_at IS NULL AND expires_at > NOW()
+       RETURNING id, delivered_at, read_at`,
+      [otherId, req.user.id]
+    );
+    if (rows.length) io.to(`user:${otherId}`).emit("private-receipt", { messages: rows });
+    res.json({ messages: rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/private/:otherId/read", auth, requireAdult, async (req, res, next) => {
+  try {
+    const otherId = String(req.params.otherId || "").slice(0, 200);
+    const { rows } = await pool.query(
+      `UPDATE letchat_private_messages
+       SET delivered_at=COALESCE(delivered_at,NOW()), read_at=COALESCE(read_at,NOW())
+       WHERE sender_id=$1 AND recipient_id=$2 AND read_at IS NULL AND expires_at > NOW()
+       RETURNING id, delivered_at, read_at`,
+      [otherId, req.user.id]
+    );
+    if (rows.length) io.to(`user:${otherId}`).emit("private-receipt", { messages: rows });
+    res.json({ messages: rows });
   } catch (error) {
     next(error);
   }
