@@ -136,3 +136,18 @@
   .notifications-modal { padding: 0; align-items: end; }
   .notifications-panel { width: 100%; max-height: 92dvh; border-radius: 20px 20px 0 0; }
 }
+.rules-modal { position: fixed; inset: 0; z-index: 250; display: grid; place-items: center; padding: 20px; background: #152027e8; }
+.rules-card { width: min(560px, 100%); max-height: 94dvh; overflow-y: auto; background: #fff; border-radius: 22px; padding: 30px; box-shadow: 0 28px 90px #0006; }
+.rules-icon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 16px; background: #e8f2f7; font-size: 27px; }
+.rules-card h2 { margin: 18px 0 7px; }
+.rules-card > p { color: #666; }
+.rules-card ul { padding: 15px 15px 15px 34px; border-radius: 13px; background: #f5f3ef; line-height: 1.55; }
+.rules-card li { margin: 7px 0; }
+.rules-agreement { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid #ded8cf; border-radius: 11px; font-weight: 700; line-height: 1.4; }
+.rules-agreement input { margin-top: 3px; transform: scale(1.15); }
+.rules-card > button { width: 100%; height: 47px; margin-top: 14px; border: 0; border-radius: 11px; background: #315b76; color: #fff; font-weight: 800; }
+.rules-card > button:disabled { opacity: .55; }
+@media(max-width:650px) {
+  .rules-modal { align-items: end; padding: 0; }
+  .rules-card { width: 100%; max-height: 96dvh; border-radius: 20px 20px 0 0; padding: 24px 19px max(22px, env(safe-area-inset-bottom)); }
+}
