@@ -161,6 +161,14 @@ await pool.query(`
   ON letchat_notifications(user_id, created_at DESC);
 `);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_consents (
+    user_id TEXT PRIMARY KEY,
+    rules_version TEXT NOT NULL,
+    accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+`);
+
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
@@ -265,7 +273,70 @@ async function createNotification(userId, type, title, body = "", actorId = null
   return rows[0];
 }
 
+const RULES_VERSION = "2026-09-22-v1";
+const actionBuckets = new Map();
+
+async function requireRules(req, res, next) {
+  try {
+    const result = await pool.query(
+      "SELECT 1 FROM letchat_consents WHERE user_id=$1 AND rules_version=$2",
+      [req.user.id, RULES_VERSION]
+    );
+    if (!result.rowCount) {
+      return res.status(403).json({ error: "Vous devez accepter les règles de la communauté" });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+function rateLimitAction(name, maximum, windowMs) {
+  return (req, res, next) => {
+    const key = `${name}:${req.user.id}`;
+    const now = Date.now();
+    const recent = (actionBuckets.get(key) || []).filter(time => now - time < windowMs);
+    if (recent.length >= maximum) {
+      const retrySeconds = Math.max(1, Math.ceil((windowMs - (now - recent[0])) / 1000));
+      res.set("Retry-After", String(retrySeconds));
+      return res.status(429).json({ error: `Trop d’actions. Réessayez dans ${retrySeconds} secondes` });
+    }
+    recent.push(now);
+    actionBuckets.set(key, recent);
+    next();
+  };
+}
+
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
+app.get("/api/rules-status", auth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      "SELECT accepted_at FROM letchat_consents WHERE user_id=$1 AND rules_version=$2",
+      [req.user.id, RULES_VERSION]
+    );
+    res.json({ accepted: Boolean(result.rowCount), version: RULES_VERSION });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/rules-accept", auth, rateLimitAction("rules", 5, 60 * 60 * 1000), async (req, res, next) => {
+  try {
+    if (req.body.accepted !== true) {
+      return res.status(400).json({ error: "Vous devez confirmer votre accord" });
+    }
+    await pool.query(
+      `INSERT INTO letchat_consents (user_id, rules_version, accepted_at)
+       VALUES ($1,$2,NOW())
+       ON CONFLICT (user_id) DO UPDATE SET rules_version=EXCLUDED.rules_version, accepted_at=NOW()`,
+      [req.user.id, RULES_VERSION]
+    );
+    res.json({ ok: true, version: RULES_VERSION });
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.get("/api/profile", auth, async (req, res, next) => {
   try {
@@ -448,7 +519,7 @@ app.get("/api/friends", auth, async (req, res, next) => {
   }
 });
 
-app.post("/api/friends/:userId", auth, async (req, res, next) => {
+app.post("/api/friends/:userId", auth, requireRules, rateLimitAction("friends", 10, 60 * 60 * 1000), async (req, res, next) => {
   try {
     const otherId = String(req.params.userId || "").slice(0, 200);
     if (!otherId || otherId === req.user.id) {
@@ -528,7 +599,7 @@ app.delete("/api/friends/:id", auth, async (req, res, next) => {
   }
 });
 
-app.post("/api/reports", auth, async (req, res, next) => {
+app.post("/api/reports", auth, rateLimitAction("reports", 5, 60 * 60 * 1000), async (req, res, next) => {
   try {
     const reportedId = String(req.body.reportedId || "").slice(0, 200);
     const reason = String(req.body.reason || "");
@@ -753,7 +824,7 @@ app.get("/api/media/:id", auth, async (req, res, next) => {
   }
 });
 
-app.post("/api/messages", auth, async (req, res, next) => {
+app.post("/api/messages", auth, requireRules, rateLimitAction("public-messages", 30, 60 * 1000), async (req, res, next) => {
   try {
     const body = String(req.body.body || "").trim().slice(0, 4000);
     const room = getRoom(req.body.room);
@@ -829,7 +900,7 @@ app.get("/api/private-media/:id", auth, async (req, res, next) => {
   }
 });
 
-app.post("/api/private", auth, async (req, res, next) => {
+app.post("/api/private", auth, requireRules, rateLimitAction("private-messages", 30, 60 * 1000), async (req, res, next) => {
   try {
     const recipientId = String(req.body.recipientId || "").slice(0, 200);
     const body = String(req.body.body || "").trim().slice(0, 4000);
@@ -955,6 +1026,12 @@ io.on("connection", socket => {
 
 async function deleteExpiredMessages() {
   try {
+    const bucketCutoff = Date.now() - 60 * 60 * 1000;
+    for (const [key, times] of actionBuckets) {
+      const active = times.filter(time => time > bucketCutoff);
+      if (active.length) actionBuckets.set(key, active);
+      else actionBuckets.delete(key);
+    }
     await pool.query(
       "DELETE FROM letchat_notifications WHERE created_at <= NOW() - INTERVAL '30 days'"
     );
