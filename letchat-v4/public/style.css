@@ -32,6 +32,23 @@
 .legal-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px 13px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #eee9e3; }
 .legal-links a { color: #6b6b68; font-size: 11px; text-decoration: none; }
 .legal-links a:hover, .legal-links a:focus { color: #315b76; text-decoration: underline; }
+.account-data { margin-top: 22px; padding-top: 16px; border-top: 1px solid #e8e3db; display: grid; gap: 9px; }
+.account-data h3, .account-data p { margin: 0; }
+.account-data p, .account-data small { color: #777; font-size: 12px; }
+.account-data button { width: 100%; min-height: 42px; border: 0; border-radius: 10px; font-weight: 800; }
+.account-export { background: #e6eef3; color: #294b61; }
+.account-delete { background: #ffe4e0; color: #a33229; }
+.age-modal { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 20px; background: #152027ed; }
+.age-card { width: min(480px,100%); background: #fff; border-radius: 22px; padding: 30px; box-shadow: 0 28px 90px #0006; }
+.age-icon { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 17px; background: #315b76; color: #fff; font-size: 20px; font-weight: 900; }
+.age-card h2 { margin: 18px 0 7px; }
+.age-card > p { color: #666; line-height: 1.5; }
+.age-agreement { display: flex; align-items: flex-start; gap: 10px; padding: 13px; border: 1px solid #ded8cf; border-radius: 11px; font-weight: 700; }
+.age-agreement input { margin-top: 3px; transform: scale(1.15); }
+.age-card > button { width: 100%; height: 46px; margin-top: 12px; border: 0; border-radius: 11px; font-weight: 800; }
+.age-card button[type=submit] { background: #315b76; color: #fff; }
+.age-card .age-leave { background: #f0ece6; color: #555; }
+@media(max-width:650px){.age-modal{align-items:end;padding:0}.age-card{border-radius:20px 20px 0 0;padding:24px 19px max(22px,env(safe-area-inset-bottom))}}
 #mobileProfileBtn { display: none; }
 @media(max-width:650px) {
   #mobileProfileBtn { display: inline-block; font-size: 17px; }
