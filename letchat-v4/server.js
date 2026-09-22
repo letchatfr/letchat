@@ -118,6 +118,16 @@ await pool.query(`
   ON letchat_reports(reporter_id, reported_id, created_at DESC);
 `);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_suspensions (
+    user_id TEXT PRIMARY KEY,
+    suspended_until TIMESTAMPTZ,
+    reason TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+`);
+
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
@@ -171,11 +181,29 @@ async function verify(token) {
   };
 }
 
+function isAdminUser(user) {
+  const emails = String(process.env.ADMIN_EMAIL || "")
+    .split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
+  const ids = String(process.env.ADMIN_UID || "")
+    .split(",").map(value => value.trim()).filter(Boolean);
+  return emails.includes(String(user.email || "").toLowerCase()) || ids.includes(String(user.id));
+}
+
 async function auth(req, res, next) {
   try {
     const token = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.query.t;
     if (!token) throw new Error("Jeton absent");
     req.user = await verify(String(token));
+    if (!isAdminUser(req.user)) {
+      const suspension = await pool.query(
+        `SELECT suspended_until FROM letchat_suspensions
+         WHERE user_id=$1 AND (suspended_until IS NULL OR suspended_until > NOW())`,
+        [req.user.id]
+      );
+      if (suspension.rowCount) {
+        return res.status(403).json({ error: "Compte suspendu par la modération" });
+      }
+    }
     const { rows } = await pool.query("SELECT display_name, photo FROM profiles WHERE user_id = $1", [req.user.id]);
     if (rows[0]?.display_name) req.user.name = rows[0].display_name;
     if (rows[0]?.photo) req.user.photo = rows[0].photo;
@@ -183,6 +211,13 @@ async function auth(req, res, next) {
   } catch {
     res.status(401).json({ error: "Connexion requise" });
   }
+}
+
+function adminAuth(req, res, next) {
+  if (!isAdminUser(req.user)) {
+    return res.status(403).json({ error: "Accès administrateur interdit" });
+  }
+  next();
 }
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -326,6 +361,92 @@ app.post("/api/reports", auth, async (req, res, next) => {
       [req.user.id, reportedId, reason, details]
     );
     res.status(201).json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/me", auth, (req, res) => {
+  res.json({ admin: isAdminUser(req.user) });
+});
+
+app.get("/api/admin/reports", auth, adminAuth, async (req, res, next) => {
+  try {
+    const status = ["pending", "resolved", "dismissed"].includes(String(req.query.status))
+      ? String(req.query.status) : "pending";
+    const { rows } = await pool.query(
+      `SELECT r.id, r.reporter_id, r.reported_id, r.reason, r.details,
+              r.status, r.created_at,
+              COALESCE(reporter.display_name, 'Utilisateur') AS reporter_name,
+              COALESCE(reported.display_name, 'Utilisateur') AS reported_name,
+              s.suspended_until,
+              (s.user_id IS NOT NULL AND (s.suspended_until IS NULL OR s.suspended_until > NOW())) AS suspended
+       FROM letchat_reports r
+       LEFT JOIN profiles reporter ON reporter.user_id = r.reporter_id
+       LEFT JOIN profiles reported ON reported.user_id = r.reported_id
+       LEFT JOIN letchat_suspensions s ON s.user_id = r.reported_id
+       WHERE r.status = $1
+       ORDER BY r.created_at DESC
+       LIMIT 200`,
+      [status]
+    );
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/admin/reports/:id", auth, adminAuth, async (req, res, next) => {
+  try {
+    const status = String(req.body.status || "");
+    if (!["pending", "resolved", "dismissed"].includes(status)) {
+      return res.status(400).json({ error: "Statut incorrect" });
+    }
+    const result = await pool.query(
+      "UPDATE letchat_reports SET status=$1 WHERE id=$2 RETURNING id, status",
+      [status, req.params.id]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "Signalement introuvable" });
+    res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, next) => {
+  try {
+    const userId = String(req.params.userId || "").slice(0, 200);
+    const duration = String(req.body.duration || "24h");
+    const reason = String(req.body.reason || "Signalement traité par la modération").trim().slice(0, 500);
+    if (!userId || userId === req.user.id) {
+      return res.status(400).json({ error: "Compte incorrect" });
+    }
+    const intervals = { "24h": "1 day", "7d": "7 days" };
+    if (!["24h", "7d", "permanent"].includes(duration)) {
+      return res.status(400).json({ error: "Durée incorrecte" });
+    }
+    const until = duration === "permanent" ? null : intervals[duration];
+    await pool.query(
+      `INSERT INTO letchat_suspensions (user_id, suspended_until, reason, updated_by)
+       VALUES ($1, CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() + $2::interval END, $3, $4)
+       ON CONFLICT (user_id) DO UPDATE SET
+         suspended_until=EXCLUDED.suspended_until, reason=EXCLUDED.reason,
+         updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
+      [userId, until, reason, req.user.id]
+    );
+    for (const [socketId, entry] of online) {
+      if (entry.user.id === userId) io.sockets.sockets.get(socketId)?.disconnect(true);
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, next) => {
+  try {
+    await pool.query("DELETE FROM letchat_suspensions WHERE user_id=$1", [String(req.params.userId)]);
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -570,6 +691,14 @@ function emitPresence(room) {
 io.use(async (socket, next) => {
   try {
     socket.user = await verify(socket.handshake.auth?.token);
+    if (!isAdminUser(socket.user)) {
+      const suspension = await pool.query(
+        `SELECT 1 FROM letchat_suspensions
+         WHERE user_id=$1 AND (suspended_until IS NULL OR suspended_until > NOW())`,
+        [socket.user.id]
+      );
+      if (suspension.rowCount) return next(new Error("suspended"));
+    }
     const { rows } = await pool.query(
       "SELECT display_name, photo, city, bio, gender, location_visible FROM profiles WHERE user_id = $1",
       [socket.user.id]
