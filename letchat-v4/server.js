@@ -62,6 +62,7 @@ await pool.query(`
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT '';
+  ALTER TABLE profiles ADD COLUMN IF NOT EXISTS gender TEXT NOT NULL DEFAULT 'neutral';
 `);
 
 await pool.query(`
@@ -160,7 +161,7 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.get("/api/profile", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      "SELECT display_name, photo, city, bio, location_visible FROM profiles WHERE user_id = $1",
+      "SELECT display_name, photo, city, bio, gender, location_visible FROM profiles WHERE user_id = $1",
       [req.user.id]
     );
     res.json(rows[0] || null);
@@ -175,21 +176,22 @@ app.put("/api/profile", auth, async (req, res, next) => {
     const city = clean(req.body.city);
     const displayName = clean(req.body.displayName) || req.user.name;
     const bio = String(req.body.bio || "").trim().slice(0, 280);
+    const gender = ["female", "male"].includes(String(req.body.gender)) ? String(req.body.gender) : "neutral";
     const locationVisible = req.body.locationVisible !== false;
     if (!city) {
       return res.status(400).json({ error: "Ville obligatoire" });
     }
     const { rows } = await pool.query(
       `INSERT INTO profiles
-       (user_id, email, display_name, photo, region, department, city, bio, location_visible)
-       VALUES ($1,$2,$3,$4,'','',$5,$6,$7)
+       (user_id, email, display_name, photo, region, department, city, bio, gender, location_visible)
+       VALUES ($1,$2,$3,$4,'','',$5,$6,$7,$8)
        ON CONFLICT (user_id) DO UPDATE SET
          email=EXCLUDED.email, display_name=EXCLUDED.display_name,
          photo=EXCLUDED.photo, region='',
-         department='', city=EXCLUDED.city, bio=EXCLUDED.bio,
+         department='', city=EXCLUDED.city, bio=EXCLUDED.bio, gender=EXCLUDED.gender,
          location_visible=EXCLUDED.location_visible, updated_at=NOW()
-       RETURNING display_name, photo, city, bio, location_visible`,
-      [req.user.id, req.user.email, displayName, req.user.photo, city, bio, locationVisible]
+       RETURNING display_name, photo, city, bio, gender, location_visible`,
+      [req.user.id, req.user.email, displayName, req.user.photo, city, bio, gender, locationVisible]
     );
     for (const [socketId, entry] of online) {
       if (entry.user.id === req.user.id) {
@@ -208,7 +210,7 @@ app.put("/api/profile", auth, async (req, res, next) => {
 app.get("/api/profile/:userId", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT user_id, display_name, photo, bio,
+      `SELECT user_id, display_name, photo, bio, gender,
               CASE WHEN location_visible THEN city ELSE '' END AS city
        FROM profiles WHERE user_id = $1`,
       [String(req.params.userId)]
@@ -430,6 +432,7 @@ function emitPresence(room) {
       name: entry.user.name,
       photo: entry.user.photo,
       bio: entry.user.profile?.bio || "",
+      gender: entry.user.profile?.gender || "neutral",
       location: entry.user.profile?.location_visible ? {
         city: entry.user.profile.city
       } : null
@@ -441,7 +444,7 @@ io.use(async (socket, next) => {
   try {
     socket.user = await verify(socket.handshake.auth?.token);
     const { rows } = await pool.query(
-      "SELECT display_name, photo, city, bio, location_visible FROM profiles WHERE user_id = $1",
+      "SELECT display_name, photo, city, bio, gender, location_visible FROM profiles WHERE user_id = $1",
       [socket.user.id]
     );
     socket.user.profile = rows[0] || null;
