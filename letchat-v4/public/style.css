@@ -28,6 +28,10 @@
 .person-button { width: 100%; border: 0; background: transparent; text-align: left; padding: 0; cursor: pointer; color: inherit; }
 .person-button:hover { background: #f6f2ed; border-radius: 10px; }
 .login-error { margin: 0 0 14px; padding: 10px; border-radius: 9px; background: #fff0ed; color: #a13f31; font-size: 12px; line-height: 1.4; }
+.login-card small a { color: #315b76; font-weight: 700; }
+.legal-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px 13px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #eee9e3; }
+.legal-links a { color: #6b6b68; font-size: 11px; text-decoration: none; }
+.legal-links a:hover, .legal-links a:focus { color: #315b76; text-decoration: underline; }
 #mobileProfileBtn { display: none; }
 @media(max-width:650px) {
   #mobileProfileBtn { display: inline-block; font-size: 17px; }
