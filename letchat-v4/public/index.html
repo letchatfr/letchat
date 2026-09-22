@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#f36f58" />
     <title>Letchat</title>
-    <link rel="stylesheet" href="style.css?v=conversations-1" />
+    <link rel="stylesheet" href="style.css?v=conversation-tools-1" />
   </head>
   <body>
     <section id="login" class="login">
@@ -141,6 +141,10 @@
         <section class="conversation-section">
           <div class="conversation-heading">
             <h2>Conversations</h2><span id="conversationTotal" class="conversation-total hidden">0</span>
+          </div>
+          <div class="conversation-tabs">
+            <button id="activeConversations" class="active" type="button">Actives</button>
+            <button id="archivedConversations" type="button">Archivées</button>
           </div>
           <div id="conversationList" class="conversation-list">
             <p class="no-conversations">Aucune conversation privée.</p>
@@ -402,6 +406,6 @@
       </footer>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=conversations-1"></script>
+    <script type="module" src="app.js?v=conversation-tools-1"></script>
   </body>
 </html>

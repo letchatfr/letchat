@@ -36,6 +36,7 @@ let user,
   blockedUsers = new Map(),
   friendRelations = new Map(),
   privateConversations = [],
+  showArchivedConversations = false,
   notifications = [],
   lastPeople = [],
   iceServers = [],
@@ -549,22 +550,63 @@ function renderPrivateConversations() {
   const unreadTotal = privateConversations.reduce((sum, row) => sum + Number(row.unread_count || 0), 0);
   total.textContent = unreadTotal > 99 ? "99+" : String(unreadTotal);
   total.classList.toggle("hidden", unreadTotal === 0);
-  box.innerHTML = privateConversations.length
-    ? privateConversations.map(row => {
+  const displayed = privateConversations.filter(row => Boolean(row.archived) === showArchivedConversations);
+  $("#activeConversations")?.classList.toggle("active", !showArchivedConversations);
+  $("#archivedConversations")?.classList.toggle("active", showArchivedConversations);
+  box.innerHTML = displayed.length
+    ? displayed.map(row => {
         const unread = Number(row.unread_count || 0), mine = row.last_sender_id === user.uid;
-        return `<button class="conversation-item ${unread ? "unread" : ""} ${currentPrivate?.id === String(row.user_id) ? "active" : ""}" data-conversation-id="${safe(row.user_id)}" data-conversation-name="${safe(row.display_name)}">
-          <span class="conversation-avatar ${safe(`gender-${row.gender || "neutral"}`)}">${row.photo ? `<img src="${safe(row.photo)}" alt="">` : safe(initials(row.display_name))}</span>
-          <span class="conversation-content"><span class="conversation-line"><strong>${safe(row.display_name)}</strong><time>${conversationTime(row.last_message_at)}</time></span><span class="conversation-line"><small>${mine ? "Vous : " : ""}${safe(privatePreview(row))}</small>${unread ? `<b>${unread > 99 ? "99+" : unread}</b>` : ""}</span></span>
-        </button>`;
+        return `<div class="conversation-item ${unread ? "unread" : ""} ${currentPrivate?.id === String(row.user_id) ? "active" : ""}">
+          <button class="conversation-open" data-conversation-id="${safe(row.user_id)}" data-conversation-name="${safe(row.display_name)}">
+            <span class="conversation-avatar ${safe(`gender-${row.gender || "neutral"}`)}">${row.photo ? `<img src="${safe(row.photo)}" alt="">` : safe(initials(row.display_name))}</span>
+            <span class="conversation-content"><span class="conversation-line"><strong>${safe(row.display_name)}${row.muted ? " 🔕" : ""}</strong><time>${conversationTime(row.last_message_at)}</time></span><span class="conversation-line"><small>${mine ? "Vous : " : ""}${safe(privatePreview(row))}</small>${unread ? `<b>${unread > 99 ? "99+" : unread}</b>` : ""}</span></span>
+          </button>
+          <span class="conversation-actions"><button data-mute-conversation="${safe(row.user_id)}" title="${row.muted ? "Réactiver les notifications" : "Mettre en sourdine"}">${row.muted ? "🔔" : "🔕"}</button><button data-archive-conversation="${safe(row.user_id)}" title="${row.archived ? "Désarchiver" : "Archiver"}">${row.archived ? "↥" : "▣"}</button><button data-delete-conversation="${safe(row.user_id)}" data-delete-name="${safe(row.display_name)}" title="Supprimer de ma liste">×</button></span>
+        </div>`;
       }).join("")
-    : '<p class="no-conversations">Aucune conversation privée.</p>';
+    : `<p class="no-conversations">${showArchivedConversations ? "Aucune conversation archivée." : "Aucune conversation privée."}</p>`;
   box.querySelectorAll("[data-conversation-id]").forEach(button => {
     button.onclick = () => {
       openPrivate(button.dataset.conversationId, button.dataset.conversationName);
       $(".people").classList.remove("open");
     };
   });
+  box.querySelectorAll("[data-mute-conversation]").forEach(button => button.onclick = () => {
+    const row = privateConversations.find(item => String(item.user_id) === button.dataset.muteConversation);
+    updateConversationPreference(row.user_id, { muted: !row.muted });
+  });
+  box.querySelectorAll("[data-archive-conversation]").forEach(button => button.onclick = () => {
+    const row = privateConversations.find(item => String(item.user_id) === button.dataset.archiveConversation);
+    updateConversationPreference(row.user_id, { archived: !row.archived });
+  });
+  box.querySelectorAll("[data-delete-conversation]").forEach(button => button.onclick = () => {
+    deleteConversation(button.dataset.deleteConversation, button.dataset.deleteName);
+  });
 }
+async function updateConversationPreference(id, changes) {
+  try {
+    await api(`/api/private-conversations/${encodeURIComponent(id)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes),
+    });
+    await loadPrivateConversations();
+  } catch (e) { showError(e.message); }
+}
+async function deleteConversation(id, name) {
+  if (!confirm(`Retirer votre conversation avec ${name} de votre liste ?\n\nElle restera visible chez l’autre personne.`)) return;
+  try {
+    await api(`/api/private-conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (currentPrivate?.id === String(id)) {
+      currentPrivate = null;
+      $("#blockBtn").classList.add("hidden");
+      $("#reportBtn").classList.add("hidden");
+      $(".chat header h1").textContent = rooms[currentRoom].title;
+      load();
+    }
+    await loadPrivateConversations();
+  } catch (e) { showError(e.message); }
+}
+$("#activeConversations").onclick = () => { showArchivedConversations = false; renderPrivateConversations(); };
+$("#archivedConversations").onclick = () => { showArchivedConversations = true; renderPrivateConversations(); };
 function openPrivate(id, name) {
   if (id === user.uid)
     return showError("Vous ne pouvez pas vous écrire à vous-même");
@@ -586,6 +628,7 @@ function showPrivateNotification(m) {
   if (m.user_id === user.uid || blockedUsers.has(String(m.user_id))) return;
   const senderId = String(m.user_id),
     senderName = m.author || "Nouveau contact";
+  const preference = privateConversations.find(row => String(row.user_id) === senderId);
   markPrivateDelivered(senderId);
   if (currentPrivate?.id === senderId) {
     addMessage(m);
@@ -594,6 +637,7 @@ function showPrivateNotification(m) {
   }
   unreadPrivate.set(senderId, (unreadPrivate.get(senderId) || 0) + 1);
   updateUnread();
+  if (preference?.muted) return;
   const toast = $("#messageToast");
   toast.textContent = `💬 ${senderName} : ${m.body || "Nouveau média"}`;
   toast.classList.remove("hidden");
