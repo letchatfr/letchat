@@ -1648,6 +1648,32 @@ io.on("connection", socket => {
     socket.to(socket.room).emit("typing", { name: socket.user.name, active: Boolean(value) });
   });
 
+  socket.on("private-typing", async payload => {
+    const target = String(payload?.target || "").slice(0, 200);
+    const active = Boolean(payload?.active);
+    if (!target || target === socket.user.id) return;
+    const sequence = (socket.privateTypingSequence || 0) + 1;
+    socket.privateTypingSequence = sequence;
+    if (active) {
+      const blocked = await pool.query(
+        `SELECT 1 FROM letchat_blocks
+         WHERE (blocker_id=$1 AND blocked_id=$2)
+            OR (blocker_id=$2 AND blocked_id=$1) LIMIT 1`,
+        [socket.user.id, target]
+      ).catch(() => ({ rowCount: 1 }));
+      if (socket.privateTypingSequence !== sequence) return;
+      if (blocked.rowCount) return;
+      socket.privateTypingTarget = target;
+    } else if (socket.privateTypingTarget === target) {
+      socket.privateTypingTarget = null;
+    }
+    io.to(`user:${target}`).emit("private-typing", {
+      userId: socket.user.id,
+      name: socket.user.name,
+      active
+    });
+  });
+
   socket.on("webrtc", ({ target, data }) => {
     const signal = { from: socket.id, user: socket.user, data };
     if (target) io.to(target).emit("webrtc", signal);
@@ -1656,6 +1682,13 @@ io.on("connection", socket => {
 
   socket.on("disconnect", () => {
     const room = socket.room;
+    if (socket.privateTypingTarget) {
+      io.to(`user:${socket.privateTypingTarget}`).emit("private-typing", {
+        userId: socket.user.id,
+        name: socket.user.name,
+        active: false
+      });
+    }
     online.delete(socket.id);
     pool.query("UPDATE profiles SET last_seen=NOW() WHERE user_id=$1", [socket.user.id]).catch(() => {});
     emitPresence(room);
