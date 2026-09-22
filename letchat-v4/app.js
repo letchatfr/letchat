@@ -9,14 +9,7 @@ $("#googleLogin").onclick=async()=>{
 
   try{
     await setPersistence(auth,browserLocalPersistence);
-    const mobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-if(mobile){
-  await signInWithRedirect(auth,provider);
-  return;
-}
-
-await signInWithPopup(auth,provider);
+    await signInWithPopup(auth,provider);
   }catch(error){
     console.error("Connexion Google :",error);
 
