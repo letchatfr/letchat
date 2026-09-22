@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#f36f58" />
     <title>Letchat</title>
-    <link rel="stylesheet" href="style.css?v=conversation-tools-1" />
+    <link rel="stylesheet" href="style.css?v=view-once-1" />
   </head>
   <body>
     <section id="login" class="login">
@@ -131,6 +131,7 @@
               id="input"
               placeholder="Écrivez votre message…"
             ></textarea
+            ><button id="viewOnceBtn" class="hidden" type="button" title="Photo ou vidéo visible une seule fois">①</button
             ><button id="emoji">☺</button><button id="send">➤</button>
           </div>
           <small>Entrée pour envoyer · Médias jusqu’à 8 Mo</small>
@@ -406,6 +407,6 @@
       </footer>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=conversation-tools-1"></script>
+    <script type="module" src="app.js?v=view-once-1"></script>
   </body>
 </html>

@@ -50,6 +50,7 @@ let user,
   voiceInterval = null,
   voiceStartedAt = 0,
   voiceCancelled = false,
+  viewOnceEnabled = false,
   pendingProfilePhoto = null,
   viewedProfile = null,
   sessionStarted = false;
@@ -366,7 +367,12 @@ function addMessage(m, force = false) {
     Array.isArray(m.my_reactions) ? m.my_reactions : [],
   );
   const base = m.private ? "/api/private-media" : "/api/media",
-    media = m.has_media
+    viewOnceUnavailable = m.view_once && !mine && (m.opened_at || !m.has_media),
+    media = viewOnceUnavailable
+      ? `<div class="view-once-expired">◉ Média déjà ouvert</div>`
+      : m.view_once && !mine
+        ? `<button class="view-once-open" type="button" data-view-once-id="${m.id}" data-view-once-type="${safe(m.media_type || "")}"><b>①</b><span>Ouvrir ${m.media_type?.startsWith("video/") ? "la vidéo" : "la photo"}</span><small>Visible une seule fois</small></button>`
+      : m.has_media
       ? m.media_type?.startsWith("image/")
         ? `<img class="media" src="${base}/${m.id}?t=${encodeURIComponent(token)}">`
         : m.media_type?.startsWith("audio/")
@@ -383,6 +389,7 @@ function addMessage(m, force = false) {
   a.querySelector(".delete-action")?.addEventListener("click", () =>
     deleteOwnMessage(m),
   );
+  a.querySelector(".view-once-open")?.addEventListener("click", openViewOnceMedia);
   a.querySelectorAll("[data-pick-reaction]").forEach(
     (button) =>
       (button.onclick = () => {
@@ -397,6 +404,31 @@ function addMessage(m, force = false) {
     () => ($("#messages").scrollTop = $("#messages").scrollHeight),
   );
 }
+async function openViewOnceMedia(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const response = await api(`/api/private-media/${encodeURIComponent(button.dataset.viewOnceId)}`);
+    const blob = await response.blob(), url = URL.createObjectURL(blob);
+    const element = button.dataset.viewOnceType.startsWith("video/")
+      ? document.createElement("video") : document.createElement("img");
+    element.className = "media view-once-media";
+    element.src = url;
+    if (element.tagName === "VIDEO") { element.controls = true; element.autoplay = true; element.playsInline = true; }
+    if (element.tagName === "VIDEO") element.onended = () => URL.revokeObjectURL(url);
+    else element.onload = () => URL.revokeObjectURL(url);
+    const wrapper = document.createElement("div");
+    wrapper.className = "view-once-opened";
+    wrapper.append(element);
+    const note = document.createElement("small");
+    note.textContent = "Ce média disparaîtra en quittant la conversation";
+    wrapper.append(note);
+    button.replaceWith(wrapper);
+  } catch (e) {
+    button.replaceWith(Object.assign(document.createElement("div"), { className: "view-once-expired", textContent: "◉ Média déjà ouvert" }));
+    showError(e.message);
+  }
+}
 async function send(media) {
   const body = $("#input").value.trim();
   if (!body && !media) return;
@@ -409,7 +441,7 @@ async function send(media) {
           ? replyingTo.id
           : null,
       payload = currentPrivate
-        ? { body, recipientId: currentPrivate.id, replyToId, ...media }
+        ? { body, recipientId: currentPrivate.id, replyToId, viewOnce: Boolean(media && viewOnceEnabled), ...media }
         : { body, room: currentRoom, replyToId, ...media };
     const m = await (
       await api(path, {
@@ -422,6 +454,8 @@ async function send(media) {
     loadPrivateConversations();
     $("#input").value = "";
     clearReply();
+    viewOnceEnabled = false;
+    updateViewOnceButton();
     $("#input").focus();
   } catch (e) {
     showError(e.message);
@@ -597,6 +631,8 @@ async function deleteConversation(id, name) {
     await api(`/api/private-conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (currentPrivate?.id === String(id)) {
       currentPrivate = null;
+      viewOnceEnabled = false;
+      updateViewOnceButton();
       $("#blockBtn").classList.add("hidden");
       $("#reportBtn").classList.add("hidden");
       $(".chat header h1").textContent = rooms[currentRoom].title;
@@ -616,6 +652,7 @@ function openPrivate(id, name) {
   unreadPrivate.delete(id);
   updateUnread();
   currentPrivate = { id, name };
+  updateViewOnceButton();
   renderPrivateConversations();
   $("#blockBtn").classList.remove("hidden");
   $("#reportBtn").classList.remove("hidden");
@@ -997,6 +1034,12 @@ function connect() {
   socket.on("message", (m) => addMessage(m));
   socket.on("private-message", showPrivateNotification);
   socket.on("private-receipt", updatePrivateReceipts);
+  socket.on("view-once-opened", payload => {
+    const article = document.querySelector(`[data-key="p-${CSS.escape(String(payload.id))}"]`);
+    if (article) {
+      article.querySelector(".view-once-open, .media")?.replaceWith(Object.assign(document.createElement("div"), { className: "view-once-expired", textContent: "✓ Média ouvert" }));
+    }
+  });
   socket.on("message-reactions", updateMessageReactions);
   socket.on("message-deleted", (payload) => {
     removeMessage(payload.id, payload.private);
@@ -1378,6 +1421,8 @@ $("#blockBtn").onclick = async () => {
     });
     await loadFriends();
     currentPrivate = null;
+    viewOnceEnabled = false;
+    updateViewOnceButton();
     $("#blockBtn").classList.add("hidden");
     $("#reportBtn").classList.add("hidden");
     $(".chat header h1").textContent = rooms[currentRoom].title;
@@ -1389,12 +1434,24 @@ $("#blockBtn").onclick = async () => {
   }
 };
 const roomLinks = [...document.querySelectorAll(".room")];
+function updateViewOnceButton() {
+  const button = $("#viewOnceBtn");
+  button.classList.toggle("hidden", !currentPrivate);
+  button.classList.toggle("active", viewOnceEnabled && Boolean(currentPrivate));
+  button.title = viewOnceEnabled ? "Visible une seule fois activé" : "Photo ou vidéo visible une seule fois";
+}
+$("#viewOnceBtn").onclick = () => {
+  viewOnceEnabled = !viewOnceEnabled;
+  updateViewOnceButton();
+};
 ["cafe", "creatifs", "entraide"].forEach((id, index) => {
   const link = roomLinks[index];
   if (!link) return;
   link.onclick = () => {
     clearReply();
     currentPrivate = null;
+    viewOnceEnabled = false;
+    updateViewOnceButton();
     $("#blockBtn").classList.add("hidden");
     $("#reportBtn").classList.add("hidden");
     if (currentRoom !== id) {
@@ -1412,6 +1469,8 @@ document.querySelector(".new").onclick = () => $("#input").focus();
 document.querySelector(".side nav a.active").onclick = () => {
   clearReply();
   currentPrivate = null;
+  viewOnceEnabled = false;
+  updateViewOnceButton();
   $("#blockBtn").classList.add("hidden");
   $("#reportBtn").classList.add("hidden");
   $(".chat header h1").textContent = rooms[currentRoom].title;

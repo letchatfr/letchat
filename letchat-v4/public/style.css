@@ -252,6 +252,15 @@
 .conversation-line b { min-width: 19px; height: 19px; display: inline-grid; place-items: center; border-radius: 20px; padding: 0 5px; background: #e53935; color: white; font-size: 9px; }
 .no-conversations { margin: 9px 4px; color: #999; font-size: 12px; }
 @media(max-width:650px) { .conversation-actions { opacity: 1; } }
+.composer #viewOnceBtn { border-radius: 9px; color: #315b76; font-weight: 900; }
+.composer #viewOnceBtn.active { background: #315b76; color: #fff; }
+.view-once-open { width: min(300px, 70vw); margin-top: 7px; display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto auto; gap: 2px 9px; align-items: center; border: 1px solid #b9d0de; border-radius: 13px; padding: 11px; background: #edf6fb; color: #294e64; text-align: left; cursor: pointer; }
+.view-once-open b { grid-row: 1 / 3; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: #315b76; color: white; font-size: 19px; }
+.view-once-open span { font-weight: 800; }
+.view-once-open small { color: #6f8795; }
+.view-once-expired { margin-top: 7px; padding: 10px 12px; border-radius: 11px; background: #f0ede8; color: #888; font-size: 12px; font-weight: 700; }
+.view-once-opened { display: grid; gap: 5px; }
+.view-once-opened small { color: #9b5b45; font-size: 10px; }
 .notifications-button { position: relative; }
 .notifications-button .unread-badge { position: absolute; right: -6px; top: -7px; }
 .notifications-modal { position: fixed; inset: 0; z-index: 145; background: #10171999; padding: 24px; display: grid; place-items: center; }
