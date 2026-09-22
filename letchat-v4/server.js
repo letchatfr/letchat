@@ -677,6 +677,7 @@ app.put("/api/profile", auth, async (req, res, next) => {
         emitPresence(entry.room);
       }
     }
+    emitPrivateStatus(req.user.id).catch(() => {});
     res.json(rows[0]);
   } catch (error) {
     next(error);
@@ -1577,6 +1578,31 @@ app.delete("/api/messages/:kind/:id", auth, requireAdult, async (req, res, next)
 
 const online = new Map();
 
+function userIsOnline(userId) {
+  return [...online.values()].some(entry => entry.user.id === userId);
+}
+
+async function getPrivateStatus(userId) {
+  const active = [...online.values()].find(entry => entry.user.id === userId);
+  if (active) {
+    return {
+      userId,
+      online: true,
+      availability: active.user.profile?.availability || "available",
+      lastSeen: new Date().toISOString()
+    };
+  }
+  const { rows } = await pool.query(
+    "SELECT availability,last_seen FROM profiles WHERE user_id=$1",
+    [userId]
+  );
+  return { userId, online: false, availability: rows[0]?.availability || "available", lastSeen: rows[0]?.last_seen || null };
+}
+
+async function emitPrivateStatus(userId) {
+  io.to(`watch-status:${userId}`).emit("private-status", await getPrivateStatus(userId));
+}
+
 function emitPresence(room) {
   const people = [...online.values()]
     .filter(entry => entry.room === room)
@@ -1631,6 +1657,17 @@ io.on("connection", socket => {
   socket.join(socket.room);
   online.set(socket.id, { user: socket.user, room: socket.room });
   emitPresence(socket.room);
+  emitPrivateStatus(socket.user.id).catch(() => {});
+
+  socket.on("watch-private-status", async value => {
+    const target = String(value || "").slice(0, 200);
+    if (socket.watchedStatusUser) socket.leave(`watch-status:${socket.watchedStatusUser}`);
+    socket.watchedStatusUser = null;
+    if (!target || target === socket.user.id) return;
+    socket.watchedStatusUser = target;
+    socket.join(`watch-status:${target}`);
+    try { socket.emit("private-status", await getPrivateStatus(target)); } catch {}
+  });
 
   socket.on("join-room", value => {
     const nextRoom = getRoom(value);
@@ -1680,7 +1717,7 @@ io.on("connection", socket => {
     else socket.to(socket.room).emit("webrtc", signal);
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     const room = socket.room;
     if (socket.privateTypingTarget) {
       io.to(`user:${socket.privateTypingTarget}`).emit("private-typing", {
@@ -1690,7 +1727,10 @@ io.on("connection", socket => {
       });
     }
     online.delete(socket.id);
-    pool.query("UPDATE profiles SET last_seen=NOW() WHERE user_id=$1", [socket.user.id]).catch(() => {});
+    if (!userIsOnline(socket.user.id)) {
+      await pool.query("UPDATE profiles SET last_seen=NOW() WHERE user_id=$1", [socket.user.id]).catch(() => {});
+      await emitPrivateStatus(socket.user.id).catch(() => {});
+    }
     emitPresence(room);
   });
 });
