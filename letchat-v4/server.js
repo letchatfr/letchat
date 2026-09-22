@@ -93,6 +93,10 @@ await pool.query(`
   ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
   ALTER TABLE letchat_private_messages
   ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+  ALTER TABLE letchat_private_messages
+  ADD COLUMN IF NOT EXISTS view_once BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE letchat_private_messages
+  ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ;
   UPDATE letchat_private_messages
   SET expires_at = created_at + INTERVAL '48 hours'
   WHERE expires_at < created_at + INTERVAL '48 hours';
@@ -523,7 +527,7 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
     const [profile, publicMessages, privateMessages, friends, blocks, notifications, reports, consents, conversationPreferences] = await Promise.all([
       pool.query("SELECT user_id,email,display_name,photo,city,bio,gender,availability,last_seen,location_visible,updated_at FROM profiles WHERE user_id=$1", [uid]),
       pool.query("SELECT id,author,room,body,media_type,created_at,expires_at FROM letchat_messages WHERE user_id=$1 ORDER BY created_at", [uid]),
-      pool.query(`SELECT id,sender_id,recipient_id,sender_name,body,media_type,created_at,expires_at
+      pool.query(`SELECT id,sender_id,recipient_id,sender_name,body,media_type,view_once,opened_at,created_at,expires_at
                   FROM letchat_private_messages WHERE sender_id=$1 OR recipient_id=$1 ORDER BY created_at`, [uid]),
       pool.query("SELECT id,requester_id,addressee_id,status,created_at,updated_at FROM letchat_friends WHERE requester_id=$1 OR addressee_id=$1", [uid]),
       pool.query("SELECT blocker_id,blocked_id,created_at FROM letchat_blocks WHERE blocker_id=$1 OR blocked_id=$1", [uid]),
@@ -1284,7 +1288,7 @@ app.get("/api/private/:otherId", auth, requireAdult, async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.sender_name AS author,
               m.sender_photo AS photo, m.body, m.media_type, m.created_at, m.expires_at,
-              m.delivered_at, m.read_at,
+              m.delivered_at, m.read_at, m.view_once, m.opened_at,
               m.reply_to_id, parent.sender_name AS reply_author, parent.body AS reply_body,
               (m.media_data IS NOT NULL) AS has_media,
               COALESCE((SELECT jsonb_object_agg(x.emoji, x.total) FROM (
@@ -1313,19 +1317,53 @@ app.get("/api/private/:otherId", auth, requireAdult, async (req, res, next) => {
 });
 
 app.get("/api/private-media/:id", auth, requireAdult, async (req, res, next) => {
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
-      `SELECT media_data, media_type FROM letchat_private_messages
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `SELECT media_data, media_type, sender_id, recipient_id, view_once, opened_at
+       FROM letchat_private_messages
        WHERE id=$1 AND expires_at > NOW()
-         AND (sender_id=$2 OR recipient_id=$2)`,
+         AND (sender_id=$2 OR recipient_id=$2)
+       FOR UPDATE`,
       [req.params.id, req.user.id]
     );
-    if (!rows[0]?.media_data) return res.sendStatus(404);
-    res.type(rows[0].media_type)
-      .set("Cache-Control", "private, no-store")
-      .send(rows[0].media_data);
+    const media = rows[0];
+    if (!media) {
+      await client.query("ROLLBACK");
+      return res.sendStatus(404);
+    }
+    if (!media.media_data) {
+      await client.query("ROLLBACK");
+      return res.status(media.view_once && media.opened_at ? 410 : 404).json({
+        error: media.view_once ? "Ce média a déjà été ouvert" : "Média introuvable"
+      });
+    }
+    let openedAt = media.opened_at;
+    if (media.view_once && media.recipient_id === req.user.id) {
+      openedAt = new Date();
+      await client.query(
+        `UPDATE letchat_private_messages
+         SET opened_at=$2, media_data=NULL
+         WHERE id=$1`,
+        [req.params.id, openedAt]
+      );
+    }
+    await client.query("COMMIT");
+    if (openedAt) res.set("X-Letchat-Opened-At", new Date(openedAt).toISOString());
+    res.type(media.media_type)
+      .set("Cache-Control", "private, no-store, max-age=0")
+      .send(media.media_data);
+    if (media.view_once && media.recipient_id === req.user.id) {
+      io.to(`user:${media.sender_id}`).emit("view-once-opened", {
+        id: String(req.params.id), opened_at: new Date(openedAt).toISOString()
+      });
+    }
   } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
     next(error);
+  } finally {
+    client.release();
   }
 });
 
@@ -1335,6 +1373,7 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
     const body = String(req.body.body || "").trim().slice(0, 4000);
     const replyToId = req.body.replyToId ? String(req.body.replyToId) : null;
     const mediaType = String(req.body.mediaType || "");
+    const viewOnce = req.body.viewOnce === true;
     const media = req.body.mediaBase64
       ? Buffer.from(String(req.body.mediaBase64), "base64") : null;
     if (!recipientId || recipientId === req.user.id) {
@@ -1354,6 +1393,9 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
     if (media && !/^(image|video|audio)\//.test(mediaType)) {
       return res.status(415).json({ error: "Format non accepté" });
     }
+    if (viewOnce && (!media || !/^(image|video)\//.test(mediaType))) {
+      return res.status(400).json({ error: "Le mode visible une fois est réservé aux photos et vidéos" });
+    }
     let reply = null;
     if (replyToId) {
       const result = await pool.query(
@@ -1367,13 +1409,13 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
     }
     const { rows } = await pool.query(
       `INSERT INTO letchat_private_messages
-       (sender_id,recipient_id,sender_name,sender_photo,body,media_data,media_type,reply_to_id)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+       (sender_id,recipient_id,sender_name,sender_photo,body,media_data,media_type,reply_to_id,view_once)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
        RETURNING id, sender_id AS user_id, sender_name AS author,
                  sender_photo AS photo, body, media_type, created_at, expires_at, reply_to_id,
-                 delivered_at, read_at,
+                 delivered_at, read_at, view_once, opened_at,
                  (media_data IS NOT NULL) AS has_media`,
-      [req.user.id, recipientId, req.user.name, req.user.photo, body, media, mediaType || null, reply?.id || null]
+      [req.user.id, recipientId, req.user.name, req.user.photo, body, media, mediaType || null, reply?.id || null, viewOnce]
     );
     const message = { ...rows[0], private: true, recipient_id: recipientId, reply_author: reply?.author || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
     await pool.query(
