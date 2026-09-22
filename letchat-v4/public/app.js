@@ -48,6 +48,8 @@ let user,
   voiceInterval = null,
   voiceStartedAt = 0,
   voiceCancelled = false,
+  pendingProfilePhoto = null,
+  viewedProfile = null,
   sessionStarted = false;
 const rooms = {
   cafe: { title: "☀ Le Café", welcome: "Bienvenue au Café" },
@@ -169,6 +171,7 @@ async function load() {
           await api(`/api/private/${encodeURIComponent(selected.id)}`)
         ).json();
       if (currentPrivate?.id === selected.id) render(rows);
+      if (currentPrivate?.id === selected.id && document.visibilityState === "visible") markPrivateRead(selected.id);
       return;
     }
     const room = currentRoom,
@@ -313,6 +316,23 @@ async function deleteOwnMessage(m) {
     showError(e.message);
   }
 }
+function receiptText(deliveredAt, readAt) {
+  if (readAt) return `✓✓ Lu à ${new Date(readAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+  if (deliveredAt) return "✓✓ Reçu";
+  return "✓ Envoyé";
+}
+function updatePrivateReceipts(payload) {
+  (payload.messages || []).forEach(item => {
+    const status = document.querySelector(`[data-key="p-${item.id}"] .message-status`);
+    if (status) status.textContent = receiptText(item.delivered_at, item.read_at);
+  });
+}
+async function markPrivateDelivered(otherId) {
+  try { updatePrivateReceipts(await (await api(`/api/private/${encodeURIComponent(otherId)}/delivered`, { method: "PATCH" })).json()) } catch {}
+}
+async function markPrivateRead(otherId) {
+  try { await api(`/api/private/${encodeURIComponent(otherId)}/read`, { method: "PATCH" }) } catch {}
+}
 function addMessage(m, force = false) {
   if (blockedUsers.has(String(m.user_id)) && m.user_id !== user.uid) return;
   if (m.private && !currentPrivate) return;
@@ -350,7 +370,7 @@ function addMessage(m, force = false) {
     quote = m.reply_to_id
       ? `<div class="message-quote"><strong>${safe(m.reply_author || "Message supprimé")}</strong><span>${safe(m.reply_body || "Message original indisponible")}</span></div>`
       : "";
-  a.innerHTML = `<div class="avatar">${m.photo ? `<img src="${m.photo}" class="avatar">` : initials(m.author)}</div><div class="message-content"><p class="meta"><strong>${mine ? "Vous" : safe(m.author)}</strong><time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time></p>${quote}${m.body ? `<p class="bubble">${safe(m.body)}</p>` : ""}${media}<div class="reaction-summary">${reactionHtml(m.reactions, m.my_reactions || [])}</div><div class="message-actions"><button class="reply-action" title="Répondre">↩ Répondre</button><button class="react-action" title="Réagir">☺</button>${mine ? '<button class="delete-action" title="Supprimer">Supprimer</button>' : ""}<div class="reaction-picker hidden">${["👍", "❤️", "😂", "😮"].map((emoji) => `<button data-pick-reaction="${emoji}">${emoji}</button>`).join("")}</div></div></div>`;
+  a.innerHTML = `<div class="avatar">${m.photo ? `<img src="${m.photo}" class="avatar">` : initials(m.author)}</div><div class="message-content"><p class="meta"><strong>${mine ? "Vous" : safe(m.author)}</strong><time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time></p>${quote}${m.body ? `<p class="bubble">${safe(m.body)}</p>` : ""}${media}<div class="reaction-summary">${reactionHtml(m.reactions, m.my_reactions || [])}</div>${m.private && mine ? `<div class="message-status">${receiptText(m.delivered_at, m.read_at)}</div>` : ""}<div class="message-actions"><button class="reply-action" title="Répondre">↩ Répondre</button><button class="react-action" title="Réagir">☺</button>${mine ? '<button class="delete-action" title="Supprimer">Supprimer</button>' : ""}<div class="reaction-picker hidden">${["👍", "❤️", "😂", "😮"].map((emoji) => `<button data-pick-reaction="${emoji}">${emoji}</button>`).join("")}</div></div></div>`;
   a.querySelector(".reply-action").onclick = () => setReply(m);
   a.querySelector(".react-action").onclick = () =>
     a.querySelector(".reaction-picker").classList.toggle("hidden");
@@ -509,8 +529,10 @@ function showPrivateNotification(m) {
   if (m.user_id === user.uid || blockedUsers.has(String(m.user_id))) return;
   const senderId = String(m.user_id),
     senderName = m.author || "Nouveau contact";
+  markPrivateDelivered(senderId);
   if (currentPrivate?.id === senderId) {
     addMessage(m);
+    if (document.visibilityState === "visible") markPrivateRead(senderId);
     return;
   }
   unreadPrivate.set(senderId, (unreadPrivate.get(senderId) || 0) + 1);
@@ -721,7 +743,7 @@ function performSearch() {
     (button) =>
       (button.onclick = () => {
         $("#searchModal").classList.add("hidden");
-        openPrivate(button.dataset.searchContact, button.dataset.searchName);
+        showPublicProfile(button.dataset.searchContact, button.dataset.searchName);
       }),
   );
 }
@@ -780,7 +802,7 @@ function renderFriends() {
   document.querySelectorAll(".friend-open").forEach(
     (button) =>
       (button.onclick = () => {
-        openPrivate(button.dataset.friendId, button.dataset.friendName);
+        showPublicProfile(button.dataset.friendId, button.dataset.friendName);
         $(".people").classList.remove("open");
       }),
   );
@@ -844,7 +866,8 @@ function renderPeople(list) {
                 action = '<span class="friend-state">✓ Ami</span>';
               else action = '<span class="friend-state">En attente</span>';
             }
-            return `<div class="person-row gender-${gender}"><button class="person person-button" data-user-id="${safe(p.id)}" data-user-name="${safe(p.name)}"><img src="${p.photo || ""}"><div><strong>${safe(p.name)}</strong><small>${p.bio ? safe(p.bio) : p.id === user.uid ? "Vous" : "Message privé"}</small></div></button>${action}</div>`;
+            const statusLabel={available:"Disponible",busy:"Occupé",away:"Absent"}[p.availability]||"Disponible";
+            return `<div class="person-row gender-${gender}"><button class="person person-button" data-user-id="${safe(p.id)}" data-user-name="${safe(p.name)}"><img src="${p.photo || ""}"><div><strong>${safe(p.name)}</strong><small>${p.id===user.uid?"Vous":`${statusLabel}${p.bio?` · ${safe(p.bio)}`:""}`}</small></div></button>${action}</div>`;
           })
           .join("")}</section>`,
     )
@@ -852,7 +875,7 @@ function renderPeople(list) {
   document.querySelectorAll(".person-button").forEach(
     (button) =>
       (button.onclick = () => {
-        openPrivate(button.dataset.userId, button.dataset.userName);
+        if(button.dataset.userId===user.uid) showProfile(); else showPublicProfile(button.dataset.userId, button.dataset.userName);
         $(".people").classList.remove("open");
       }),
   );
@@ -872,6 +895,7 @@ function connect() {
   });
   socket.on("message", (m) => addMessage(m));
   socket.on("private-message", showPrivateNotification);
+  socket.on("private-receipt", updatePrivateReceipts);
   socket.on("message-reactions", updateMessageReactions);
   socket.on("message-deleted", (payload) =>
     removeMessage(payload.id, payload.private),
@@ -944,9 +968,19 @@ function openProfile(profile) {
   $("#profileCity").value = profile?.city || "";
   $("#profileBio").value = profile?.bio || "";
   $("#profileGender").value = profile?.gender || "neutral";
+  $("#profileAvailability").value = profile?.availability || "available";
+  pendingProfilePhoto = null;
+  $("#profilePhotoPreview").src = profile?.photo || user?.photoURL || "";
   $("#profileVisible").checked = profile?.location_visible !== false;
   $("#profileModal").classList.remove("hidden");
 }
+$("#chooseProfilePhoto").onclick=()=>$("#profilePhotoInput").click();
+$("#profilePhotoInput").onchange=async event=>{const file=event.target.files[0];if(!file)return;if(file.size>8e6)return showError("Photo trop volumineuse");try{pendingProfilePhoto=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const image=new Image();image.onerror=reject;image.onload=()=>{const size=512,canvas=document.createElement("canvas");canvas.width=size;canvas.height=size;const context=canvas.getContext("2d"),side=Math.min(image.width,image.height),sx=(image.width-side)/2,sy=(image.height-side)/2;context.drawImage(image,sx,sy,side,side,0,0,size,size);resolve(canvas.toDataURL("image/jpeg",.82))};image.src=reader.result};reader.readAsDataURL(file)});$("#profilePhotoPreview").src=pendingProfilePhoto}catch{showError("Impossible de préparer cette photo")}};
+const availabilityLabels={available:"Disponible",busy:"Occupé",away:"Absent"};
+async function showPublicProfile(id,fallbackName="Utilisateur"){if(id===user.uid)return showProfile();viewedProfile={id:String(id),name:fallbackName};$("#publicProfileError").textContent="";$("#publicProfileModal").classList.remove("hidden");try{const profile=await(await api(`/api/profile/${encodeURIComponent(id)}`)).json();viewedProfile={id:String(profile.user_id),name:profile.display_name};$("#publicProfilePhoto").src=profile.photo||"";$("#publicProfileName").textContent=profile.display_name;$("#publicProfileStatus").textContent=availabilityLabels[profile.availability]||"Disponible";$("#publicProfileBio").textContent=profile.bio||"Aucune description.";$("#publicProfileCity").textContent=profile.city||"Ville masquée";$("#publicProfileLastSeen").textContent=isOnline(profile.user_id)?"En ligne maintenant":profile.last_seen?new Date(profile.last_seen).toLocaleString("fr-FR"):"Non disponible";const relation=friendRelations.get(String(profile.user_id)),friendButton=$("#publicProfileFriend");friendButton.classList.toggle("hidden",Boolean(relation));friendButton.textContent=relation?.status==="accepted"?"Déjà ami":"Ajouter en ami"}catch(e){$("#publicProfileError").textContent=e.message}}
+$("#closePublicProfile").onclick=()=>$("#publicProfileModal").classList.add("hidden");
+$("#publicProfileMessage").onclick=()=>{if(!viewedProfile)return;$("#publicProfileModal").classList.add("hidden");openPrivate(viewedProfile.id,viewedProfile.name)};
+$("#publicProfileFriend").onclick=async()=>{if(!viewedProfile)return;await sendFriendRequest(viewedProfile.id);$("#publicProfileFriend").classList.add("hidden")};
 async function loadProfile() {
   try {
     const profile = await (await api("/api/profile")).json();
@@ -980,11 +1014,14 @@ $("#profileForm").onsubmit = async (event) => {
           city: $("#profileCity").value,
           bio: $("#profileBio").value,
           gender: $("#profileGender").value,
+          availability: $("#profileAvailability").value,
+          photoData: pendingProfilePhoto,
           locationVisible: $("#profileVisible").checked,
         }),
       })
     ).json();
     $("#meName").textContent = profile.display_name;
+    $("#mePhoto").src = profile.photo || "";
     $("#profileModal").classList.add("hidden");
   } catch (e) {
     $("#profileError").textContent = e.message;
@@ -1284,9 +1321,9 @@ $("#peopleBtn").onclick = () => {
 };
 $("#closePeople").onclick = () => $(".people").classList.remove("open");
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") load();
+  if (document.visibilityState === "visible") { load(); if (currentPrivate) markPrivateRead(currentPrivate.id) }
 });
-window.addEventListener("focus", load);
+window.addEventListener("focus", () => { load(); if (currentPrivate) markPrivateRead(currentPrivate.id) });
 async function prepareIce() {
   if (iceServers.length) return iceServers;
   if (!icePromise)

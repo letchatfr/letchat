@@ -126,6 +126,26 @@
 .message-status { margin-top: 4px; color: #7b8f99; font-size: 10px; text-align: right; }
 .message-status:first-letter { color: #3b83a8; }
 
+.profile-photo-editor { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid #e4ded6; border-radius: 13px; background: #faf8f4; }
+.profile-photo-editor img { width: 72px; height: 72px; flex: 0 0 72px; border-radius: 50%; object-fit: cover; background: #e9e4dd; }
+.profile-photo-editor > div { display: grid; gap: 6px; }
+.profile-photo-editor button { border: 0; border-radius: 9px; padding: 8px 10px; background: #315b76; color: #fff; font-weight: 700; }
+.profile-photo-editor small { color: #888; }
+.public-profile-card { width: min(460px, calc(100% - 24px)); }
+.public-profile-head { display: flex; align-items: center; gap: 15px; margin-top: 6px; }
+.public-profile-head img { width: 82px; height: 82px; flex: 0 0 82px; border-radius: 50%; object-fit: cover; background: #e9e4dd; }
+.public-profile-head h2, .public-profile-head p { margin: 0; }
+.public-profile-head p { margin-top: 6px; color: #4c8c64; font-weight: 700; }
+.public-profile-bio { padding: 12px; border-radius: 11px; background: #f5f2ed; white-space: pre-wrap; }
+.public-profile-details { display: grid; gap: 8px; }
+.public-profile-details > div { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 7px; border-bottom: 1px solid #eee8e1; }
+.public-profile-details dt { color: #888; }
+.public-profile-details dd { margin: 0; text-align: right; font-weight: 700; }
+.public-profile-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
+.public-profile-actions button { border: 0; border-radius: 10px; padding: 12px; background: #315b76; color: #fff; font-weight: 800; }
+.public-profile-actions #publicProfileFriend { background: #e4f0e8; color: #27603c; }
+@media(max-width:420px) { .public-profile-actions { grid-template-columns: 1fr; } }
+
 .profile-card select { height: 44px; border: 1px solid #d8d3cc; border-radius: 10px; padding: 0 12px; outline: 0; background: #fff; font: inherit; }
 .profile-card select:focus { border-color: #f36f58; }
 .person-button { border: 1px solid transparent; padding: 8px; border-radius: 12px; }

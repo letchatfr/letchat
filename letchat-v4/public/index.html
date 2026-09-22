@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#f36f58" />
     <title>Letchat</title>
-    <link rel="stylesheet" href="style.css?v=receipts-1" />
+    <link rel="stylesheet" href="style.css?v=profiles-1" />
   </head>
   <body>
     <section id="login" class="login">
@@ -155,9 +155,13 @@
         <button type="button" id="closeProfile" class="profile-close">×</button>
         <h2>Mon profil public</h2>
         <p>
-          Votre photo Google est utilisée automatiquement. Ne partagez jamais
-          votre adresse exacte.
+          Choisissez votre photo et votre statut. Ne partagez jamais votre adresse exacte.
         </p>
+        <div class="profile-photo-editor">
+          <img id="profilePhotoPreview" alt="Votre photo de profil" />
+          <div><button id="chooseProfilePhoto" type="button">Choisir une photo</button><small>JPG, PNG ou WebP · recadrage automatique</small></div>
+          <input id="profilePhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+        </div>
         <label
           >Pseudonyme<input
             id="profileName"
@@ -182,6 +186,12 @@
             <option value="neutral">Ne pas préciser — neutre</option>
             <option value="female">Femme — rose</option>
             <option value="male">Homme — bleu</option>
+          </select></label
+        ><label
+          >Statut<select id="profileAvailability">
+            <option value="available">Disponible</option>
+            <option value="busy">Occupé</option>
+            <option value="away">Absent</option>
           </select></label
         ><label class="profile-check"
           ><input id="profileVisible" type="checkbox" checked /> Afficher ma
@@ -225,6 +235,16 @@
         </section>
         <div id="profileError" class="profile-error"></div>
       </form>
+    </section>
+    <section id="publicProfileModal" class="profile-modal hidden">
+      <div class="profile-card public-profile-card">
+        <button type="button" id="closePublicProfile" class="profile-close">×</button>
+        <div class="public-profile-head"><img id="publicProfilePhoto" alt="Photo du profil" /><div><h2 id="publicProfileName"></h2><p id="publicProfileStatus"></p></div></div>
+        <p id="publicProfileBio" class="public-profile-bio"></p>
+        <dl class="public-profile-details"><div><dt>Ville</dt><dd id="publicProfileCity"></dd></div><div><dt>Dernière connexion</dt><dd id="publicProfileLastSeen"></dd></div></dl>
+        <div class="public-profile-actions"><button id="publicProfileMessage" type="button">Écrire en privé</button><button id="publicProfileFriend" type="button">Ajouter en ami</button></div>
+        <div id="publicProfileError" class="profile-error"></div>
+      </div>
     </section>
     <section id="reportModal" class="profile-modal hidden">
       <form id="reportForm" class="profile-card report-card">
@@ -373,6 +393,6 @@
       </footer>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=receipts-1"></script>
+    <script type="module" src="app.js?v=profiles-1"></script>
   </body>
 </html>
