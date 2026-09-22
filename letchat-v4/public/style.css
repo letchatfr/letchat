@@ -34,3 +34,14 @@
   .profile-modal { align-items: end; padding: 0; }
   .profile-card { width: 100%; max-height: 92dvh; overflow-y: auto; border-radius: 20px 20px 0 0; padding: 26px 20px max(22px, env(safe-area-inset-bottom)); }
 }
+
+.profile-card select { height: 44px; border: 1px solid #d8d3cc; border-radius: 10px; padding: 0 12px; outline: 0; background: #fff; font: inherit; }
+.profile-card select:focus { border-color: #f36f58; }
+.person-button { border: 1px solid transparent; padding: 8px; border-radius: 12px; }
+.person-button.gender-female { background: #fff0f6; border-color: #f4b8d1; }
+.person-button.gender-female img { outline: 3px solid #ec78aa; }
+.person-button.gender-female strong { color: #a83268; }
+.person-button.gender-male { background: #eef6ff; border-color: #b7d7f6; }
+.person-button.gender-male img { outline: 3px solid #609ed8; }
+.person-button.gender-male strong { color: #27659f; }
+.person-button.gender-neutral { background: #f7f5f2; border-color: #e4dfd8; }
