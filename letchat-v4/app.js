@@ -2,10 +2,54 @@ import{initializeApp}from"https://www.gstatic.com/firebasejs/12.3.0/firebase-app
 const config={apiKey:"AIzaSyCfOel5JKgjxmVslddn_Xdar1XR_vb2Cgs",authDomain:"letchat-1d79d.firebaseapp.com",projectId:"letchat-1d79d",storageBucket:"letchat-1d79d.firebasestorage.app",messagingSenderId:"289359647477",appId:"1:289359647477:web:893d579c6bf94b98226bbc",measurementId:"G-L3Z35BP6FG"};
 const auth=getAuth(initializeApp(config)),provider=new GoogleAuthProvider(),$=s=>document.querySelector(s);let user,token,socket,stream,peers=new Map(),pendingIce=new Map(),typingTimer,toastTimer,expiryTimers=new Map(),unreadPrivate=new Map(),blockedUsers=new Map(),friendRelations=new Map(),notifications=[],lastPeople=[],iceServers=[],icePromise,currentRoom="cafe",currentPrivate=null,sessionStarted=false;const rooms={cafe:{title:"☀ Le Café",welcome:"Bienvenue au Café"},creatifs:{title:"✦ Créatifs",welcome:"Bienvenue chez les Créatifs"},entraide:{title:"⌁ Entraide",welcome:"Bienvenue dans l’Entraide"}};
 function loginError(message){const box=$("#loginError");box.textContent=message;box.classList.remove("hidden")}
-$("#googleLogin").onclick=async()=>{const button=$("#googleLogin");button.disabled=true;$("#loginError").classList.add("hidden");try{await setPersistence(auth,browserLocalPersistence);await signInWithPopup(auth,provider)}catch(error){if(["auth/popup-blocked","auth/operation-not-supported-in-this-environment"].includes(error.code)){await signInWithRedirect(auth,provider);return}if(error.code!=="auth/popup-closed-by-user")loginError(`Connexion Google impossible : ${error.message}`)}finally{button.disabled=false}};$("#logout").onclick=()=>signOut(auth);
-getRedirectResult(auth).catch(e=>loginError(`Connexion Google impossible : ${e.message}`));
-onAuthStateChanged(auth,async u=>{if(!u){sessionStarted=false;$("#login").classList.remove("hidden");$("#app").classList.add("hidden");$("#ageModal").classList.add("hidden");socket?.disconnect();return}user=u;token=await u.getIdToken();$("#login").classList.add("hidden");$("#app").classList.remove("hidden");$("#meName").textContent=u.displayName||u.email;$("#mePhoto").src=u.photoURL||"";if(await checkAge())await beginSession()});
-const api=async(path,opt={})=>{token=await user.getIdToken();opt.headers={...opt.headers,Authorization:`Bearer ${token}`};const r=await fetch(path,opt);if(!r.ok){let message=`Erreur serveur (${r.status})`;try{const data=await r.json();if(data?.error)message=data.error}catch{}throw new Error(message)}return r};
+$("#googleLogin").onclick=async()=>{
+  const button=$("#googleLogin");
+  button.disabled=true;
+  $("#loginError").classList.add("hidden");
+
+  try{
+    await setPersistence(auth,browserLocalPersistence);
+    await signInWithPopup(auth,provider);
+  }catch(error){
+    console.error("Connexion Google :",error);
+
+    if(error.code!=="auth/popup-closed-by-user"){
+      loginError(`Connexion Google impossible : ${error.message}`);
+    }
+  }finally{
+    button.disabled=false;
+  }
+};
+
+onAuthStateChanged(auth,async u=>{
+  if(!u){
+    sessionStarted=false;
+    user=null;
+    token=null;
+    $("#login").classList.remove("hidden");
+    $("#app").classList.add("hidden");
+    $("#ageModal").classList.add("hidden");
+    socket?.disconnect();
+    return;
+  }
+
+  try{
+    user=u;
+    token=await u.getIdToken(true);
+
+    $("#login").classList.add("hidden");
+    $("#app").classList.remove("hidden");
+    $("#meName").textContent=u.displayName||u.email||"Utilisateur";
+    $("#mePhoto").src=u.photoURL||"";
+
+    if(await checkAge()){
+      await beginSession();
+    }
+  }catch(error){
+    console.error("Initialisation de session :",error);
+    loginError(`Connexion impossible : ${error.message}`);
+  }
+});const api=async(path,opt={})=>{token=await user.getIdToken();opt.headers={...opt.headers,Authorization:`Bearer ${token}`};const r=await fetch(path,opt);if(!r.ok){let message=`Erreur serveur (${r.status})`;try{const data=await r.json();if(data?.error)message=data.error}catch{}throw new Error(message)}return r};
 async function beginSession(){if(sessionStarted)return;sessionStarted=true;await checkRules();await loadBlocks();await loadFriends();await loadNotifications();await checkAdmin();await loadSubscription();connect();load();loadProfile();loadContactEmail()}
 async function checkAge(){try{const status=await(await api("/api/age-status")).json();$("#ageModal").classList.toggle("hidden",status.accepted);return status.accepted}catch(e){showError(e.message);return false}}
 $("#ageForm").onsubmit=async event=>{event.preventDefault();const button=$("#ageForm button[type=submit]");button.disabled=true;$("#ageError").textContent="";try{await api("/api/age-accept",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({over18:$("#ageAccepted").checked})});$("#ageModal").classList.add("hidden");await beginSession()}catch(e){$("#ageError").textContent=e.message}finally{button.disabled=false}};
