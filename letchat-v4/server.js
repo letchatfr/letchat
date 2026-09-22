@@ -46,6 +46,8 @@ await pool.query(`
   WHERE expires_at < created_at + INTERVAL '48 hours';
   ALTER TABLE letchat_messages
   ADD COLUMN IF NOT EXISTS room TEXT NOT NULL DEFAULT 'cafe';
+  ALTER TABLE letchat_messages
+  ADD COLUMN IF NOT EXISTS reply_to_id BIGINT;
   CREATE INDEX IF NOT EXISTS idx_letchat_messages_created
   ON letchat_messages(created_at);
   CREATE INDEX IF NOT EXISTS idx_letchat_messages_expires
@@ -83,6 +85,8 @@ await pool.query(`
   );
   ALTER TABLE letchat_private_messages
   ALTER COLUMN expires_at SET DEFAULT (NOW() + INTERVAL '48 hours');
+  ALTER TABLE letchat_private_messages
+  ADD COLUMN IF NOT EXISTS reply_to_id BIGINT;
   UPDATE letchat_private_messages
   SET expires_at = created_at + INTERVAL '48 hours'
   WHERE expires_at < created_at + INTERVAL '48 hours';
@@ -90,6 +94,19 @@ await pool.query(`
   ON letchat_private_messages(sender_id, recipient_id, created_at);
   CREATE INDEX IF NOT EXISTS idx_letchat_private_expires
   ON letchat_private_messages(expires_at);
+`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_message_reactions (
+    message_kind TEXT NOT NULL CHECK (message_kind IN ('public', 'private')),
+    message_id BIGINT NOT NULL,
+    user_id TEXT NOT NULL,
+    emoji TEXT NOT NULL CHECK (emoji IN ('👍', '❤️', '😂', '😮')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (message_kind, message_id, user_id, emoji)
+  );
+  CREATE INDEX IF NOT EXISTS idx_letchat_reactions_message
+  ON letchat_message_reactions(message_kind, message_id);
 `);
 
 await pool.query(`
@@ -528,6 +545,7 @@ app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account",
     }
     const anonymousId = `compte-supprime-${createHash("sha256").update(uid).digest("hex").slice(0,24)}`;
     await client.query("BEGIN");
+    await client.query("DELETE FROM letchat_message_reactions WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_messages WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_private_messages WHERE sender_id=$1 OR recipient_id=$1", [uid]);
     await client.query("DELETE FROM letchat_friends WHERE requester_id=$1 OR addressee_id=$1", [uid]);
@@ -1035,15 +1053,25 @@ app.get("/api/messages", auth, requireAdult, async (req, res, next) => {
   try {
     const room = getRoom(req.query.room);
     const { rows } = await pool.query(`
-      SELECT id, user_id, author, room, photo, body, media_type, created_at, expires_at,
-             (media_data IS NOT NULL) AS has_media
-      FROM letchat_messages
-      WHERE expires_at > NOW() AND room = $1
+      SELECT m.id, m.user_id, m.author, m.room, m.photo, m.body, m.media_type,
+             m.created_at, m.expires_at, m.reply_to_id,
+             parent.author AS reply_author, parent.body AS reply_body,
+             (m.media_data IS NOT NULL) AS has_media,
+             COALESCE((SELECT jsonb_object_agg(x.emoji, x.total) FROM (
+               SELECT emoji, COUNT(*)::int AS total
+               FROM letchat_message_reactions
+               WHERE message_kind='public' AND message_id=m.id GROUP BY emoji
+             ) x), '{}'::jsonb) AS reactions,
+             COALESCE((SELECT jsonb_agg(emoji) FROM letchat_message_reactions
+               WHERE message_kind='public' AND message_id=m.id AND user_id=$2), '[]'::jsonb) AS my_reactions
+      FROM letchat_messages m
+      LEFT JOIN letchat_messages parent ON parent.id=m.reply_to_id AND parent.expires_at > NOW()
+      WHERE m.expires_at > NOW() AND m.room = $1
         AND NOT EXISTS (
           SELECT 1 FROM letchat_blocks b
-          WHERE b.blocker_id = $2 AND b.blocked_id = letchat_messages.user_id
+          WHERE b.blocker_id = $2 AND b.blocked_id = m.user_id
         )
-      ORDER BY id DESC LIMIT 100
+      ORDER BY m.id DESC LIMIT 100
     `, [room, req.user.id]);
     res.json(rows.reverse());
   } catch (error) {
@@ -1070,6 +1098,7 @@ app.post("/api/messages", auth, requireAdult, requireRules, rateLimitAction("pub
   try {
     const body = String(req.body.body || "").trim().slice(0, 4000);
     const room = getRoom(req.body.room);
+    const replyToId = req.body.replyToId ? String(req.body.replyToId) : null;
     const mediaType = String(req.body.mediaType || "");
     const media = req.body.mediaBase64
       ? Buffer.from(String(req.body.mediaBase64), "base64")
@@ -1082,17 +1111,27 @@ app.post("/api/messages", auth, requireAdult, requireRules, rateLimitAction("pub
     if (media && !/^(image|video)\//.test(mediaType)) {
       return res.status(415).json({ error: "Format non accepté" });
     }
+    let reply = null;
+    if (replyToId) {
+      const result = await pool.query(
+        "SELECT id, author, body FROM letchat_messages WHERE id=$1 AND room=$2 AND expires_at > NOW()",
+        [replyToId, room]
+      );
+      if (!result.rowCount) return res.status(400).json({ error: "Message cité introuvable" });
+      reply = result.rows[0];
+    }
 
     const query = await pool.query(
       `INSERT INTO letchat_messages
-       (user_id, author, room, photo, body, media_data, media_type)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, user_id, author, room, photo, body, media_type, created_at, expires_at,
+       (user_id, author, room, photo, body, media_data, media_type, reply_to_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, user_id, author, room, photo, body, media_type, created_at, expires_at, reply_to_id,
                  (media_data IS NOT NULL) AS has_media`,
-      [req.user.id, req.user.name, room, req.user.photo, body, media, mediaType || null]
+      [req.user.id, req.user.name, room, req.user.photo, body, media, mediaType || null, reply?.id || null]
     );
-    io.to(room).emit("message", query.rows[0]);
-    res.status(201).json(query.rows[0]);
+    const message = { ...query.rows[0], reply_author: reply?.author || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
+    io.to(room).emit("message", message);
+    res.status(201).json(message);
   } catch (error) {
     next(error);
   }
@@ -1109,14 +1148,23 @@ app.get("/api/private/:otherId", auth, requireAdult, async (req, res, next) => {
     );
     if (blocked.rowCount) return res.status(403).json({ error: "Conversation bloquée" });
     const { rows } = await pool.query(
-      `SELECT id, sender_id AS user_id, recipient_id, sender_name AS author,
-              sender_photo AS photo, body, media_type, created_at, expires_at,
-              (media_data IS NOT NULL) AS has_media
-       FROM letchat_private_messages
-       WHERE expires_at > NOW()
-         AND ((sender_id=$1 AND recipient_id=$2)
-           OR (sender_id=$2 AND recipient_id=$1))
-       ORDER BY id DESC LIMIT 100`,
+      `SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.sender_name AS author,
+              m.sender_photo AS photo, m.body, m.media_type, m.created_at, m.expires_at,
+              m.reply_to_id, parent.sender_name AS reply_author, parent.body AS reply_body,
+              (m.media_data IS NOT NULL) AS has_media,
+              COALESCE((SELECT jsonb_object_agg(x.emoji, x.total) FROM (
+                SELECT emoji, COUNT(*)::int AS total
+                FROM letchat_message_reactions
+                WHERE message_kind='private' AND message_id=m.id GROUP BY emoji
+              ) x), '{}'::jsonb) AS reactions,
+              COALESCE((SELECT jsonb_agg(emoji) FROM letchat_message_reactions
+                WHERE message_kind='private' AND message_id=m.id AND user_id=$1), '[]'::jsonb) AS my_reactions
+       FROM letchat_private_messages m
+       LEFT JOIN letchat_private_messages parent ON parent.id=m.reply_to_id AND parent.expires_at > NOW()
+       WHERE m.expires_at > NOW()
+         AND ((m.sender_id=$1 AND m.recipient_id=$2)
+           OR (m.sender_id=$2 AND m.recipient_id=$1))
+       ORDER BY m.id DESC LIMIT 100`,
       [req.user.id, otherId]
     );
     res.json(rows.reverse().map(row => ({ ...row, private: true })));
@@ -1146,6 +1194,7 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
   try {
     const recipientId = String(req.body.recipientId || "").slice(0, 200);
     const body = String(req.body.body || "").trim().slice(0, 4000);
+    const replyToId = req.body.replyToId ? String(req.body.replyToId) : null;
     const mediaType = String(req.body.mediaType || "");
     const media = req.body.mediaBase64
       ? Buffer.from(String(req.body.mediaBase64), "base64") : null;
@@ -1166,16 +1215,27 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
     if (media && !/^(image|video)\//.test(mediaType)) {
       return res.status(415).json({ error: "Format non accepté" });
     }
+    let reply = null;
+    if (replyToId) {
+      const result = await pool.query(
+        `SELECT id, sender_name AS author, body FROM letchat_private_messages
+         WHERE id=$1 AND expires_at > NOW()
+           AND ((sender_id=$2 AND recipient_id=$3) OR (sender_id=$3 AND recipient_id=$2))`,
+        [replyToId, req.user.id, recipientId]
+      );
+      if (!result.rowCount) return res.status(400).json({ error: "Message cité introuvable" });
+      reply = result.rows[0];
+    }
     const { rows } = await pool.query(
       `INSERT INTO letchat_private_messages
-       (sender_id,recipient_id,sender_name,sender_photo,body,media_data,media_type)
-       VALUES($1,$2,$3,$4,$5,$6,$7)
+       (sender_id,recipient_id,sender_name,sender_photo,body,media_data,media_type,reply_to_id)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8)
        RETURNING id, sender_id AS user_id, sender_name AS author,
-                 sender_photo AS photo, body, media_type, created_at, expires_at,
+                 sender_photo AS photo, body, media_type, created_at, expires_at, reply_to_id,
                  (media_data IS NOT NULL) AS has_media`,
-      [req.user.id, recipientId, req.user.name, req.user.photo, body, media, mediaType || null]
+      [req.user.id, recipientId, req.user.name, req.user.photo, body, media, mediaType || null, reply?.id || null]
     );
-    const message = { ...rows[0], private: true, recipient_id: recipientId };
+    const message = { ...rows[0], private: true, recipient_id: recipientId, reply_author: reply?.author || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
     await createNotification(
       recipientId, "private_message", `Message de ${req.user.name}`,
       body ? body.slice(0, 160) : "Vous avez reçu un média.",
@@ -1183,6 +1243,105 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
     );
     io.to(`user:${req.user.id}`).to(`user:${recipientId}`).emit("private-message", message);
     res.status(201).json(message);
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function getMessageAccess(kind, id, userId) {
+  if (kind === "public") {
+    const result = await pool.query(
+      "SELECT id, user_id, room FROM letchat_messages WHERE id=$1 AND expires_at > NOW()",
+      [id]
+    );
+    return result.rows[0] || null;
+  }
+  if (kind === "private") {
+    const result = await pool.query(
+      `SELECT id, sender_id AS user_id, recipient_id
+       FROM letchat_private_messages
+       WHERE id=$1 AND expires_at > NOW() AND (sender_id=$2 OR recipient_id=$2)`,
+      [id, userId]
+    );
+    return result.rows[0] || null;
+  }
+  return null;
+}
+
+async function getReactionCounts(kind, id) {
+  const { rows } = await pool.query(
+    `SELECT emoji, COUNT(*)::int AS total
+     FROM letchat_message_reactions
+     WHERE message_kind=$1 AND message_id=$2
+     GROUP BY emoji`,
+    [kind, id]
+  );
+  return Object.fromEntries(rows.map(row => [row.emoji, row.total]));
+}
+
+app.post("/api/messages/:kind/:id/reactions", auth, requireAdult, requireRules, rateLimitAction("message-reactions", 60, 60 * 1000), async (req, res, next) => {
+  try {
+    const kind = String(req.params.kind);
+    const id = String(req.params.id);
+    const emoji = String(req.body.emoji || "");
+    if (!new Set(["👍", "❤️", "😂", "😮"]).has(emoji)) {
+      return res.status(400).json({ error: "Réaction incorrecte" });
+    }
+    const message = await getMessageAccess(kind, id, req.user.id);
+    if (!message) return res.status(404).json({ error: "Message introuvable" });
+    const removed = await pool.query(
+      `DELETE FROM letchat_message_reactions
+       WHERE message_kind=$1 AND message_id=$2 AND user_id=$3 AND emoji=$4
+       RETURNING emoji`,
+      [kind, id, req.user.id, emoji]
+    );
+    let active = false;
+    if (!removed.rowCount) {
+      await pool.query(
+        `INSERT INTO letchat_message_reactions(message_kind,message_id,user_id,emoji)
+         VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+        [kind, id, req.user.id, emoji]
+      );
+      active = true;
+    }
+    const reactions = await getReactionCounts(kind, id);
+    const payload = { id, private: kind === "private", reactions };
+    if (kind === "public") io.to(message.room).emit("message-reactions", payload);
+    else io.to(`user:${message.user_id}`).to(`user:${message.recipient_id}`).emit("message-reactions", payload);
+    res.json({ ...payload, emoji, active });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/messages/:kind/:id", auth, requireAdult, async (req, res, next) => {
+  try {
+    const kind = String(req.params.kind);
+    const id = String(req.params.id);
+    let result;
+    if (kind === "public") {
+      result = await pool.query(
+        "DELETE FROM letchat_messages WHERE id=$1 AND user_id=$2 RETURNING room",
+        [id, req.user.id]
+      );
+    } else if (kind === "private") {
+      result = await pool.query(
+        `DELETE FROM letchat_private_messages WHERE id=$1 AND sender_id=$2
+         RETURNING sender_id AS user_id, recipient_id`,
+        [id, req.user.id]
+      );
+    } else {
+      return res.status(400).json({ error: "Type de message incorrect" });
+    }
+    if (!result.rowCount) return res.status(404).json({ error: "Message introuvable ou suppression interdite" });
+    await pool.query(
+      "DELETE FROM letchat_message_reactions WHERE message_kind=$1 AND message_id=$2",
+      [kind, id]
+    );
+    const payload = { id, private: kind === "private" };
+    if (kind === "public") io.to(result.rows[0].room).emit("message-deleted", payload);
+    else io.to(`user:${result.rows[0].user_id}`).to(`user:${result.rows[0].recipient_id}`).emit("message-deleted", payload);
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -1294,6 +1453,14 @@ async function deleteExpiredMessages() {
       io.to(`user:${row.sender_id}`).to(`user:${row.recipient_id}`)
         .emit("private-messages-expired", payload);
     }
+    await pool.query(`
+      DELETE FROM letchat_message_reactions r
+      WHERE (r.message_kind='public' AND NOT EXISTS (
+        SELECT 1 FROM letchat_messages m WHERE m.id=r.message_id
+      )) OR (r.message_kind='private' AND NOT EXISTS (
+        SELECT 1 FROM letchat_private_messages p WHERE p.id=r.message_id
+      ))
+    `);
   } catch (error) {
     console.error("Suppression des messages expirés :", error);
   }
