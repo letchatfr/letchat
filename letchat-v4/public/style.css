@@ -65,6 +65,12 @@
   .profile-card { width: 100%; max-height: 92dvh; overflow-y: auto; border-radius: 20px 20px 0 0; padding: 26px 20px max(22px, env(safe-area-inset-bottom)); }
 }
 
+.premium-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.premium-choices button { display: grid; gap: 3px; padding: 10px; }
+.premium-choices button span { font-size: 11px; font-weight: 600; opacity: .85; }
+.premium-choices #subscribePremiumPlus { background: linear-gradient(135deg, #9b6518, #e3a437); }
+@media(max-width:520px) { .premium-choices { grid-template-columns: 1fr; } }
+
 .profile-card select { height: 44px; border: 1px solid #d8d3cc; border-radius: 10px; padding: 0 12px; outline: 0; background: #fff; font: inherit; }
 .profile-card select:focus { border-color: #f36f58; }
 .person-button { border: 1px solid transparent; padding: 8px; border-radius: 12px; }
