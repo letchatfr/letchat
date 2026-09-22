@@ -101,6 +101,23 @@ await pool.query(`
   ON letchat_blocks(blocked_id);
 `);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_reports (
+    id BIGSERIAL PRIMARY KEY,
+    reporter_id TEXT NOT NULL,
+    reported_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (reporter_id <> reported_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_letchat_reports_status
+  ON letchat_reports(status, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_letchat_reports_reporter
+  ON letchat_reports(reporter_id, reported_id, created_at DESC);
+`);
+
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
@@ -276,6 +293,39 @@ app.delete("/api/blocks/:userId", auth, async (req, res, next) => {
       [req.user.id, String(req.params.userId || "").slice(0, 200)]
     );
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/reports", auth, async (req, res, next) => {
+  try {
+    const reportedId = String(req.body.reportedId || "").slice(0, 200);
+    const reason = String(req.body.reason || "");
+    const details = String(req.body.details || "").trim().slice(0, 1000);
+    const allowedReasons = new Set(["harassment", "spam", "inappropriate", "fake", "other"]);
+    if (!reportedId || reportedId === req.user.id) {
+      return res.status(400).json({ error: "Utilisateur incorrect" });
+    }
+    if (!allowedReasons.has(reason)) {
+      return res.status(400).json({ error: "Motif de signalement incorrect" });
+    }
+    const recent = await pool.query(
+      `SELECT 1 FROM letchat_reports
+       WHERE reporter_id=$1 AND reported_id=$2
+         AND created_at > NOW() - INTERVAL '24 hours'
+       LIMIT 1`,
+      [req.user.id, reportedId]
+    );
+    if (recent.rowCount) {
+      return res.status(429).json({ error: "Vous avez déjà signalé cet utilisateur récemment" });
+    }
+    await pool.query(
+      `INSERT INTO letchat_reports (reporter_id, reported_id, reason, details)
+       VALUES ($1, $2, $3, $4)`,
+      [req.user.id, reportedId, reason, details]
+    );
+    res.status(201).json({ ok: true });
   } catch (error) {
     next(error);
   }
