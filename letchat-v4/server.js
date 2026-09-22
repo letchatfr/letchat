@@ -1,6 +1,7 @@
 import express from "express";
 import helmet from "helmet";
 import http from "node:http";
+import { createHash } from "node:crypto";
 import pg from "pg";
 import { Server } from "socket.io";
 import { createRemoteJWKSet, jwtVerify } from "jose";
@@ -169,6 +170,14 @@ await pool.query(`
   );
 `);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_age_consents (
+    user_id TEXT PRIMARY KEY,
+    over_18 BOOLEAN NOT NULL CHECK (over_18 = TRUE),
+    accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+`);
+
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
@@ -291,6 +300,21 @@ async function requireRules(req, res, next) {
   }
 }
 
+async function requireAdult(req, res, next) {
+  try {
+    const result = await pool.query(
+      "SELECT 1 FROM letchat_age_consents WHERE user_id=$1 AND over_18=TRUE",
+      [req.user.id]
+    );
+    if (!result.rowCount) {
+      return res.status(403).json({ error: "Vous devez confirmer que vous avez au moins 18 ans" });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
 function rateLimitAction(name, maximum, windowMs) {
   return (req, res, next) => {
     const key = `${name}:${req.user.id}`;
@@ -308,6 +332,106 @@ function rateLimitAction(name, maximum, windowMs) {
 }
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
+app.get("/api/public-config", (_req, res) => {
+  res.json({ contactEmail: String(process.env.CONTACT_EMAIL || "").trim() });
+});
+
+app.get("/api/age-status", auth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      "SELECT accepted_at FROM letchat_age_consents WHERE user_id=$1 AND over_18=TRUE",
+      [req.user.id]
+    );
+    res.json({ accepted: Boolean(result.rowCount), minimumAge: 18 });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/age-accept", auth, rateLimitAction("age", 5, 60 * 60 * 1000), async (req, res, next) => {
+  try {
+    if (req.body.over18 !== true) {
+      return res.status(400).json({ error: "Letchat est réservé aux personnes âgées de 18 ans ou plus" });
+    }
+    await pool.query(
+      `INSERT INTO letchat_age_consents (user_id, over_18, accepted_at)
+       VALUES ($1,TRUE,NOW())
+       ON CONFLICT (user_id) DO UPDATE SET over_18=TRUE, accepted_at=NOW()`,
+      [req.user.id]
+    );
+    res.json({ ok: true, minimumAge: 18 });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 60 * 60 * 1000), async (req, res, next) => {
+  try {
+    const uid = req.user.id;
+    const [profile, publicMessages, privateMessages, friends, blocks, notifications, reports, consents] = await Promise.all([
+      pool.query("SELECT user_id,email,display_name,photo,city,bio,gender,location_visible,updated_at FROM profiles WHERE user_id=$1", [uid]),
+      pool.query("SELECT id,author,room,body,media_type,created_at,expires_at FROM letchat_messages WHERE user_id=$1 ORDER BY created_at", [uid]),
+      pool.query(`SELECT id,sender_id,recipient_id,sender_name,body,media_type,created_at,expires_at
+                  FROM letchat_private_messages WHERE sender_id=$1 OR recipient_id=$1 ORDER BY created_at`, [uid]),
+      pool.query("SELECT id,requester_id,addressee_id,status,created_at,updated_at FROM letchat_friends WHERE requester_id=$1 OR addressee_id=$1", [uid]),
+      pool.query("SELECT blocker_id,blocked_id,created_at FROM letchat_blocks WHERE blocker_id=$1 OR blocked_id=$1", [uid]),
+      pool.query("SELECT id,type,title,body,actor_id,reference_id,read_at,created_at FROM letchat_notifications WHERE user_id=$1 ORDER BY created_at", [uid]),
+      pool.query("SELECT id,reporter_id,reported_id,reason,details,status,created_at FROM letchat_reports WHERE reporter_id=$1 OR reported_id=$1 ORDER BY created_at", [uid]),
+      pool.query(`SELECT 'rules' AS type,rules_version AS version,accepted_at FROM letchat_consents WHERE user_id=$1
+                  UNION ALL SELECT 'age','18+',accepted_at FROM letchat_age_consents WHERE user_id=$1`, [uid])
+    ]);
+    const data = {
+      exportedAt: new Date().toISOString(),
+      account: { userId: uid, googleEmail: req.user.email, googleName: req.user.name },
+      profile: profile.rows[0] || null,
+      publicMessages: publicMessages.rows,
+      privateMessages: privateMessages.rows,
+      friends: friends.rows,
+      blocks: blocks.rows,
+      notifications: notifications.rows,
+      reports: reports.rows,
+      consents: consents.rows,
+      note: "Les fichiers image et vidéo binaires ne sont pas inclus dans cet export JSON. Leurs types sont indiqués."
+    };
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=letchat-donnees-${new Date().toISOString().slice(0,10)}.json`);
+    res.send(JSON.stringify(data, null, 2));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account", 2, 24 * 60 * 60 * 1000), async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    if (req.body.confirmation !== "SUPPRIMER") {
+      return res.status(400).json({ error: "Confirmation incorrecte" });
+    }
+    const uid = req.user.id;
+    const anonymousId = `compte-supprime-${createHash("sha256").update(uid).digest("hex").slice(0,24)}`;
+    await client.query("BEGIN");
+    await client.query("DELETE FROM letchat_messages WHERE user_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_private_messages WHERE sender_id=$1 OR recipient_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_friends WHERE requester_id=$1 OR addressee_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_blocks WHERE blocker_id=$1 OR blocked_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_notifications WHERE user_id=$1 OR actor_id=$1", [uid]);
+    await client.query("UPDATE letchat_reports SET reporter_id=$2 WHERE reporter_id=$1", [uid, anonymousId]);
+    await client.query("UPDATE letchat_reports SET reported_id=$2 WHERE reported_id=$1", [uid, anonymousId]);
+    await client.query("DELETE FROM letchat_suspensions WHERE user_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_consents WHERE user_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_age_consents WHERE user_id=$1", [uid]);
+    await client.query("DELETE FROM profiles WHERE user_id=$1", [uid]);
+    await client.query("COMMIT");
+    io.to(`user:${uid}`).emit("account-deleted");
+    res.json({ ok: true });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    next(error);
+  } finally {
+    client.release();
+  }
+});
 
 app.get("/api/rules-status", auth, async (req, res, next) => {
   try {
@@ -789,7 +913,7 @@ app.get("/api/turn-credentials", auth, async (_req, res, next) => {
   }
 });
 
-app.get("/api/messages", auth, async (req, res, next) => {
+app.get("/api/messages", auth, requireAdult, async (req, res, next) => {
   try {
     const room = getRoom(req.query.room);
     const { rows } = await pool.query(`
@@ -809,7 +933,7 @@ app.get("/api/messages", auth, async (req, res, next) => {
   }
 });
 
-app.get("/api/media/:id", auth, async (req, res, next) => {
+app.get("/api/media/:id", auth, requireAdult, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       "SELECT media_data, media_type FROM letchat_messages WHERE id = $1 AND expires_at > NOW()",
@@ -824,7 +948,7 @@ app.get("/api/media/:id", auth, async (req, res, next) => {
   }
 });
 
-app.post("/api/messages", auth, requireRules, rateLimitAction("public-messages", 30, 60 * 1000), async (req, res, next) => {
+app.post("/api/messages", auth, requireAdult, requireRules, rateLimitAction("public-messages", 30, 60 * 1000), async (req, res, next) => {
   try {
     const body = String(req.body.body || "").trim().slice(0, 4000);
     const room = getRoom(req.body.room);
@@ -856,7 +980,7 @@ app.post("/api/messages", auth, requireRules, rateLimitAction("public-messages",
   }
 });
 
-app.get("/api/private/:otherId", auth, async (req, res, next) => {
+app.get("/api/private/:otherId", auth, requireAdult, async (req, res, next) => {
   try {
     const otherId = String(req.params.otherId || "").slice(0, 200);
     const blocked = await pool.query(
@@ -883,7 +1007,7 @@ app.get("/api/private/:otherId", auth, async (req, res, next) => {
   }
 });
 
-app.get("/api/private-media/:id", auth, async (req, res, next) => {
+app.get("/api/private-media/:id", auth, requireAdult, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT media_data, media_type FROM letchat_private_messages
@@ -900,7 +1024,7 @@ app.get("/api/private-media/:id", auth, async (req, res, next) => {
   }
 });
 
-app.post("/api/private", auth, requireRules, rateLimitAction("private-messages", 30, 60 * 1000), async (req, res, next) => {
+app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("private-messages", 30, 60 * 1000), async (req, res, next) => {
   try {
     const recipientId = String(req.body.recipientId || "").slice(0, 200);
     const body = String(req.body.body || "").trim().slice(0, 4000);
@@ -967,6 +1091,11 @@ function emitPresence(room) {
 io.use(async (socket, next) => {
   try {
     socket.user = await verify(socket.handshake.auth?.token);
+    const ageConsent = await pool.query(
+      "SELECT 1 FROM letchat_age_consents WHERE user_id=$1 AND over_18=TRUE",
+      [socket.user.id]
+    );
+    if (!ageConsent.rowCount) return next(new Error("age-required"));
     if (!isAdminUser(socket.user)) {
       const suspension = await pool.query(
         `SELECT 1 FROM letchat_suspensions
