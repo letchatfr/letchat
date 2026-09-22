@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#f36f58" />
     <title>Letchat</title>
-    <link rel="stylesheet" href="style.css?v=premium-pack-2" />
+    <link rel="stylesheet" href="style.css?v=message-actions-1" />
   </head>
   <body>
     <section id="login" class="login">
@@ -102,6 +102,10 @@
             capture="user"
             hidden
           />
+          <div id="replyPreview" class="reply-preview hidden">
+            <div><strong id="replyPreviewAuthor"></strong><span id="replyPreviewText"></span></div>
+            <button id="cancelReply" type="button" title="Annuler la réponse">×</button>
+          </div>
           <div class="composer">
             <button id="attach">⌕</button><button id="cameraBtn">▣</button
             ><textarea
@@ -327,6 +331,6 @@
       </footer>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=premium-pack-2"></script>
+    <script type="module" src="app.js?v=message-actions-1"></script>
   </body>
 </html>
