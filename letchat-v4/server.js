@@ -190,6 +190,7 @@ await pool.query(`
     current_period_end TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+  ALTER TABLE letchat_subscriptions ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'premium';
 `);
 
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
@@ -240,15 +241,17 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
           : null;
         await pool.query(
           `INSERT INTO letchat_subscriptions
-           (user_id,email,stripe_customer_id,stripe_subscription_id,status,current_period_end,updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,NOW())
+           (user_id,email,stripe_customer_id,stripe_subscription_id,status,current_period_end,plan,updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
            ON CONFLICT (user_id) DO UPDATE SET email=EXCLUDED.email,
              stripe_customer_id=EXCLUDED.stripe_customer_id,
              stripe_subscription_id=EXCLUDED.stripe_subscription_id,
-             status=EXCLUDED.status,current_period_end=EXCLUDED.current_period_end,updated_at=NOW()`,
+             status=EXCLUDED.status,current_period_end=EXCLUDED.current_period_end,
+             plan=EXCLUDED.plan,updated_at=NOW()`,
           [userId, session.customer_details?.email || "", String(session.customer),
            subscription?.id || null, subscription?.status || "active",
-           subscription?.current_period_end ? new Date(subscription.current_period_end * 1000) : null]
+           subscription?.current_period_end ? new Date(subscription.current_period_end * 1000) : null,
+           String(session.metadata?.plan || subscription?.metadata?.plan || "premium")]
         );
       }
     }
@@ -395,35 +398,38 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.get("/api/public-config", (_req, res) => {
   res.json({
     contactEmail: String(process.env.CONTACT_EMAIL || "").trim(),
-    premiumConfigured: Boolean(stripe && process.env.STRIPE_PRICE_ID)
+    premiumConfigured: Boolean(stripe && process.env.STRIPE_PRICE_ID),
+    premiumPlusConfigured: Boolean(stripe && process.env.STRIPE_PRICE_PLUS_ID)
   });
 });
 
 app.get("/api/subscription", auth, requireAdult, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      "SELECT status,current_period_end,stripe_customer_id FROM letchat_subscriptions WHERE user_id=$1",
+      "SELECT status,current_period_end,stripe_customer_id,plan FROM letchat_subscriptions WHERE user_id=$1",
       [req.user.id]
     );
     const row = rows[0];
     const premium = Boolean(row && ["active", "trialing"].includes(row.status));
-    res.json({ premium, status: row?.status || "free", currentPeriodEnd: row?.current_period_end || null, canManage: Boolean(row?.stripe_customer_id) });
+    res.json({ premium, plan: row?.plan || null, status: row?.status || "free", currentPeriodEnd: row?.current_period_end || null, canManage: Boolean(row?.stripe_customer_id) });
   } catch (error) { next(error); }
 });
 
 app.post("/api/stripe/checkout", auth, requireAdult, rateLimitAction("stripe-checkout", 5, 60 * 60 * 1000), async (req, res, next) => {
   try {
-    if (!stripe || !process.env.STRIPE_PRICE_ID) return res.status(503).json({ error: "Abonnement temporairement indisponible" });
+    const plan = req.body?.plan === "premium_plus" ? "premium_plus" : "premium";
+    const priceId = plan === "premium_plus" ? process.env.STRIPE_PRICE_PLUS_ID : process.env.STRIPE_PRICE_ID;
+    if (!stripe || !priceId) return res.status(503).json({ error: "Cette formule est temporairement indisponible" });
     const existing = await pool.query("SELECT stripe_customer_id FROM letchat_subscriptions WHERE user_id=$1", [req.user.id]);
     const baseUrl = String(process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const params = {
       mode: "subscription",
-      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${baseUrl}/?premium=success`,
       cancel_url: `${baseUrl}/?premium=cancel`,
       client_reference_id: req.user.id,
-      metadata: { userId: req.user.id },
-      subscription_data: { metadata: { userId: req.user.id } },
+      metadata: { userId: req.user.id, plan },
+      subscription_data: { metadata: { userId: req.user.id, plan } },
       allow_promotion_codes: true
     };
     if (existing.rows[0]?.stripe_customer_id) params.customer = existing.rows[0].stripe_customer_id;
