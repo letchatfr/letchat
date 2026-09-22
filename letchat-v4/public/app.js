@@ -55,6 +55,9 @@ let user,
   pendingProfilePhoto = null,
   viewedProfile = null,
   sessionStarted = false;
+const fallbackIceServers = [
+  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+];
 const rooms = {
   cafe: { title: "☀ Le Café", welcome: "Bienvenue au Café" },
   creatifs: { title: "✦ Créatifs", welcome: "Bienvenue chez les Créatifs" },
@@ -1582,7 +1585,9 @@ async function prepareIce() {
       })
       .catch((error) => {
         icePromise = null;
-        throw error;
+        console.warn("TURN indisponible, utilisation du relais direct/STUN :", error);
+        iceServers = fallbackIceServers;
+        return iceServers;
       });
   return icePromise;
 }
@@ -1632,14 +1637,8 @@ async function startMedia() {
     $("#call").classList.remove("hidden");
     return true;
   }
+  stream?.getTracks().forEach((track) => track.stop());
   stream = null;
-  try {
-    await prepareIce();
-  } catch (error) {
-    console.error("TURN :", error);
-    showError("Serveur vidéo TURN indisponible");
-    return false;
-  }
   if (!navigator.mediaDevices?.getUserMedia) {
     showError("Ce navigateur ne permet pas l’accès à la caméra");
     return false;
@@ -1655,6 +1654,7 @@ async function startMedia() {
     },
     { video: true, audio: true },
     { video: true, audio: false },
+    { video: false, audio: true },
   ];
   let lastError;
   for (const constraints of attempts) {
@@ -1669,6 +1669,9 @@ async function startMedia() {
         $("#call").classList.remove("hidden");
         if (!stream.getAudioTracks().length)
           showError("Caméra ouverte, mais aucun microphone disponible");
+        else if (!stream.getVideoTracks().length)
+          showError("Microphone ouvert, mais la caméra est indisponible");
+        await prepareIce();
         return true;
       }
     } catch (error) {
