@@ -8,6 +8,9 @@
 .profile-card label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; margin: 13px 0; }
 .profile-card label input[type="text"], .profile-card label input:not([type]) { height: 44px; border: 1px solid #d8d3cc; border-radius: 10px; padding: 0 12px; outline: 0; }
 .profile-card label input:focus { border-color: #f36f58; }
+.profile-card textarea { border: 1px solid #d8d3cc; border-radius: 10px; padding: 11px 12px; outline: 0; resize: vertical; font: inherit; }
+.profile-card textarea:focus { border-color: #f36f58; }
+.person-button small { max-width: 185px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-card .profile-check { flex-direction: row; align-items: center; font-weight: 400; }
 .profile-save { width: 100%; height: 46px; border: 0; border-radius: 11px; background: #f36f58; color: #fff; font-weight: 800; margin-top: 8px; }
 .profile-close { position: absolute; right: 16px; top: 14px; border: 0; background: none; font-size: 25px; }
