@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#f36f58" />
     <title>Letchat</title>
-    <link rel="stylesheet" href="style.css?v=message-actions-1" />
+    <link rel="stylesheet" href="style.css?v=search-1" />
   </head>
   <body>
     <section id="login" class="login">
@@ -58,7 +58,8 @@
             <p><span></span><b id="onlineCount">1</b> en ligne</p>
           </div>
           <div class="chat-actions">
-            <button
+            <button id="searchBtn" class="search-button" title="Rechercher">🔍</button
+            ><button
               id="notificationsBtn"
               class="notifications-button"
               title="Notifications"
@@ -286,6 +287,20 @@
         <div id="notificationsList" class="notifications-list"></div>
       </div>
     </section>
+    <section id="searchModal" class="search-modal hidden">
+      <div class="search-panel">
+        <header>
+          <div><h2>Rechercher</h2><p>Messages et contacts</p></div>
+          <button type="button" id="closeSearch">×</button>
+        </header>
+        <div class="search-field">
+          <span>🔍</span><input id="searchInput" type="search" placeholder="Écrivez un mot ou un nom…" autocomplete="off" />
+        </div>
+        <div id="searchResults" class="search-results">
+          <p class="search-empty">Commencez à écrire pour rechercher.</p>
+        </div>
+      </div>
+    </section>
     <section id="adminModal" class="admin-modal hidden">
       <div class="admin-panel">
         <header>
@@ -331,6 +346,6 @@
       </footer>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=message-actions-1"></script>
+    <script type="module" src="app.js?v=search-1"></script>
   </body>
 </html>
