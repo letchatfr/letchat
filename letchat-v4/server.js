@@ -89,6 +89,18 @@ await pool.query(`
   ON letchat_private_messages(expires_at);
 `);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_blocks (
+    blocker_id TEXT NOT NULL,
+    blocked_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (blocker_id, blocked_id),
+    CHECK (blocker_id <> blocked_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_letchat_blocks_blocked
+  ON letchat_blocks(blocked_id);
+`);
+
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
@@ -222,6 +234,53 @@ app.get("/api/profile/:userId", auth, async (req, res, next) => {
   }
 });
 
+app.get("/api/blocks", auth, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT b.blocked_id AS user_id,
+              COALESCE(p.display_name, 'Utilisateur bloqué') AS display_name,
+              p.photo
+       FROM letchat_blocks b
+       LEFT JOIN profiles p ON p.user_id = b.blocked_id
+       WHERE b.blocker_id = $1
+       ORDER BY b.created_at DESC`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/blocks/:userId", auth, async (req, res, next) => {
+  try {
+    const blockedId = String(req.params.userId || "").slice(0, 200);
+    if (!blockedId || blockedId === req.user.id) {
+      return res.status(400).json({ error: "Utilisateur incorrect" });
+    }
+    await pool.query(
+      `INSERT INTO letchat_blocks (blocker_id, blocked_id)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [req.user.id, blockedId]
+    );
+    res.status(201).json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/blocks/:userId", auth, async (req, res, next) => {
+  try {
+    await pool.query(
+      "DELETE FROM letchat_blocks WHERE blocker_id = $1 AND blocked_id = $2",
+      [req.user.id, String(req.params.userId || "").slice(0, 200)]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 const allowedRooms = new Set(["cafe", "creatifs", "entraide"]);
 const getRoom = value => allowedRooms.has(String(value)) ? String(value) : "cafe";
 
@@ -296,8 +355,12 @@ app.get("/api/messages", auth, async (req, res, next) => {
              (media_data IS NOT NULL) AS has_media
       FROM letchat_messages
       WHERE expires_at > NOW() AND room = $1
+        AND NOT EXISTS (
+          SELECT 1 FROM letchat_blocks b
+          WHERE b.blocker_id = $2 AND b.blocked_id = letchat_messages.user_id
+        )
       ORDER BY id DESC LIMIT 100
-    `, [room]);
+    `, [room, req.user.id]);
     res.json(rows.reverse());
   } catch (error) {
     next(error);
@@ -354,6 +417,13 @@ app.post("/api/messages", auth, async (req, res, next) => {
 app.get("/api/private/:otherId", auth, async (req, res, next) => {
   try {
     const otherId = String(req.params.otherId || "").slice(0, 200);
+    const blocked = await pool.query(
+      `SELECT 1 FROM letchat_blocks
+       WHERE (blocker_id=$1 AND blocked_id=$2)
+          OR (blocker_id=$2 AND blocked_id=$1) LIMIT 1`,
+      [req.user.id, otherId]
+    );
+    if (blocked.rowCount) return res.status(403).json({ error: "Conversation bloquée" });
     const { rows } = await pool.query(
       `SELECT id, sender_id AS user_id, recipient_id, sender_name AS author,
               sender_photo AS photo, body, media_type, created_at, expires_at,
@@ -398,6 +468,13 @@ app.post("/api/private", auth, async (req, res, next) => {
     if (!recipientId || recipientId === req.user.id) {
       return res.status(400).json({ error: "Destinataire incorrect" });
     }
+    const blocked = await pool.query(
+      `SELECT 1 FROM letchat_blocks
+       WHERE (blocker_id=$1 AND blocked_id=$2)
+          OR (blocker_id=$2 AND blocked_id=$1) LIMIT 1`,
+      [req.user.id, recipientId]
+    );
+    if (blocked.rowCount) return res.status(403).json({ error: "Message impossible : utilisateur bloqué" });
     if (!body && !media) return res.status(400).json({ error: "Message vide" });
     if (media && media.length > 8e6) {
       return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
