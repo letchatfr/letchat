@@ -37,6 +37,7 @@ let user,
   friendRelations = new Map(),
   privateConversations = [],
   showArchivedConversations = false,
+  privateContactStatus = null,
   notifications = [],
   lastPeople = [],
   iceServers = [],
@@ -643,6 +644,8 @@ async function deleteConversation(id, name) {
     if (currentPrivate?.id === String(id)) {
       stopTyping(String(id));
       currentPrivate = null;
+      privateContactStatus = null;
+      socket?.emit("watch-private-status", "");
       viewOnceEnabled = false;
       updateViewOnceButton();
       $("#blockBtn").classList.add("hidden");
@@ -668,13 +671,15 @@ function openPrivate(id, name) {
   unreadPrivate.delete(id);
   updateUnread();
   currentPrivate = { id, name };
+  privateContactStatus = null;
+  socket?.emit("watch-private-status", id);
   updateViewOnceButton();
   renderPrivateConversations();
   $("#blockBtn").classList.remove("hidden");
   $("#reportBtn").classList.remove("hidden");
   $(".chat header h1").textContent = `✉ ${name}`;
   $("#roomPresence").classList.add("hidden");
-  $("#privateTypingStatus").textContent = "Discussion privée";
+  $("#privateTypingStatus").textContent = "Chargement du statut…";
   $("#privateTypingStatus").classList.remove("hidden", "is-typing");
   $("#typing").textContent = "";
   load();
@@ -721,6 +726,33 @@ function showPrivateNotification(m) {
       };
     } catch {}
 }
+function formatLastSeen(value) {
+  if (!value) return "Hors ligne";
+  const date = new Date(value), seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return "Vu à l’instant";
+  if (seconds < 3600) return `Vu il y a ${Math.floor(seconds / 60)} min`;
+  if (date.toDateString() === new Date().toDateString())
+    return `Vu aujourd’hui à ${date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+  return `Vu le ${date.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} à ${date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+}
+function privateStatusText(status) {
+  if (!status?.online) return formatLastSeen(status?.lastSeen);
+  if (status.availability === "busy") return "Occupé";
+  if (status.availability === "away") return "Absent";
+  return "En ligne";
+}
+function renderPrivateContactStatus() {
+  if (!currentPrivate) return;
+  const status = $("#privateTypingStatus");
+  status.textContent = privateStatusText(privateContactStatus);
+  status.classList.remove("is-typing");
+  status.classList.toggle("is-offline", !privateContactStatus?.online);
+  status.classList.toggle("is-busy", privateContactStatus?.online && privateContactStatus.availability === "busy");
+  status.classList.toggle("is-away", privateContactStatus?.online && privateContactStatus.availability === "away");
+}
+setInterval(() => {
+  if (currentPrivate && !$("#privateTypingStatus").classList.contains("is-typing")) renderPrivateContactStatus();
+}, 30000);
 async function requestNotifications() {
   if ("Notification" in window && Notification.permission === "default")
     try {
@@ -1048,6 +1080,7 @@ function connect() {
   socket = io({ auth: { token }, transports: ["websocket", "polling"] });
   socket.on("connect", () => {
     socket.emit("join-room", currentRoom);
+    if (currentPrivate) socket.emit("watch-private-status", currentPrivate.id);
     load();
   });
   socket.on("message", (m) => addMessage(m));
@@ -1056,8 +1089,17 @@ function connect() {
   socket.on("private-typing", data => {
     if (!currentPrivate || String(data.userId) !== String(currentPrivate.id)) return;
     const status = $("#privateTypingStatus");
-    status.textContent = data.active ? "écrit…" : "Discussion privée";
+    if (data.active) {
+      status.textContent = "écrit…";
+      status.classList.remove("is-offline", "is-busy", "is-away");
+    }
+    else renderPrivateContactStatus();
     status.classList.toggle("is-typing", data.active);
+  });
+  socket.on("private-status", data => {
+    if (!currentPrivate || String(data.userId) !== String(currentPrivate.id)) return;
+    privateContactStatus = data;
+    if (!$("#privateTypingStatus").classList.contains("is-typing")) renderPrivateContactStatus();
   });
   socket.on("view-once-opened", payload => {
     const article = document.querySelector(`[data-key="p-${CSS.escape(String(payload.id))}"]`);
@@ -1446,6 +1488,8 @@ $("#blockBtn").onclick = async () => {
     });
     await loadFriends();
     currentPrivate = null;
+    privateContactStatus = null;
+    socket?.emit("watch-private-status", "");
     stopTyping(target.id);
     viewOnceEnabled = false;
     updateViewOnceButton();
@@ -1480,6 +1524,8 @@ $("#viewOnceBtn").onclick = () => {
     const previousPrivateId = currentPrivate?.id;
     if (previousPrivateId) stopTyping(previousPrivateId);
     currentPrivate = null;
+    privateContactStatus = null;
+    socket?.emit("watch-private-status", "");
     viewOnceEnabled = false;
     updateViewOnceButton();
     $("#blockBtn").classList.add("hidden");
@@ -1503,6 +1549,8 @@ document.querySelector(".side nav a.active").onclick = () => {
   const previousPrivateId = currentPrivate?.id;
   if (previousPrivateId) stopTyping(previousPrivateId);
   currentPrivate = null;
+  privateContactStatus = null;
+  socket?.emit("watch-private-status", "");
   viewOnceEnabled = false;
   updateViewOnceButton();
   $("#blockBtn").classList.add("hidden");
