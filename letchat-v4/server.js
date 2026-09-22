@@ -5,12 +5,14 @@ import { createHash } from "node:crypto";
 import pg from "pg";
 import { Server } from "socket.io";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import Stripe from "stripe";
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 10e6 });
 const projectId = process.env.FIREBASE_PROJECT_ID || "letchat-1d79d";
 const port = process.env.PORT || 10000;
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const jwks = createRemoteJWKSet(new URL(
   "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
@@ -178,6 +180,18 @@ await pool.query(`
   );
 `);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_subscriptions (
+    user_id TEXT PRIMARY KEY,
+    email TEXT NOT NULL DEFAULT '',
+    stripe_customer_id TEXT UNIQUE,
+    stripe_subscription_id TEXT UNIQUE,
+    status TEXT NOT NULL DEFAULT 'free',
+    current_period_end TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+`);
+
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
@@ -209,6 +223,51 @@ app.use("/__/auth", async (req, res) => {
 });
 
 app.use(helmet({ contentSecurityPolicy: false }));
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  try {
+    if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) return res.sendStatus(503);
+    const event = stripe.webhooks.constructEvent(
+      req.body,
+      req.headers["stripe-signature"],
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      const userId = String(session.client_reference_id || session.metadata?.userId || "");
+      if (userId && session.customer) {
+        const subscription = session.subscription
+          ? await stripe.subscriptions.retrieve(String(session.subscription))
+          : null;
+        await pool.query(
+          `INSERT INTO letchat_subscriptions
+           (user_id,email,stripe_customer_id,stripe_subscription_id,status,current_period_end,updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,NOW())
+           ON CONFLICT (user_id) DO UPDATE SET email=EXCLUDED.email,
+             stripe_customer_id=EXCLUDED.stripe_customer_id,
+             stripe_subscription_id=EXCLUDED.stripe_subscription_id,
+             status=EXCLUDED.status,current_period_end=EXCLUDED.current_period_end,updated_at=NOW()`,
+          [userId, session.customer_details?.email || "", String(session.customer),
+           subscription?.id || null, subscription?.status || "active",
+           subscription?.current_period_end ? new Date(subscription.current_period_end * 1000) : null]
+        );
+      }
+    }
+    if (["customer.subscription.updated", "customer.subscription.deleted"].includes(event.type)) {
+      const subscription = event.data.object;
+      await pool.query(
+        `UPDATE letchat_subscriptions SET status=$1,current_period_end=$2,updated_at=NOW()
+         WHERE stripe_subscription_id=$3 OR stripe_customer_id=$4`,
+        [subscription.status,
+         subscription.current_period_end ? new Date(subscription.current_period_end * 1000) : null,
+         subscription.id, String(subscription.customer)]
+      );
+    }
+    res.json({ received: true });
+  } catch (error) {
+    console.error("Webhook Stripe :", error.message);
+    res.status(400).send("Webhook incorrect");
+  }
+});
 app.use(express.json({ limit: "9mb" }));
 app.use(express.static("public", {
   etag: false,
@@ -334,7 +393,55 @@ function rateLimitAction(name, maximum, windowMs) {
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/api/public-config", (_req, res) => {
-  res.json({ contactEmail: String(process.env.CONTACT_EMAIL || "").trim() });
+  res.json({
+    contactEmail: String(process.env.CONTACT_EMAIL || "").trim(),
+    premiumConfigured: Boolean(stripe && process.env.STRIPE_PRICE_ID)
+  });
+});
+
+app.get("/api/subscription", auth, requireAdult, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT status,current_period_end,stripe_customer_id FROM letchat_subscriptions WHERE user_id=$1",
+      [req.user.id]
+    );
+    const row = rows[0];
+    const premium = Boolean(row && ["active", "trialing"].includes(row.status));
+    res.json({ premium, status: row?.status || "free", currentPeriodEnd: row?.current_period_end || null, canManage: Boolean(row?.stripe_customer_id) });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/stripe/checkout", auth, requireAdult, rateLimitAction("stripe-checkout", 5, 60 * 60 * 1000), async (req, res, next) => {
+  try {
+    if (!stripe || !process.env.STRIPE_PRICE_ID) return res.status(503).json({ error: "Abonnement temporairement indisponible" });
+    const existing = await pool.query("SELECT stripe_customer_id FROM letchat_subscriptions WHERE user_id=$1", [req.user.id]);
+    const baseUrl = String(process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+    const params = {
+      mode: "subscription",
+      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      success_url: `${baseUrl}/?premium=success`,
+      cancel_url: `${baseUrl}/?premium=cancel`,
+      client_reference_id: req.user.id,
+      metadata: { userId: req.user.id },
+      subscription_data: { metadata: { userId: req.user.id } },
+      allow_promotion_codes: true
+    };
+    if (existing.rows[0]?.stripe_customer_id) params.customer = existing.rows[0].stripe_customer_id;
+    else params.customer_email = req.user.email;
+    const session = await stripe.checkout.sessions.create(params);
+    res.json({ url: session.url });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/stripe/portal", auth, requireAdult, rateLimitAction("stripe-portal", 10, 60 * 60 * 1000), async (req, res, next) => {
+  try {
+    if (!stripe) return res.status(503).json({ error: "Portail Stripe indisponible" });
+    const { rows } = await pool.query("SELECT stripe_customer_id FROM letchat_subscriptions WHERE user_id=$1", [req.user.id]);
+    if (!rows[0]?.stripe_customer_id) return res.status(404).json({ error: "Aucun abonnement Stripe associé" });
+    const baseUrl = String(process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+    const session = await stripe.billingPortal.sessions.create({ customer: rows[0].stripe_customer_id, return_url: `${baseUrl}/` });
+    res.json({ url: session.url });
+  } catch (error) { next(error); }
 });
 
 app.get("/api/age-status", auth, async (req, res, next) => {
@@ -409,6 +516,10 @@ app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account",
       return res.status(400).json({ error: "Confirmation incorrecte" });
     }
     const uid = req.user.id;
+    const billing = await client.query("SELECT status FROM letchat_subscriptions WHERE user_id=$1", [uid]);
+    if (billing.rows[0] && ["active", "trialing", "past_due"].includes(billing.rows[0].status)) {
+      return res.status(409).json({ error: "Annulez d’abord votre abonnement Premium depuis le portail Stripe" });
+    }
     const anonymousId = `compte-supprime-${createHash("sha256").update(uid).digest("hex").slice(0,24)}`;
     await client.query("BEGIN");
     await client.query("DELETE FROM letchat_messages WHERE user_id=$1", [uid]);
@@ -421,6 +532,7 @@ app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account",
     await client.query("DELETE FROM letchat_suspensions WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_consents WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_age_consents WHERE user_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_subscriptions WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM profiles WHERE user_id=$1", [uid]);
     await client.query("COMMIT");
     io.to(`user:${uid}`).emit("account-deleted");
