@@ -1151,6 +1151,56 @@ app.post("/api/messages", auth, requireAdult, requireRules, rateLimitAction("pub
   }
 });
 
+app.get("/api/private-conversations", auth, requireAdult, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `WITH visible AS (
+         SELECT m.*,
+                CASE WHEN m.sender_id=$1 THEN m.recipient_id ELSE m.sender_id END AS other_id
+         FROM letchat_private_messages m
+         WHERE m.expires_at > NOW() AND (m.sender_id=$1 OR m.recipient_id=$1)
+       ), latest AS (
+         SELECT DISTINCT ON (other_id)
+                other_id, id, sender_id, sender_name, sender_photo, body,
+                media_type, created_at
+         FROM visible
+         ORDER BY other_id, created_at DESC, id DESC
+       ), unread AS (
+         SELECT sender_id AS other_id, COUNT(*)::int AS unread_count
+         FROM letchat_private_messages
+         WHERE recipient_id=$1 AND read_at IS NULL AND expires_at > NOW()
+         GROUP BY sender_id
+       )
+       SELECT l.other_id AS user_id,
+              COALESCE(p.display_name,
+                CASE WHEN l.sender_id=l.other_id THEN l.sender_name ELSE 'Utilisateur' END
+              ) AS display_name,
+              COALESCE(p.photo,
+                CASE WHEN l.sender_id=l.other_id THEN l.sender_photo ELSE NULL END
+              ) AS photo,
+              p.gender, p.availability,
+              l.id AS last_message_id, l.sender_id AS last_sender_id,
+              l.body AS last_body, l.media_type AS last_media_type,
+              l.created_at AS last_message_at,
+              COALESCE(u.unread_count, 0)::int AS unread_count
+       FROM latest l
+       LEFT JOIN profiles p ON p.user_id=l.other_id
+       LEFT JOIN unread u ON u.other_id=l.other_id
+       WHERE NOT EXISTS (
+         SELECT 1 FROM letchat_blocks b
+         WHERE (b.blocker_id=$1 AND b.blocked_id=l.other_id)
+            OR (b.blocker_id=l.other_id AND b.blocked_id=$1)
+       )
+       ORDER BY l.created_at DESC
+       LIMIT 100`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/private/:otherId", auth, requireAdult, async (req, res, next) => {
   try {
     const otherId = String(req.params.otherId || "").slice(0, 200);
