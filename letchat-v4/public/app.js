@@ -1629,6 +1629,30 @@ function mediaErrorMessage(error) {
     `Caméra/micro indisponible (${error?.name || "erreur inconnue"})`
   );
 }
+function setCameraStatus(message = "") {
+  const status = $("#cameraStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("hidden", !message);
+}
+async function openCamera() {
+  let lastError;
+  const attempts = [
+    { video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: true, audio: false },
+  ];
+  for (const constraints of attempts) {
+    try {
+      const cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const track = cameraStream.getVideoTracks()[0];
+      if (track) return track;
+    } catch (error) {
+      lastError = error;
+      console.error("Caméra :", error.name, error.message);
+    }
+  }
+  throw lastError || new DOMException("Caméra indisponible", "NotFoundError");
+}
 async function startMedia() {
   const active =
     stream && stream.getTracks().some((track) => track.readyState === "live");
@@ -1643,44 +1667,34 @@ async function startMedia() {
     showError("Ce navigateur ne permet pas l’accès à la caméra");
     return false;
   }
-  const attempts = [
-    {
-      video: {
-        facingMode: "user",
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-      audio: { echoCancellation: true, noiseSuppression: true },
-    },
-    { video: true, audio: true },
-    { video: true, audio: false },
-    { video: false, audio: true },
-  ];
-  let lastError;
-  for (const constraints of attempts) {
-    try {
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
-      if (stream) {
-        $("#localVideo").srcObject = stream;
-        $("#localVideo").muted = true;
-        await $("#localVideo")
-          .play()
-          .catch(() => {});
-        $("#call").classList.remove("hidden");
-        if (!stream.getAudioTracks().length)
-          showError("Caméra ouverte, mais aucun microphone disponible");
-        else if (!stream.getVideoTracks().length)
-          showError("Microphone ouvert, mais la caméra est indisponible");
-        await prepareIce();
-        return true;
-      }
-    } catch (error) {
-      lastError = error;
-      console.error("Caméra/micro :", error.name, error.message);
-    }
+  stream = new MediaStream();
+  let cameraError;
+  try {
+    stream.addTrack(await openCamera());
+    setCameraStatus();
+  } catch (error) {
+    cameraError = error;
+    setCameraStatus(`${mediaErrorMessage(error)}. Cliquez sur « Caméra » pour réessayer.`);
   }
-  showError(mediaErrorMessage(lastError));
-  return false;
+  try {
+    const audioStream = await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: { echoCancellation: true, noiseSuppression: true },
+    });
+    audioStream.getAudioTracks().forEach((track) => stream.addTrack(track));
+  } catch (error) {
+    console.error("Microphone :", error.name, error.message);
+  }
+  if (!stream.getTracks().length) {
+    showError(mediaErrorMessage(cameraError));
+    return false;
+  }
+  $("#localVideo").srcObject = stream;
+  $("#localVideo").muted = true;
+  await $("#localVideo").play().catch(() => {});
+  $("#call").classList.remove("hidden");
+  await prepareIce();
+  return true;
 }
 async function flushIce(id, pc) {
   const list = pendingIce.get(id) || [];
@@ -1763,8 +1777,30 @@ function hang() {
 $("#hangup").onclick = $("#closeCall").onclick = hang;
 $("#mic").onclick = () =>
   stream?.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
-$("#cam").onclick = () =>
-  stream?.getVideoTracks().forEach((t) => (t.enabled = !t.enabled));
+$("#cam").onclick = async () => {
+  const track = stream?.getVideoTracks()[0];
+  if (track) {
+    track.enabled = !track.enabled;
+    setCameraStatus(track.enabled ? "" : "Caméra désactivée");
+    return;
+  }
+  try {
+    const newTrack = await openCamera();
+    stream ||= new MediaStream();
+    stream.addTrack(newTrack);
+    $("#localVideo").srcObject = stream;
+    await $("#localVideo").play().catch(() => {});
+    for (const [id, pc] of peers) {
+      pc.addTrack(newTrack, stream);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("webrtc", { target: id, data: { type: "offer", sdp: offer } });
+    }
+    setCameraStatus();
+  } catch (error) {
+    setCameraStatus(`${mediaErrorMessage(error)}. Vérifiez l’autorisation caméra du navigateur.`);
+  }
+};
 $("#screen").onclick = async () => {
   try {
     const s = await navigator.mediaDevices.getDisplayMedia({ video: true }),

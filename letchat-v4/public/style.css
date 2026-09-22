@@ -306,3 +306,5 @@
   .rules-modal { align-items: end; padding: 0; }
   .rules-card { width: 100%; max-height: 96dvh; border-radius: 20px 20px 0 0; padding: 24px 19px max(22px, env(safe-area-inset-bottom)); }
 }
+/* Message affiché directement sur l'aperçu quand la caméra ne fournit aucune image. */
+.camera-status{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:min(85%,420px);margin:0;padding:14px;text-align:center;line-height:1.4;background:#111d;border:1px solid #ffffff33;border-radius:12px;color:#fff}
