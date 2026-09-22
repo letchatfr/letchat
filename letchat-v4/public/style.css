@@ -91,3 +91,25 @@
   .admin-panel { max-height: 96dvh; border-radius: 18px 18px 0 0; }
   .report-head { flex-direction: column; gap: 4px; }
 }
+.people > hr { border: 0; border-top: 1px solid #e5dfd7; margin: 18px 0; }
+.person-row { display: flex; align-items: center; gap: 6px; border: 1px solid transparent; padding: 5px; border-radius: 12px; margin: 7px 0; }
+.person-row .person-button { flex: 1; min-width: 0; padding: 4px; }
+.person-row.gender-female { background: #fff0f6; border-color: #f4b8d1; }
+.person-row.gender-female img { outline: 3px solid #ec78aa; }
+.person-row.gender-female strong { color: #a83268; }
+.person-row.gender-male { background: #eef6ff; border-color: #b7d7f6; }
+.person-row.gender-male img { outline: 3px solid #609ed8; }
+.person-row.gender-male strong { color: #27659f; }
+.person-row.gender-neutral { background: #f7f5f2; border-color: #e4dfd8; }
+.friend-action { flex: 0 0 auto; border: 0; border-radius: 8px; padding: 7px; background: #e4f0e8; color: #27603c; font-size: 11px; font-weight: 800; }
+.friend-state { flex: 0 0 auto; color: #538066; font-size: 10px; font-weight: 700; padding-right: 4px; }
+#friendRequests h3, #friendsList h3 { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: .6px; margin: 14px 0 7px; }
+.friend-card { display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 8px; margin: 5px 0; border-radius: 10px; background: #f5f1eb; }
+.friend-card > div { display: flex; gap: 5px; }
+.friend-card button { border: 0; border-radius: 7px; padding: 6px 8px; background: #fff; color: #333; font-size: 11px; font-weight: 700; }
+.friend-card button[data-accept-friend] { background: #dff1e5; color: #28633d; }
+.friend-open { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend-remove { flex: 0 0 29px; color: #9c3e36 !important; }
+.online-dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: #bbb; }
+.online-dot.online { background: #43a46c; box-shadow: 0 0 0 3px #dcefe4; }
+.no-friends { color: #999; font-size: 12px; }
