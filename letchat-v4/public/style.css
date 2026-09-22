@@ -53,3 +53,11 @@
 .blocked-person button { border: 0; border-radius: 8px; padding: 7px 10px; background: #eee9e3; color: #333; font-weight: 700; }
 .no-blocks { margin: 0; color: #888; font-size: 12px; }
 @media(max-width:650px) { .chat-actions .danger-button { font-size: 11px; padding: 9px 8px; } }
+.chat-actions .report-button { background: #8b5b28; }
+.report-card { border-top: 5px solid #d28a35; }
+.report-card #reportTarget { color: #5f5143; }
+.report-submit { background: #b66d23; }
+@media(max-width:650px) {
+  .chat-actions .report-button { font-size: 0; padding: 9px; }
+  .chat-actions .report-button::after { content: "⚑"; font-size: 18px; }
+}
