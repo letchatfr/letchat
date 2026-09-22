@@ -9,9 +9,9 @@
 /* Profil public intégré — ne nécessite aucun fichier CSS supplémentaire */
 .location-group { margin: 0 0 20px; }
 .location-group h3 { font-size: 11px; line-height: 1.4; color: #777; border-bottom: 1px solid #e8e3db; padding: 0 0 7px; margin: 0 0 10px; }
-.profile-modal { position: fixed; inset: 0; z-index: 100; background: #171917aa; display: grid; place-items: center; padding: 18px; }
+.profile-modal { position: fixed; inset: 0; z-index: 100; background: #171917aa; display: grid; place-items: center; padding: 18px; overflow: hidden; }
 .profile-modal.hidden { display: none !important; }
-.profile-card { position: relative; width: min(460px, 100%); background: #fff; border-radius: 20px; padding: 30px; box-shadow: 0 24px 80px #0004; }
+.profile-card { position: relative; width: min(540px, 100%); max-height: calc(100vh - 36px); max-height: calc(100dvh - 36px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; -webkit-overflow-scrolling: touch; background: #fff; border-radius: 20px; padding: 30px; box-shadow: 0 24px 80px #0004; }
 .profile-card h2 { margin: 0 0 8px; }
 .profile-card > p { color: #777; line-height: 1.5; margin: 0 0 20px; }
 .profile-card label { display: flex; flex-direction: column; gap: 6px; font-weight: 700; margin: 13px 0; }
