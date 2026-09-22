@@ -102,6 +102,23 @@ await pool.query(`
 `);
 
 await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_friends (
+    id BIGSERIAL PRIMARY KEY,
+    requester_id TEXT NOT NULL,
+    addressee_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (requester_id <> addressee_id),
+    CHECK (status IN ('pending', 'accepted'))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_letchat_friends_pair
+  ON letchat_friends (LEAST(requester_id, addressee_id), GREATEST(requester_id, addressee_id));
+  CREATE INDEX IF NOT EXISTS idx_letchat_friends_requester ON letchat_friends(requester_id);
+  CREATE INDEX IF NOT EXISTS idx_letchat_friends_addressee ON letchat_friends(addressee_id);
+`);
+
+await pool.query(`
   CREATE TABLE IF NOT EXISTS letchat_reports (
     id BIGSERIAL PRIMARY KEY,
     reporter_id TEXT NOT NULL,
@@ -315,6 +332,13 @@ app.post("/api/blocks/:userId", auth, async (req, res, next) => {
        VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [req.user.id, blockedId]
     );
+    await pool.query(
+      `DELETE FROM letchat_friends
+       WHERE (requester_id=$1 AND addressee_id=$2)
+          OR (requester_id=$2 AND addressee_id=$1)`,
+      [req.user.id, blockedId]
+    );
+    io.to(`user:${blockedId}`).emit("friends-updated");
     res.status(201).json({ ok: true });
   } catch (error) {
     next(error);
@@ -327,6 +351,99 @@ app.delete("/api/blocks/:userId", auth, async (req, res, next) => {
       "DELETE FROM letchat_blocks WHERE blocker_id = $1 AND blocked_id = $2",
       [req.user.id, String(req.params.userId || "").slice(0, 200)]
     );
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/friends", auth, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT f.id, f.requester_id, f.addressee_id, f.status, f.created_at,
+              CASE WHEN f.requester_id=$1 THEN 'outgoing' ELSE 'incoming' END AS direction,
+              CASE WHEN f.requester_id=$1 THEN f.addressee_id ELSE f.requester_id END AS user_id,
+              COALESCE(p.display_name, 'Utilisateur') AS display_name,
+              p.photo, p.bio, p.gender
+       FROM letchat_friends f
+       LEFT JOIN profiles p ON p.user_id = CASE
+         WHEN f.requester_id=$1 THEN f.addressee_id ELSE f.requester_id END
+       WHERE f.requester_id=$1 OR f.addressee_id=$1
+       ORDER BY f.updated_at DESC`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/friends/:userId", auth, async (req, res, next) => {
+  try {
+    const otherId = String(req.params.userId || "").slice(0, 200);
+    if (!otherId || otherId === req.user.id) {
+      return res.status(400).json({ error: "Utilisateur incorrect" });
+    }
+    const blocked = await pool.query(
+      `SELECT 1 FROM letchat_blocks
+       WHERE (blocker_id=$1 AND blocked_id=$2)
+          OR (blocker_id=$2 AND blocked_id=$1) LIMIT 1`,
+      [req.user.id, otherId]
+    );
+    if (blocked.rowCount) return res.status(403).json({ error: "Demande impossible : utilisateur bloqué" });
+    const existing = await pool.query(
+      `SELECT id, requester_id, addressee_id, status FROM letchat_friends
+       WHERE (requester_id=$1 AND addressee_id=$2)
+          OR (requester_id=$2 AND addressee_id=$1) LIMIT 1`,
+      [req.user.id, otherId]
+    );
+    if (existing.rowCount) {
+      return res.status(409).json({ error: existing.rows[0].status === "accepted" ? "Vous êtes déjà amis" : "Une demande existe déjà" });
+    }
+    const result = await pool.query(
+      `INSERT INTO letchat_friends (requester_id, addressee_id)
+       VALUES ($1, $2) RETURNING id, requester_id, addressee_id, status`,
+      [req.user.id, otherId]
+    );
+    io.to(`user:${otherId}`).emit("friends-updated");
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/friends/:id", auth, async (req, res, next) => {
+  try {
+    if (String(req.body.action) !== "accept") {
+      return res.status(400).json({ error: "Action incorrecte" });
+    }
+    const result = await pool.query(
+      `UPDATE letchat_friends SET status='accepted', updated_at=NOW()
+       WHERE id=$1 AND addressee_id=$2 AND status='pending'
+       RETURNING requester_id, addressee_id`,
+      [req.params.id, req.user.id]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "Demande introuvable" });
+    io.to(`user:${result.rows[0].requester_id}`).emit("friends-updated");
+    io.to(`user:${result.rows[0].addressee_id}`).emit("friends-updated");
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/friends/:id", auth, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM letchat_friends
+       WHERE id=$1 AND (requester_id=$2 OR addressee_id=$2)
+       RETURNING requester_id, addressee_id`,
+      [req.params.id, req.user.id]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "Relation introuvable" });
+    const otherId = result.rows[0].requester_id === req.user.id
+      ? result.rows[0].addressee_id : result.rows[0].requester_id;
+    io.to(`user:${otherId}`).emit("friends-updated");
     res.json({ ok: true });
   } catch (error) {
     next(error);
