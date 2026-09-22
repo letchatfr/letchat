@@ -145,6 +145,21 @@ await pool.query(`
 `);
 
 await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_conversation_preferences (
+    user_id TEXT NOT NULL,
+    other_id TEXT NOT NULL,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
+    muted BOOLEAN NOT NULL DEFAULT FALSE,
+    hidden_before TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, other_id),
+    CHECK (user_id <> other_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_letchat_conversation_preferences_user
+  ON letchat_conversation_preferences(user_id, archived, updated_at DESC);
+`);
+
+await pool.query(`
   CREATE TABLE IF NOT EXISTS letchat_reports (
     id BIGSERIAL PRIMARY KEY,
     reporter_id TEXT NOT NULL,
@@ -505,7 +520,7 @@ app.post("/api/age-accept", auth, rateLimitAction("age", 5, 60 * 60 * 1000), asy
 app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 60 * 60 * 1000), async (req, res, next) => {
   try {
     const uid = req.user.id;
-    const [profile, publicMessages, privateMessages, friends, blocks, notifications, reports, consents] = await Promise.all([
+    const [profile, publicMessages, privateMessages, friends, blocks, notifications, reports, consents, conversationPreferences] = await Promise.all([
       pool.query("SELECT user_id,email,display_name,photo,city,bio,gender,availability,last_seen,location_visible,updated_at FROM profiles WHERE user_id=$1", [uid]),
       pool.query("SELECT id,author,room,body,media_type,created_at,expires_at FROM letchat_messages WHERE user_id=$1 ORDER BY created_at", [uid]),
       pool.query(`SELECT id,sender_id,recipient_id,sender_name,body,media_type,created_at,expires_at
@@ -515,7 +530,8 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
       pool.query("SELECT id,type,title,body,actor_id,reference_id,read_at,created_at FROM letchat_notifications WHERE user_id=$1 ORDER BY created_at", [uid]),
       pool.query("SELECT id,reporter_id,reported_id,reason,details,status,created_at FROM letchat_reports WHERE reporter_id=$1 OR reported_id=$1 ORDER BY created_at", [uid]),
       pool.query(`SELECT 'rules' AS type,rules_version AS version,accepted_at FROM letchat_consents WHERE user_id=$1
-                  UNION ALL SELECT 'age','18+',accepted_at FROM letchat_age_consents WHERE user_id=$1`, [uid])
+                  UNION ALL SELECT 'age','18+',accepted_at FROM letchat_age_consents WHERE user_id=$1`, [uid]),
+      pool.query("SELECT other_id,archived,muted,hidden_before,updated_at FROM letchat_conversation_preferences WHERE user_id=$1", [uid])
     ]);
     const data = {
       exportedAt: new Date().toISOString(),
@@ -528,6 +544,7 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
       notifications: notifications.rows,
       reports: reports.rows,
       consents: consents.rows,
+      conversationPreferences: conversationPreferences.rows,
       note: "Les fichiers image et vidéo binaires ne sont pas inclus dans cet export JSON. Leurs types sont indiqués."
     };
     res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -554,6 +571,7 @@ app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account",
     await client.query("DELETE FROM letchat_message_reactions WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_messages WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_private_messages WHERE sender_id=$1 OR recipient_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_conversation_preferences WHERE user_id=$1 OR other_id=$1", [uid]);
     await client.query("DELETE FROM letchat_friends WHERE requester_id=$1 OR addressee_id=$1", [uid]);
     await client.query("DELETE FROM letchat_blocks WHERE blocker_id=$1 OR blocked_id=$1", [uid]);
     await client.query("DELETE FROM letchat_notifications WHERE user_id=$1 OR actor_id=$1", [uid]);
@@ -1158,7 +1176,11 @@ app.get("/api/private-conversations", auth, requireAdult, async (req, res, next)
          SELECT m.*,
                 CASE WHEN m.sender_id=$1 THEN m.recipient_id ELSE m.sender_id END AS other_id
          FROM letchat_private_messages m
+         LEFT JOIN letchat_conversation_preferences cp
+           ON cp.user_id=$1
+          AND cp.other_id=CASE WHEN m.sender_id=$1 THEN m.recipient_id ELSE m.sender_id END
          WHERE m.expires_at > NOW() AND (m.sender_id=$1 OR m.recipient_id=$1)
+           AND (cp.hidden_before IS NULL OR m.created_at > cp.hidden_before)
        ), latest AS (
          SELECT DISTINCT ON (other_id)
                 other_id, id, sender_id, sender_name, sender_photo, body,
@@ -1167,8 +1189,11 @@ app.get("/api/private-conversations", auth, requireAdult, async (req, res, next)
          ORDER BY other_id, created_at DESC, id DESC
        ), unread AS (
          SELECT sender_id AS other_id, COUNT(*)::int AS unread_count
-         FROM letchat_private_messages
-         WHERE recipient_id=$1 AND read_at IS NULL AND expires_at > NOW()
+         FROM letchat_private_messages m
+         LEFT JOIN letchat_conversation_preferences cp
+           ON cp.user_id=$1 AND cp.other_id=m.sender_id
+         WHERE m.recipient_id=$1 AND m.read_at IS NULL AND m.expires_at > NOW()
+           AND (cp.hidden_before IS NULL OR m.created_at > cp.hidden_before)
          GROUP BY sender_id
        )
        SELECT l.other_id AS user_id,
@@ -1182,10 +1207,14 @@ app.get("/api/private-conversations", auth, requireAdult, async (req, res, next)
               l.id AS last_message_id, l.sender_id AS last_sender_id,
               l.body AS last_body, l.media_type AS last_media_type,
               l.created_at AS last_message_at,
-              COALESCE(u.unread_count, 0)::int AS unread_count
+              COALESCE(u.unread_count, 0)::int AS unread_count,
+              COALESCE(cp.archived, FALSE) AS archived,
+              COALESCE(cp.muted, FALSE) AS muted
        FROM latest l
        LEFT JOIN profiles p ON p.user_id=l.other_id
        LEFT JOIN unread u ON u.other_id=l.other_id
+       LEFT JOIN letchat_conversation_preferences cp
+         ON cp.user_id=$1 AND cp.other_id=l.other_id
        WHERE NOT EXISTS (
          SELECT 1 FROM letchat_blocks b
          WHERE (b.blocker_id=$1 AND b.blocked_id=l.other_id)
@@ -1196,6 +1225,47 @@ app.get("/api/private-conversations", auth, requireAdult, async (req, res, next)
       [req.user.id]
     );
     res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/private-conversations/:otherId", auth, requireAdult, async (req, res, next) => {
+  try {
+    const otherId = String(req.params.otherId || "").slice(0, 200);
+    if (!otherId || otherId === req.user.id) return res.status(400).json({ error: "Conversation incorrecte" });
+    const archived = typeof req.body.archived === "boolean" ? req.body.archived : null;
+    const muted = typeof req.body.muted === "boolean" ? req.body.muted : null;
+    if (archived === null && muted === null) return res.status(400).json({ error: "Aucune modification" });
+    const { rows } = await pool.query(
+      `INSERT INTO letchat_conversation_preferences (user_id,other_id,archived,muted)
+       VALUES($1,$2,COALESCE($3,FALSE),COALESCE($4,FALSE))
+       ON CONFLICT (user_id,other_id) DO UPDATE SET
+         archived=COALESCE($3,letchat_conversation_preferences.archived),
+         muted=COALESCE($4,letchat_conversation_preferences.muted),
+         updated_at=NOW()
+       RETURNING archived, muted`,
+      [req.user.id, otherId, archived, muted]
+    );
+    res.json(rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/private-conversations/:otherId", auth, requireAdult, async (req, res, next) => {
+  try {
+    const otherId = String(req.params.otherId || "").slice(0, 200);
+    if (!otherId || otherId === req.user.id) return res.status(400).json({ error: "Conversation incorrecte" });
+    await pool.query(
+      `INSERT INTO letchat_conversation_preferences
+       (user_id,other_id,archived,muted,hidden_before)
+       VALUES($1,$2,FALSE,FALSE,NOW())
+       ON CONFLICT (user_id,other_id) DO UPDATE SET
+         archived=FALSE, muted=FALSE, hidden_before=NOW(), updated_at=NOW()`,
+      [req.user.id, otherId]
+    );
+    res.sendStatus(204);
   } catch (error) {
     next(error);
   }
@@ -1227,6 +1297,10 @@ app.get("/api/private/:otherId", auth, requireAdult, async (req, res, next) => {
        FROM letchat_private_messages m
        LEFT JOIN letchat_private_messages parent ON parent.id=m.reply_to_id AND parent.expires_at > NOW()
        WHERE m.expires_at > NOW()
+         AND m.created_at > COALESCE((
+           SELECT hidden_before FROM letchat_conversation_preferences
+           WHERE user_id=$1 AND other_id=$2
+         ), '-infinity'::timestamptz)
          AND ((m.sender_id=$1 AND m.recipient_id=$2)
            OR (m.sender_id=$2 AND m.recipient_id=$1))
        ORDER BY m.id DESC LIMIT 100`,
@@ -1302,11 +1376,23 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
       [req.user.id, recipientId, req.user.name, req.user.photo, body, media, mediaType || null, reply?.id || null]
     );
     const message = { ...rows[0], private: true, recipient_id: recipientId, reply_author: reply?.author || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
-    await createNotification(
-      recipientId, "private_message", `Message de ${req.user.name}`,
-      body ? body.slice(0, 160) : "Vous avez reçu un média.",
-      req.user.id, String(message.id)
+    await pool.query(
+      `INSERT INTO letchat_conversation_preferences (user_id,other_id,archived)
+       VALUES ($1,$2,FALSE),($2,$1,FALSE)
+       ON CONFLICT (user_id,other_id) DO UPDATE SET archived=FALSE, updated_at=NOW()`,
+      [req.user.id, recipientId]
     );
+    const recipientPreference = await pool.query(
+      "SELECT muted FROM letchat_conversation_preferences WHERE user_id=$1 AND other_id=$2",
+      [recipientId, req.user.id]
+    );
+    if (!recipientPreference.rows[0]?.muted) {
+      await createNotification(
+        recipientId, "private_message", `Message de ${req.user.name}`,
+        body ? body.slice(0, 160) : "Vous avez reçu un média.",
+        req.user.id, String(message.id)
+      );
+    }
     io.to(`user:${req.user.id}`).to(`user:${recipientId}`).emit("private-message", message);
     res.status(201).json(message);
   } catch (error) {
