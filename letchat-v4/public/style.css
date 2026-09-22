@@ -45,3 +45,11 @@
 .person-button.gender-male img { outline: 3px solid #609ed8; }
 .person-button.gender-male strong { color: #27659f; }
 .person-button.gender-neutral { background: #f7f5f2; border-color: #e4dfd8; }
+.chat-actions .danger-button { background: #b84040; }
+.blocked-list { margin-top: 22px; padding-top: 16px; border-top: 1px solid #e8e3db; }
+.blocked-list h3 { margin: 0 0 10px; font-size: 14px; }
+.blocked-person { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f0ece6; }
+.blocked-person span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blocked-person button { border: 0; border-radius: 8px; padding: 7px 10px; background: #eee9e3; color: #333; font-weight: 700; }
+.no-blocks { margin: 0; color: #888; font-size: 12px; }
+@media(max-width:650px) { .chat-actions .danger-button { font-size: 11px; padding: 9px 8px; } }
