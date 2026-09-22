@@ -1,8 +1,6 @@
 <!doctype html>
 <html lang="fr">
   <head>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3317597986908171"
-     crossorigin="anonymous"></script>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
@@ -10,7 +8,7 @@
     />
     <meta name="theme-color" content="#f36f58" />
     <title>Letchat</title>
-    <link rel="stylesheet" href="style.css?v=profiles-1" />
+    <link rel="stylesheet" href="style.css?v=conversations-1" />
   </head>
   <body>
     <section id="login" class="login">
@@ -41,7 +39,7 @@
         </div>
         <button class="new">＋ Nouveau message</button>
         <nav>
-         <a id="messagesNav" class="active">◌ Messages</a><a id="discoverNav">◇ Découvrir</a><a id="savedNav">♡ Enregistrés</a>
+          <a class="active">◌ Messages</a><a>◇ Découvrir</a><a>♡ Enregistrés</a>
         </nav>
         <h3>ESPACES</h3>
         <a class="room active">☀ Le Café</a><a class="room">✦ Créatifs</a
@@ -140,6 +138,15 @@
       </section>
       <aside class="people">
         <button id="closePeople" class="close-people">×</button>
+        <section class="conversation-section">
+          <div class="conversation-heading">
+            <h2>Conversations</h2><span id="conversationTotal" class="conversation-total hidden">0</span>
+          </div>
+          <div id="conversationList" class="conversation-list">
+            <p class="no-conversations">Aucune conversation privée.</p>
+          </div>
+        </section>
+        <hr />
         <h2>Amis et contacts</h2>
         <div id="friendRequests"></div>
         <div id="friendsList"></div>
@@ -395,6 +402,6 @@
       </footer>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=profiles-1"></script>
+    <script type="module" src="app.js?v=conversations-1"></script>
   </body>
 </html>

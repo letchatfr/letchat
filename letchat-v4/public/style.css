@@ -224,6 +224,25 @@
 .online-dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: #bbb; }
 .online-dot.online { background: #43a46c; box-shadow: 0 0 0 3px #dcefe4; }
 .no-friends { color: #999; font-size: 12px; }
+.conversation-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.conversation-heading h2 { margin: 0; }
+.conversation-total { min-width: 20px; height: 20px; display: inline-grid; place-items: center; padding: 0 6px; border-radius: 20px; background: #e53935; color: #fff; font-size: 10px; font-weight: 800; }
+.conversation-list { margin-top: 8px; display: grid; gap: 4px; }
+.conversation-item { width: 100%; min-width: 0; display: flex; align-items: center; gap: 9px; border: 1px solid transparent; border-radius: 11px; padding: 8px; background: transparent; color: #252622; text-align: left; cursor: pointer; }
+.conversation-item:hover { background: #f6f2ed; }
+.conversation-item.active { border-color: #efad9f; background: #fff0ec; }
+.conversation-item.unread { background: #eef6fb; }
+.conversation-avatar { width: 40px; height: 40px; flex: 0 0 40px; display: grid; place-items: center; border-radius: 50%; background: #e8e2da; color: #555; font-size: 12px; font-weight: 800; overflow: hidden; }
+.conversation-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.conversation-avatar.gender-female { outline: 2px solid #ec78aa; }
+.conversation-avatar.gender-male { outline: 2px solid #609ed8; }
+.conversation-content { min-width: 0; flex: 1; display: grid; gap: 4px; }
+.conversation-line { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.conversation-line strong, .conversation-line small { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.conversation-line time { color: #999; font-size: 9px; }
+.conversation-line small { color: #777; font-size: 11px; }
+.conversation-line b { min-width: 19px; height: 19px; display: inline-grid; place-items: center; border-radius: 20px; padding: 0 5px; background: #e53935; color: white; font-size: 9px; }
+.no-conversations { margin: 9px 4px; color: #999; font-size: 12px; }
 .notifications-button { position: relative; }
 .notifications-button .unread-badge { position: absolute; right: -6px; top: -7px; }
 .notifications-modal { position: fixed; inset: 0; z-index: 145; background: #10171999; padding: 24px; display: grid; place-items: center; }
