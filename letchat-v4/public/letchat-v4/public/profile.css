@@ -18,3 +18,10 @@
 .account #profileBtn { font-size: 16px; }
 .person-button { width: 100%; border: 0; background: transparent; text-align: left; padding: 0; cursor: pointer; color: inherit; }
 .person-button:hover { background: #f6f2ed; border-radius: 10px; }
+.login-error { margin: 0 0 14px; padding: 10px; border-radius: 9px; background: #fff0ed; color: #a13f31; font-size: 12px; line-height: 1.4; }
+#mobileProfileBtn { display: none; }
+@media(max-width:650px) {
+  #mobileProfileBtn { display: inline-block; font-size: 17px; }
+  .profile-modal { align-items: end; padding: 0; }
+  .profile-card { width: 100%; max-height: 92dvh; overflow-y: auto; border-radius: 20px 20px 0 0; padding: 26px 20px max(22px, env(safe-area-inset-bottom)); }
+}
