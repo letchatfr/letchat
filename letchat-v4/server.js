@@ -145,6 +145,22 @@ await pool.query(`
   );
 `);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_notifications (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    actor_id TEXT,
+    reference_id TEXT,
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_letchat_notifications_user
+  ON letchat_notifications(user_id, created_at DESC);
+`);
+
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
@@ -235,6 +251,18 @@ function adminAuth(req, res, next) {
     return res.status(403).json({ error: "Accès administrateur interdit" });
   }
   next();
+}
+
+async function createNotification(userId, type, title, body = "", actorId = null, referenceId = null) {
+  const { rows } = await pool.query(
+    `INSERT INTO letchat_notifications
+     (user_id, type, title, body, actor_id, reference_id)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     RETURNING id, type, title, body, actor_id, reference_id, read_at, created_at`,
+    [userId, type, title, body, actorId, referenceId]
+  );
+  io.to(`user:${userId}`).emit("notification", rows[0]);
+  return rows[0];
 }
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -357,6 +385,48 @@ app.delete("/api/blocks/:userId", auth, async (req, res, next) => {
   }
 });
 
+app.get("/api/notifications", auth, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT n.id, n.type, n.title, n.body, n.actor_id, n.reference_id,
+              n.read_at, n.created_at,
+              COALESCE(p.display_name, '') AS actor_name, p.photo AS actor_photo
+       FROM letchat_notifications n
+       LEFT JOIN profiles p ON p.user_id = n.actor_id
+       WHERE n.user_id=$1 AND n.created_at > NOW() - INTERVAL '30 days'
+       ORDER BY n.created_at DESC LIMIT 100`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/notifications/read", auth, async (req, res, next) => {
+  try {
+    await pool.query(
+      "UPDATE letchat_notifications SET read_at=COALESCE(read_at,NOW()) WHERE user_id=$1",
+      [req.user.id]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/notifications/:id/read", auth, async (req, res, next) => {
+  try {
+    await pool.query(
+      "UPDATE letchat_notifications SET read_at=COALESCE(read_at,NOW()) WHERE id=$1 AND user_id=$2",
+      [req.params.id, req.user.id]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/friends", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
@@ -405,6 +475,10 @@ app.post("/api/friends/:userId", auth, async (req, res, next) => {
        VALUES ($1, $2) RETURNING id, requester_id, addressee_id, status`,
       [req.user.id, otherId]
     );
+    await createNotification(
+      otherId, "friend_request", "Nouvelle demande d’ami",
+      `${req.user.name} souhaite devenir votre ami.`, req.user.id, String(result.rows[0].id)
+    );
     io.to(`user:${otherId}`).emit("friends-updated");
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -424,6 +498,10 @@ app.patch("/api/friends/:id", auth, async (req, res, next) => {
       [req.params.id, req.user.id]
     );
     if (!result.rowCount) return res.status(404).json({ error: "Demande introuvable" });
+    await createNotification(
+      result.rows[0].requester_id, "friend_accepted", "Demande d’ami acceptée",
+      `${req.user.name} a accepté votre demande.`, req.user.id, String(req.params.id)
+    );
     io.to(`user:${result.rows[0].requester_id}`).emit("friends-updated");
     io.to(`user:${result.rows[0].addressee_id}`).emit("friends-updated");
     res.json({ ok: true });
@@ -520,10 +598,15 @@ app.patch("/api/admin/reports/:id", auth, adminAuth, async (req, res, next) => {
       return res.status(400).json({ error: "Statut incorrect" });
     }
     const result = await pool.query(
-      "UPDATE letchat_reports SET status=$1 WHERE id=$2 RETURNING id, status",
+      "UPDATE letchat_reports SET status=$1 WHERE id=$2 RETURNING id, status, reporter_id, reported_id",
       [status, req.params.id]
     );
     if (!result.rowCount) return res.status(404).json({ error: "Signalement introuvable" });
+    await createNotification(
+      result.rows[0].reporter_id, "report_update", "Mise à jour de votre signalement",
+      status === "resolved" ? "Votre signalement a été traité par la modération." : "Votre signalement a été examiné et classé.",
+      null, String(result.rows[0].id)
+    );
     res.json(result.rows[0]);
   } catch (error) {
     next(error);
@@ -780,6 +863,11 @@ app.post("/api/private", auth, async (req, res, next) => {
       [req.user.id, recipientId, req.user.name, req.user.photo, body, media, mediaType || null]
     );
     const message = { ...rows[0], private: true, recipient_id: recipientId };
+    await createNotification(
+      recipientId, "private_message", `Message de ${req.user.name}`,
+      body ? body.slice(0, 160) : "Vous avez reçu un média.",
+      req.user.id, String(message.id)
+    );
     io.to(`user:${req.user.id}`).to(`user:${recipientId}`).emit("private-message", message);
     res.status(201).json(message);
   } catch (error) {
@@ -867,6 +955,9 @@ io.on("connection", socket => {
 
 async function deleteExpiredMessages() {
   try {
+    await pool.query(
+      "DELETE FROM letchat_notifications WHERE created_at <= NOW() - INTERVAL '30 days'"
+    );
     const { rows } = await pool.query(
       "DELETE FROM letchat_messages WHERE expires_at <= NOW() RETURNING id"
     );
