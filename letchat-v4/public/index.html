@@ -8,7 +8,7 @@
     />
     <meta name="theme-color" content="#f36f58" />
     <title>Letchat</title>
-    <link rel="stylesheet" href="style.css?v=search-1" />
+    <link rel="stylesheet" href="style.css?v=voice-1" />
   </head>
   <body>
     <section id="login" class="login">
@@ -58,7 +58,8 @@
             <p><span></span><b id="onlineCount">1</b> en ligne</p>
           </div>
           <div class="chat-actions">
-            <button id="searchBtn" class="search-button" title="Rechercher">🔍</button
+            <button id="searchBtn" class="search-button" title="Rechercher">
+              🔍</button
             ><button
               id="notificationsBtn"
               class="notifications-button"
@@ -96,19 +97,36 @@
         <div id="typing" class="typing"></div>
         <div id="error" class="error hidden"></div>
         <footer>
-          <input id="file" type="file" accept="image/*,video/*" hidden /><input
+          <input
+            id="file"
+            type="file"
+            accept="image/*,video/*,audio/*"
+            hidden
+          /><input
             id="camera"
             type="file"
             accept="image/*,video/*"
             capture="user"
             hidden
           />
+          <div id="voiceRecording" class="voice-recording hidden">
+            <span class="recording-dot"></span><strong>Enregistrement</strong
+            ><time id="voiceTimer">00:00</time>
+            <button id="cancelVoice" type="button">Annuler</button
+            ><button id="sendVoice" type="button">Envoyer</button>
+          </div>
           <div id="replyPreview" class="reply-preview hidden">
-            <div><strong id="replyPreviewAuthor"></strong><span id="replyPreviewText"></span></div>
-            <button id="cancelReply" type="button" title="Annuler la réponse">×</button>
+            <div>
+              <strong id="replyPreviewAuthor"></strong
+              ><span id="replyPreviewText"></span>
+            </div>
+            <button id="cancelReply" type="button" title="Annuler la réponse">
+              ×
+            </button>
           </div>
           <div class="composer">
             <button id="attach">⌕</button><button id="cameraBtn">▣</button
+            ><button id="voiceBtn" type="button" title="Message vocal">🎙</button
             ><textarea
               id="input"
               placeholder="Écrivez votre message…"
@@ -290,11 +308,20 @@
     <section id="searchModal" class="search-modal hidden">
       <div class="search-panel">
         <header>
-          <div><h2>Rechercher</h2><p>Messages et contacts</p></div>
+          <div>
+            <h2>Rechercher</h2>
+            <p>Messages et contacts</p>
+          </div>
           <button type="button" id="closeSearch">×</button>
         </header>
         <div class="search-field">
-          <span>🔍</span><input id="searchInput" type="search" placeholder="Écrivez un mot ou un nom…" autocomplete="off" />
+          <span>🔍</span
+          ><input
+            id="searchInput"
+            type="search"
+            placeholder="Écrivez un mot ou un nom…"
+            autocomplete="off"
+          />
         </div>
         <div id="searchResults" class="search-results">
           <p class="search-empty">Commencez à écrire pour rechercher.</p>
@@ -346,6 +373,6 @@
       </footer>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=search-1"></script>
+    <script type="module" src="app.js?v=voice-1"></script>
   </body>
 </html>

@@ -112,6 +112,17 @@
 @keyframes searchPulse { 0%,100% { background: transparent; } 30%,70% { background: #fff1b8; border-radius: 14px; } }
 @media(max-width:650px) { .search-button { font-size: 0; padding: 9px !important; } .search-button::after { content: "🔍"; font-size: 16px; } .search-modal { padding: 0; align-items: end; } .search-panel { width: 100%; max-height: 92dvh; border-radius: 20px 20px 0 0; } }
 
+.voice-recording { margin-bottom: 7px; min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 11px; background: #fff0ed; color: #8f3328; }
+.recording-dot { width: 10px; height: 10px; flex: 0 0 10px; border-radius: 50%; background: #e33f32; animation: recordingPulse 1s infinite; }
+.voice-recording strong { font-size: 12px; }
+.voice-recording time { margin-right: auto; font-variant-numeric: tabular-nums; }
+.voice-recording button { border: 0; border-radius: 8px; padding: 7px 9px; background: #fff; color: #7f342a; font-weight: 700; }
+.voice-recording #sendVoice { background: var(--coral); color: #fff; }
+.audio-message { width: min(320px, 70vw); height: 42px; object-fit: initial; background: transparent; }
+#voiceBtn.recording { background: #e33f32; color: white; border-radius: 9px; }
+@keyframes recordingPulse { 50% { opacity: .25; transform: scale(.75); } }
+@media(max-width:370px) { .voice-recording strong { display: none; } }
+
 .profile-card select { height: 44px; border: 1px solid #d8d3cc; border-radius: 10px; padding: 0 12px; outline: 0; background: #fff; font: inherit; }
 .profile-card select:focus { border-color: #f36f58; }
 .person-button { border: 1px solid transparent; padding: 8px; border-radius: 12px; }
