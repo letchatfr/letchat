@@ -261,6 +261,10 @@
 .view-once-expired { margin-top: 7px; padding: 10px 12px; border-radius: 11px; background: #f0ede8; color: #888; font-size: 12px; font-weight: 700; }
 .view-once-opened { display: grid; gap: 5px; }
 .view-once-opened small { color: #9b5b45; font-size: 10px; }
+#privateTypingStatus { color: #4b8d68; font-weight: 700; }
+#privateTypingStatus.is-typing { color: #315b76; }
+#privateTypingStatus.is-typing::after { content: ""; display: inline-block; width: 14px; height: 4px; margin-left: 4px; border-radius: 5px; background: radial-gradient(circle, currentColor 1.5px, transparent 2px) 0 0/5px 4px; animation: typingDots .8s steps(2,end) infinite; }
+@keyframes typingDots { 50% { opacity: .3; transform: translateY(-1px); } }
 .notifications-button { position: relative; }
 .notifications-button .unread-badge { position: absolute; right: -6px; top: -7px; }
 .notifications-modal { position: fixed; inset: 0; z-index: 145; background: #10171999; padding: 24px; display: grid; place-items: center; }

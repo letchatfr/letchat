@@ -454,6 +454,7 @@ async function send(media) {
     loadPrivateConversations();
     $("#input").value = "";
     clearReply();
+    stopTyping();
     viewOnceEnabled = false;
     updateViewOnceButton();
     $("#input").focus();
@@ -464,10 +465,20 @@ async function send(media) {
   }
 }
 $("#send").onclick = () => send();
-$("#input").onkeydown = (e) => {
-  socket?.emit("typing", true);
+function stopTyping(target = currentPrivate?.id) {
   clearTimeout(typingTimer);
-  typingTimer = setTimeout(() => socket?.emit("typing", false), 800);
+  if (target) socket?.emit("private-typing", { target, active: false });
+  else socket?.emit("typing", false);
+}
+function announceTyping() {
+  clearTimeout(typingTimer);
+  if (currentPrivate) socket?.emit("private-typing", { target: currentPrivate.id, active: true });
+  else socket?.emit("typing", true);
+  const target = currentPrivate?.id;
+  typingTimer = setTimeout(() => stopTyping(target), 1000);
+}
+$("#input").addEventListener("input", announceTyping);
+$("#input").onkeydown = (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     send();
@@ -630,12 +641,15 @@ async function deleteConversation(id, name) {
   try {
     await api(`/api/private-conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (currentPrivate?.id === String(id)) {
+      stopTyping(String(id));
       currentPrivate = null;
       viewOnceEnabled = false;
       updateViewOnceButton();
       $("#blockBtn").classList.add("hidden");
       $("#reportBtn").classList.add("hidden");
       $(".chat header h1").textContent = rooms[currentRoom].title;
+      $("#roomPresence").classList.remove("hidden");
+      $("#privateTypingStatus").classList.add("hidden");
       load();
     }
     await loadPrivateConversations();
@@ -648,6 +662,8 @@ function openPrivate(id, name) {
     return showError("Vous ne pouvez pas vous écrire à vous-même");
   if (blockedUsers.has(String(id)))
     return showError("Cet utilisateur est bloqué");
+  const previousPrivateId = currentPrivate?.id;
+  if (previousPrivateId && previousPrivateId !== String(id)) stopTyping(previousPrivateId);
   clearReply();
   unreadPrivate.delete(id);
   updateUnread();
@@ -657,6 +673,9 @@ function openPrivate(id, name) {
   $("#blockBtn").classList.remove("hidden");
   $("#reportBtn").classList.remove("hidden");
   $(".chat header h1").textContent = `✉ ${name}`;
+  $("#roomPresence").classList.add("hidden");
+  $("#privateTypingStatus").textContent = "Discussion privée";
+  $("#privateTypingStatus").classList.remove("hidden", "is-typing");
   $("#typing").textContent = "";
   load();
 }
@@ -1034,6 +1053,12 @@ function connect() {
   socket.on("message", (m) => addMessage(m));
   socket.on("private-message", showPrivateNotification);
   socket.on("private-receipt", updatePrivateReceipts);
+  socket.on("private-typing", data => {
+    if (!currentPrivate || String(data.userId) !== String(currentPrivate.id)) return;
+    const status = $("#privateTypingStatus");
+    status.textContent = data.active ? "écrit…" : "Discussion privée";
+    status.classList.toggle("is-typing", data.active);
+  });
   socket.on("view-once-opened", payload => {
     const article = document.querySelector(`[data-key="p-${CSS.escape(String(payload.id))}"]`);
     if (article) {
@@ -1421,11 +1446,14 @@ $("#blockBtn").onclick = async () => {
     });
     await loadFriends();
     currentPrivate = null;
+    stopTyping(target.id);
     viewOnceEnabled = false;
     updateViewOnceButton();
     $("#blockBtn").classList.add("hidden");
     $("#reportBtn").classList.add("hidden");
     $(".chat header h1").textContent = rooms[currentRoom].title;
+    $("#roomPresence").classList.remove("hidden");
+    $("#privateTypingStatus").classList.add("hidden");
     renderPeople(lastPeople);
     load();
     showError(`${target.name} a été bloqué`);
@@ -1449,6 +1477,8 @@ $("#viewOnceBtn").onclick = () => {
   if (!link) return;
   link.onclick = () => {
     clearReply();
+    const previousPrivateId = currentPrivate?.id;
+    if (previousPrivateId) stopTyping(previousPrivateId);
     currentPrivate = null;
     viewOnceEnabled = false;
     updateViewOnceButton();
@@ -1461,6 +1491,8 @@ $("#viewOnceBtn").onclick = () => {
     roomLinks.forEach((item) => item.classList.remove("active"));
     link.classList.add("active");
     $(".chat header h1").textContent = rooms[id].title;
+    $("#roomPresence").classList.remove("hidden");
+    $("#privateTypingStatus").classList.add("hidden");
     $("#typing").textContent = "";
     load();
   };
@@ -1468,12 +1500,16 @@ $("#viewOnceBtn").onclick = () => {
 document.querySelector(".new").onclick = () => $("#input").focus();
 document.querySelector(".side nav a.active").onclick = () => {
   clearReply();
+  const previousPrivateId = currentPrivate?.id;
+  if (previousPrivateId) stopTyping(previousPrivateId);
   currentPrivate = null;
   viewOnceEnabled = false;
   updateViewOnceButton();
   $("#blockBtn").classList.add("hidden");
   $("#reportBtn").classList.add("hidden");
   $(".chat header h1").textContent = rooms[currentRoom].title;
+  $("#roomPresence").classList.remove("hidden");
+  $("#privateTypingStatus").classList.add("hidden");
   load();
 };
 $("#peopleBtn").onclick = () => {
