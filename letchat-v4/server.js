@@ -68,6 +68,8 @@ await pool.query(`
   );
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT '';
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS gender TEXT NOT NULL DEFAULT 'neutral';
+  ALTER TABLE profiles ADD COLUMN IF NOT EXISTS availability TEXT NOT NULL DEFAULT 'available';
+  ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW();
 `);
 
 await pool.query(`
@@ -504,7 +506,7 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
   try {
     const uid = req.user.id;
     const [profile, publicMessages, privateMessages, friends, blocks, notifications, reports, consents] = await Promise.all([
-      pool.query("SELECT user_id,email,display_name,photo,city,bio,gender,location_visible,updated_at FROM profiles WHERE user_id=$1", [uid]),
+      pool.query("SELECT user_id,email,display_name,photo,city,bio,gender,availability,last_seen,location_visible,updated_at FROM profiles WHERE user_id=$1", [uid]),
       pool.query("SELECT id,author,room,body,media_type,created_at,expires_at FROM letchat_messages WHERE user_id=$1 ORDER BY created_at", [uid]),
       pool.query(`SELECT id,sender_id,recipient_id,sender_name,body,media_type,created_at,expires_at
                   FROM letchat_private_messages WHERE sender_id=$1 OR recipient_id=$1 ORDER BY created_at`, [uid]),
@@ -605,7 +607,7 @@ app.post("/api/rules-accept", auth, rateLimitAction("rules", 5, 60 * 60 * 1000),
 app.get("/api/profile", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      "SELECT display_name, photo, city, bio, gender, location_visible FROM profiles WHERE user_id = $1",
+      "SELECT display_name, photo, city, bio, gender, availability, last_seen, location_visible FROM profiles WHERE user_id = $1",
       [req.user.id]
     );
     res.json(rows[0] || null);
@@ -621,26 +623,34 @@ app.put("/api/profile", auth, async (req, res, next) => {
     const displayName = clean(req.body.displayName) || req.user.name;
     const bio = String(req.body.bio || "").trim().slice(0, 280);
     const gender = ["female", "male"].includes(String(req.body.gender)) ? String(req.body.gender) : "neutral";
+    const availability = ["available", "busy", "away"].includes(String(req.body.availability)) ? String(req.body.availability) : "available";
+    const photoData = String(req.body.photoData || "");
+    if (photoData && (!/^data:image\/(jpeg|png|webp);base64,/i.test(photoData) || photoData.length > 2100000)) {
+      return res.status(400).json({ error: "Photo incorrecte ou trop volumineuse" });
+    }
+    const photo = photoData || req.user.photo || "";
     const locationVisible = req.body.locationVisible !== false;
     if (!city) {
       return res.status(400).json({ error: "Ville obligatoire" });
     }
     const { rows } = await pool.query(
       `INSERT INTO profiles
-       (user_id, email, display_name, photo, region, department, city, bio, gender, location_visible)
-       VALUES ($1,$2,$3,$4,'','',$5,$6,$7,$8)
+       (user_id, email, display_name, photo, region, department, city, bio, gender, availability, location_visible, last_seen)
+       VALUES ($1,$2,$3,$4,'','',$5,$6,$7,$8,$9,NOW())
        ON CONFLICT (user_id) DO UPDATE SET
          email=EXCLUDED.email, display_name=EXCLUDED.display_name,
          photo=EXCLUDED.photo, region='',
          department='', city=EXCLUDED.city, bio=EXCLUDED.bio, gender=EXCLUDED.gender,
+         availability=EXCLUDED.availability,
          location_visible=EXCLUDED.location_visible, updated_at=NOW()
-       RETURNING display_name, photo, city, bio, gender, location_visible`,
-      [req.user.id, req.user.email, displayName, req.user.photo, city, bio, gender, locationVisible]
+       RETURNING display_name, photo, city, bio, gender, availability, last_seen, location_visible`,
+      [req.user.id, req.user.email, displayName, photo, city, bio, gender, availability, locationVisible]
     );
     for (const [socketId, entry] of online) {
       if (entry.user.id === req.user.id) {
         entry.user.profile = rows[0];
         entry.user.name = rows[0].display_name;
+        entry.user.photo = rows[0].photo;
         online.set(socketId, entry);
         emitPresence(entry.room);
       }
@@ -654,7 +664,7 @@ app.put("/api/profile", auth, async (req, res, next) => {
 app.get("/api/profile/:userId", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT user_id, display_name, photo, bio, gender,
+      `SELECT user_id, display_name, photo, bio, gender, availability, last_seen,
               CASE WHEN location_visible THEN city ELSE '' END AS city
        FROM profiles WHERE user_id = $1`,
       [String(req.params.userId)]
@@ -769,7 +779,7 @@ app.get("/api/friends", auth, async (req, res, next) => {
               CASE WHEN f.requester_id=$1 THEN 'outgoing' ELSE 'incoming' END AS direction,
               CASE WHEN f.requester_id=$1 THEN f.addressee_id ELSE f.requester_id END AS user_id,
               COALESCE(p.display_name, 'Utilisateur') AS display_name,
-              p.photo, p.bio, p.gender
+              p.photo, p.bio, p.gender, p.availability, p.last_seen
        FROM letchat_friends f
        LEFT JOIN profiles p ON p.user_id = CASE
          WHEN f.requester_id=$1 THEN f.addressee_id ELSE f.requester_id END
@@ -1398,6 +1408,8 @@ function emitPresence(room) {
       photo: entry.user.photo,
       bio: entry.user.profile?.bio || "",
       gender: entry.user.profile?.gender || "neutral",
+      availability: entry.user.profile?.availability || "available",
+      last_seen: entry.user.profile?.last_seen || null,
       location: entry.user.profile?.location_visible ? {
         city: entry.user.profile.city
       } : null
@@ -1422,7 +1434,7 @@ io.use(async (socket, next) => {
       if (suspension.rowCount) return next(new Error("suspended"));
     }
     const { rows } = await pool.query(
-      "SELECT display_name, photo, city, bio, gender, location_visible FROM profiles WHERE user_id = $1",
+      "SELECT display_name, photo, city, bio, gender, availability, last_seen, location_visible FROM profiles WHERE user_id = $1",
       [socket.user.id]
     );
     socket.user.profile = rows[0] || null;
@@ -1435,6 +1447,7 @@ io.use(async (socket, next) => {
 });
 
 io.on("connection", socket => {
+  pool.query("UPDATE profiles SET last_seen=NOW() WHERE user_id=$1", [socket.user.id]).catch(() => {});
   socket.join(`user:${socket.user.id}`);
   socket.room = "cafe";
   socket.join(socket.room);
@@ -1466,6 +1479,7 @@ io.on("connection", socket => {
   socket.on("disconnect", () => {
     const room = socket.room;
     online.delete(socket.id);
+    pool.query("UPDATE profiles SET last_seen=NOW() WHERE user_id=$1", [socket.user.id]).catch(() => {});
     emitPresence(room);
   });
 });
