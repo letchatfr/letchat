@@ -61,6 +61,7 @@ await pool.query(`
     location_visible BOOLEAN NOT NULL DEFAULT TRUE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+  ALTER TABLE profiles ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT '';
 `);
 
 await pool.query(`
@@ -145,6 +146,9 @@ async function auth(req, res, next) {
     const token = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.query.t;
     if (!token) throw new Error("Jeton absent");
     req.user = await verify(String(token));
+    const { rows } = await pool.query("SELECT display_name, photo FROM profiles WHERE user_id = $1", [req.user.id]);
+    if (rows[0]?.display_name) req.user.name = rows[0].display_name;
+    if (rows[0]?.photo) req.user.photo = rows[0].photo;
     next();
   } catch {
     res.status(401).json({ error: "Connexion requise" });
@@ -156,7 +160,7 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.get("/api/profile", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      "SELECT city, location_visible FROM profiles WHERE user_id = $1",
+      "SELECT display_name, photo, city, bio, location_visible FROM profiles WHERE user_id = $1",
       [req.user.id]
     );
     res.json(rows[0] || null);
@@ -169,29 +173,47 @@ app.put("/api/profile", auth, async (req, res, next) => {
   try {
     const clean = value => String(value || "").trim().slice(0, 100);
     const city = clean(req.body.city);
+    const displayName = clean(req.body.displayName) || req.user.name;
+    const bio = String(req.body.bio || "").trim().slice(0, 280);
     const locationVisible = req.body.locationVisible !== false;
     if (!city) {
       return res.status(400).json({ error: "Ville obligatoire" });
     }
     const { rows } = await pool.query(
       `INSERT INTO profiles
-       (user_id, email, display_name, photo, region, department, city, location_visible)
-       VALUES ($1,$2,$3,$4,'','',$5,$6)
+       (user_id, email, display_name, photo, region, department, city, bio, location_visible)
+       VALUES ($1,$2,$3,$4,'','',$5,$6,$7)
        ON CONFLICT (user_id) DO UPDATE SET
          email=EXCLUDED.email, display_name=EXCLUDED.display_name,
          photo=EXCLUDED.photo, region='',
-         department='', city=EXCLUDED.city,
+         department='', city=EXCLUDED.city, bio=EXCLUDED.bio,
          location_visible=EXCLUDED.location_visible, updated_at=NOW()
-       RETURNING city, location_visible`,
-      [req.user.id, req.user.email, req.user.name, req.user.photo, city, locationVisible]
+       RETURNING display_name, photo, city, bio, location_visible`,
+      [req.user.id, req.user.email, displayName, req.user.photo, city, bio, locationVisible]
     );
     for (const [socketId, entry] of online) {
       if (entry.user.id === req.user.id) {
         entry.user.profile = rows[0];
+        entry.user.name = rows[0].display_name;
         online.set(socketId, entry);
         emitPresence(entry.room);
       }
     }
+    res.json(rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/profile/:userId", auth, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT user_id, display_name, photo, bio,
+              CASE WHEN location_visible THEN city ELSE '' END AS city
+       FROM profiles WHERE user_id = $1`,
+      [String(req.params.userId)]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Profil introuvable" });
     res.json(rows[0]);
   } catch (error) {
     next(error);
@@ -407,6 +429,7 @@ function emitPresence(room) {
       id: entry.user.id,
       name: entry.user.name,
       photo: entry.user.photo,
+      bio: entry.user.profile?.bio || "",
       location: entry.user.profile?.location_visible ? {
         city: entry.user.profile.city
       } : null
@@ -418,10 +441,12 @@ io.use(async (socket, next) => {
   try {
     socket.user = await verify(socket.handshake.auth?.token);
     const { rows } = await pool.query(
-      "SELECT city, location_visible FROM profiles WHERE user_id = $1",
+      "SELECT display_name, photo, city, bio, location_visible FROM profiles WHERE user_id = $1",
       [socket.user.id]
     );
     socket.user.profile = rows[0] || null;
+    if (rows[0]?.display_name) socket.user.name = rows[0].display_name;
+    if (rows[0]?.photo) socket.user.photo = rows[0].photo;
     next();
   } catch {
     next(new Error("unauthorized"));
