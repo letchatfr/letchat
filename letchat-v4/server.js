@@ -71,6 +71,7 @@ await pool.query(`
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS availability TEXT NOT NULL DEFAULT 'available';
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW();
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS private_message_policy TEXT NOT NULL DEFAULT 'everyone';
+  ALTER TABLE profiles ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE;
 `);
 
 await pool.query(`
@@ -715,7 +716,7 @@ app.post("/api/rules-accept", auth, rateLimitAction("rules", 5, 60 * 60 * 1000),
 app.get("/api/profile", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      "SELECT display_name, photo, city, bio, gender, availability, last_seen, location_visible, private_message_policy FROM profiles WHERE user_id = $1",
+      "SELECT display_name, photo, city, bio, gender, availability, last_seen, location_visible, private_message_policy, verified FROM profiles WHERE user_id = $1",
       [req.user.id]
     );
     res.json(rows[0] || null);
@@ -754,7 +755,7 @@ app.put("/api/profile", auth, async (req, res, next) => {
          availability=EXCLUDED.availability,
          location_visible=EXCLUDED.location_visible,
          private_message_policy=EXCLUDED.private_message_policy, updated_at=NOW()
-       RETURNING display_name, photo, city, bio, gender, availability, last_seen, location_visible, private_message_policy`,
+       RETURNING display_name, photo, city, bio, gender, availability, last_seen, location_visible, private_message_policy, verified`,
       [req.user.id, req.user.email, displayName, photo, city, bio, gender, availability, locationVisible, privateMessagePolicy]
     );
     for (const [socketId, entry] of online) {
@@ -776,7 +777,7 @@ app.put("/api/profile", auth, async (req, res, next) => {
 app.get("/api/profile/:userId", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT user_id, display_name, photo, bio, gender, availability, last_seen,
+      `SELECT user_id, display_name, photo, bio, gender, availability, last_seen, verified,
               CASE WHEN location_visible THEN city ELSE '' END AS city
        FROM profiles WHERE user_id = $1`,
       [String(req.params.userId)]
@@ -1066,6 +1067,51 @@ app.get("/api/admin/moderation-log", auth, adminAuth, async (_req, res, next) =>
        LIMIT 300`
     );
     res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/profiles", auth, adminAuth, async (req, res, next) => {
+  try {
+    const query = String(req.query.q || "").trim().slice(0, 100);
+    const { rows } = await pool.query(
+      `SELECT user_id, display_name, email, city, verified, updated_at
+       FROM profiles
+       WHERE $1='' OR display_name ILIKE '%' || $1 || '%'
+         OR email ILIKE '%' || $1 || '%' OR city ILIKE '%' || $1 || '%'
+       ORDER BY verified DESC, updated_at DESC
+       LIMIT 200`,
+      [query]
+    );
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/admin/profiles/:userId/verification", auth, adminAuth, async (req, res, next) => {
+  try {
+    const userId = String(req.params.userId || "").slice(0, 200);
+    const verified = req.body?.verified === true;
+    const result = await pool.query(
+      `UPDATE profiles SET verified=$1, updated_at=NOW()
+       WHERE user_id=$2 RETURNING user_id, display_name, verified`,
+      [verified, userId]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "Profil introuvable" });
+    await logModerationAction(req, verified ? "profile_verified" : "profile_unverified", {
+      targetUserId: userId,
+      details: verified ? "Badge de vérification attribué" : "Badge de vérification retiré"
+    });
+    for (const [socketId, entry] of online) {
+      if (entry.user.id === userId) {
+        entry.user.profile = { ...(entry.user.profile || {}), verified };
+        online.set(socketId, entry);
+        emitPresence(entry.room);
+      }
+    }
+    res.json(result.rows[0]);
   } catch (error) {
     next(error);
   }
@@ -1837,6 +1883,7 @@ function emitPresence(room) {
       bio: entry.user.profile?.bio || "",
       gender: entry.user.profile?.gender || "neutral",
       availability: entry.user.profile?.availability || "available",
+      verified: entry.user.profile?.verified === true,
       last_seen: entry.user.profile?.last_seen || null,
       location: entry.user.profile?.location_visible ? {
         city: entry.user.profile.city
@@ -1862,7 +1909,7 @@ io.use(async (socket, next) => {
       if (suspension.rowCount) return next(new Error("suspended"));
     }
     const { rows } = await pool.query(
-      "SELECT display_name, photo, city, bio, gender, availability, last_seen, location_visible FROM profiles WHERE user_id = $1",
+      "SELECT display_name, photo, city, bio, gender, availability, last_seen, location_visible, verified FROM profiles WHERE user_id = $1",
       [socket.user.id]
     );
     socket.user.profile = rows[0] || null;
