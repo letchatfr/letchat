@@ -206,6 +206,15 @@
 .admin-stats span { color: #666; font-weight: 700; }
 .admin-stats-note { color: #888; text-align: center; }
 @media(max-width:650px) { .admin-stats { grid-template-columns: repeat(2,1fr); } .admin-stats article { min-height: 95px; } }
+
+/* Le style du point vert ne doit pas réduire le texte de présence. */
+#roomPresence, #privateTypingStatus {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  white-space: nowrap;
+}
 .suspension-state { color: #8b4b2a; font-weight: 700; }
 .admin-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .admin-actions button { border: 0; border-radius: 8px; padding: 8px 10px; background: #e7edf1; color: #263b48; font-weight: 700; }
