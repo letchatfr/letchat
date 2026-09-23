@@ -620,6 +620,26 @@ app.get("/api/subscription", auth, requireAdult, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+async function userHasPremium(userId) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM letchat_subscriptions
+     WHERE user_id=$1 AND status IN ('active','trialing') LIMIT 1`,
+    [userId]
+  );
+  return Boolean(rows.length);
+}
+
+async function requirePremium(req, res, next) {
+  try {
+    if (!await userHasPremium(req.user.id)) {
+      return res.status(403).json({ error: "La webcam est réservée aux membres Premium" });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
 app.post("/api/stripe/checkout", auth, requireAdult, rateLimitAction("stripe-checkout", 5, 60 * 60 * 1000), async (req, res, next) => {
   try {
     const plan = req.body?.plan === "premium_plus" ? "premium_plus" : "premium";
@@ -1439,7 +1459,7 @@ async function getMeteredTurnApiKey(domain, secretKey) {
   return meteredTurnCredentialPromise;
 }
 
-app.get("/api/turn-credentials", auth, async (_req, res, next) => {
+app.get("/api/turn-credentials", auth, requireAdult, requirePremium, async (_req, res, next) => {
   try {
     const domain = String(process.env.METERED_DOMAIN || "").trim()
       .replace(/^https?:\/\//, "").replace(/\/$/, "");
@@ -2050,6 +2070,7 @@ io.use(async (socket, next) => {
       [socket.user.id]
     );
     socket.user.profile = rows[0] || null;
+    socket.user.premium = await userHasPremium(socket.user.id);
     if (rows[0]?.display_name) socket.user.name = rows[0].display_name;
     if (rows[0]?.photo) socket.user.photo = rows[0].photo;
     next();
@@ -2119,10 +2140,26 @@ io.on("connection", socket => {
     });
   });
 
-  socket.on("webrtc", ({ target, data }) => {
+  socket.on("webrtc", ({ target, data } = {}) => {
+    if (!socket.user.premium) {
+      socket.emit("webrtc-error", { error: "La webcam est réservée aux membres Premium" });
+      return;
+    }
+    const type = String(data?.type || "");
+    if (!new Set(["join", "offer", "answer", "ice", "leave"]).has(type)) return;
     const signal = { from: socket.id, user: socket.user, data };
-    if (target) io.to(target).emit("webrtc", signal);
-    else socket.to(socket.room).emit("webrtc", signal);
+    if (target) {
+      const recipient = io.sockets.sockets.get(String(target));
+      if (recipient?.room === socket.room && recipient.user?.premium) {
+        recipient.emit("webrtc", signal);
+      }
+      return;
+    }
+    for (const recipient of io.sockets.sockets.values()) {
+      if (recipient.id !== socket.id && recipient.room === socket.room && recipient.user?.premium) {
+        recipient.emit("webrtc", signal);
+      }
+    }
   });
 
   socket.on("disconnect", async () => {
