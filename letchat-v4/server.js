@@ -6,13 +6,25 @@ import pg from "pg";
 import { Server } from "socket.io";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import Stripe from "stripe";
+import webpush from "web-push";
 
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 10e6 });
 const projectId = process.env.FIREBASE_PROJECT_ID || "letchat-1d79d";
 const port = process.env.PORT || 10000;
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+const vapidPublicKey = String(process.env.VAPID_PUBLIC_KEY || "").trim();
+const vapidPrivateKey = String(process.env.VAPID_PRIVATE_KEY || "").trim();
+const pushConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
+if (pushConfigured) {
+  webpush.setVapidDetails(
+    `mailto:${String(process.env.CONTACT_EMAIL || "contact@letchat.fr").trim()}`,
+    vapidPublicKey,
+    vapidPrivateKey
+  );
+}
 
 const jwks = createRemoteJWKSet(new URL(
   "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
@@ -227,6 +239,19 @@ await pool.query(`
 `);
 
 await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    user_agent TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_letchat_push_user
+  ON letchat_push_subscriptions(user_id);
+`);
+
+await pool.query(`
   CREATE TABLE IF NOT EXISTS letchat_consents (
     user_id TEXT PRIMARY KEY,
     rules_version TEXT NOT NULL,
@@ -285,7 +310,16 @@ app.use("/__/auth", async (req, res) => {
   }
 });
 
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+app.use((_req, res, next) => {
+  res.setHeader("Permissions-Policy", "camera=(self), microphone=(self), display-capture=(self), geolocation=()");
+  res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
+  next();
+});
 app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   try {
     if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) return res.sendStatus(503);
@@ -334,6 +368,20 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
   }
 });
 app.use(express.json({ limit: "12mb" }));
+const ipBuckets = new Map();
+app.use("/api", (req, res, next) => {
+  const key = createHash("sha256").update(String(req.ip || req.socket.remoteAddress || "unknown")).digest("hex");
+  const now = Date.now(), windowMs = 5 * 60 * 1000, maximum = 500;
+  const recent = (ipBuckets.get(key) || []).filter(time => now - time < windowMs);
+  if (recent.length >= maximum) {
+    const retrySeconds = Math.max(1, Math.ceil((windowMs - (now - recent[0])) / 1000));
+    res.set("Retry-After", String(retrySeconds));
+    return res.status(429).json({ error: `Trop de requêtes depuis cette connexion. Réessayez dans ${retrySeconds} secondes` });
+  }
+  recent.push(now);
+  ipBuckets.set(key, recent);
+  next();
+});
 app.use(express.static("public", {
   etag: false,
   lastModified: false,
@@ -403,7 +451,33 @@ async function createNotification(userId, type, title, body = "", actorId = null
     [userId, type, title, body, actorId, referenceId]
   );
   io.to(`user:${userId}`).emit("notification", rows[0]);
+  sendPushNotification(userId, { title, body, type, actorId }).catch(error =>
+    console.error("Notification push :", error.message)
+  );
   return rows[0];
+}
+
+async function sendPushNotification(userId, payload) {
+  if (!pushConfigured) return;
+  const { rows } = await pool.query(
+    "SELECT endpoint,p256dh,auth FROM letchat_push_subscriptions WHERE user_id=$1",
+    [userId]
+  );
+  await Promise.all(rows.map(async row => {
+    try {
+      await webpush.sendNotification(
+        { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
+        JSON.stringify({ ...payload, url: "/" }),
+        { TTL: 60 * 60 }
+      );
+    } catch (error) {
+      if ([404, 410].includes(error.statusCode)) {
+        await pool.query("DELETE FROM letchat_push_subscriptions WHERE endpoint=$1", [row.endpoint]);
+        return;
+      }
+      throw error;
+    }
+  }));
 }
 
 const RULES_VERSION = "2026-09-22-v1";
@@ -528,7 +602,9 @@ app.get("/api/public-config", (_req, res) => {
   res.json({
     contactEmail: String(process.env.CONTACT_EMAIL || "").trim(),
     premiumConfigured: Boolean(stripe && process.env.STRIPE_PRICE_ID),
-    premiumPlusConfigured: Boolean(stripe && process.env.STRIPE_PRICE_PLUS_ID)
+    premiumPlusConfigured: Boolean(stripe && process.env.STRIPE_PRICE_PLUS_ID),
+    pushConfigured,
+    vapidPublicKey: pushConfigured ? vapidPublicKey : ""
   });
 });
 
@@ -666,6 +742,7 @@ app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account",
     await client.query("DELETE FROM letchat_friends WHERE requester_id=$1 OR addressee_id=$1", [uid]);
     await client.query("DELETE FROM letchat_blocks WHERE blocker_id=$1 OR blocked_id=$1", [uid]);
     await client.query("DELETE FROM letchat_notifications WHERE user_id=$1 OR actor_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_push_subscriptions WHERE user_id=$1", [uid]);
     await client.query("UPDATE letchat_reports SET reporter_id=$2 WHERE reporter_id=$1", [uid, anonymousId]);
     await client.query("UPDATE letchat_reports SET reported_id=$2 WHERE reported_id=$1", [uid, anonymousId]);
     await client.query("DELETE FROM letchat_suspensions WHERE user_id=$1", [uid]);
@@ -856,6 +933,43 @@ app.get("/api/notifications", auth, async (req, res, next) => {
       [req.user.id]
     );
     res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/push/subscribe", auth, async (req, res, next) => {
+  try {
+    if (!pushConfigured) return res.status(503).json({ error: "Notifications mobiles non configurées" });
+    const endpoint = String(req.body?.endpoint || "").trim().slice(0, 2000);
+    const p256dh = String(req.body?.keys?.p256dh || "").trim().slice(0, 500);
+    const authKey = String(req.body?.keys?.auth || "").trim().slice(0, 500);
+    if (!endpoint.startsWith("https://") || !p256dh || !authKey) {
+      return res.status(400).json({ error: "Abonnement aux notifications incorrect" });
+    }
+    await pool.query(
+      `INSERT INTO letchat_push_subscriptions (endpoint,user_id,p256dh,auth,user_agent,updated_at)
+       VALUES($1,$2,$3,$4,$5,NOW())
+       ON CONFLICT(endpoint) DO UPDATE SET user_id=EXCLUDED.user_id,
+         p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,user_agent=EXCLUDED.user_agent,updated_at=NOW()`,
+      [endpoint, req.user.id, p256dh, authKey, String(req.headers["user-agent"] || "").slice(0, 500)]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/push/subscribe", auth, async (req, res, next) => {
+  try {
+    const endpoint = String(req.body?.endpoint || "").trim().slice(0, 2000);
+    if (endpoint) {
+      await pool.query(
+        "DELETE FROM letchat_push_subscriptions WHERE endpoint=$1 AND user_id=$2",
+        [endpoint, req.user.id]
+      );
+    }
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -1067,6 +1181,29 @@ app.get("/api/admin/moderation-log", auth, adminAuth, async (_req, res, next) =>
        LIMIT 300`
     );
     res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/stats", auth, adminAuth, async (_req, res, next) => {
+  try {
+    const [profiles, publicMessages, privateMessages, pendingReports, suspensions, premium] = await Promise.all([
+      pool.query("SELECT COUNT(*)::int AS total FROM profiles"),
+      pool.query("SELECT COUNT(*)::int AS total FROM letchat_messages WHERE created_at > NOW() - INTERVAL '24 hours'"),
+      pool.query("SELECT COUNT(*)::int AS total FROM letchat_private_messages WHERE created_at > NOW() - INTERVAL '24 hours'"),
+      pool.query("SELECT COUNT(*)::int AS total FROM letchat_reports WHERE status='pending'"),
+      pool.query("SELECT COUNT(*)::int AS total FROM letchat_suspensions WHERE suspended_until IS NULL OR suspended_until > NOW()"),
+      pool.query("SELECT COUNT(*)::int AS total FROM letchat_subscriptions WHERE status IN ('active','trialing')")
+    ]);
+    res.json({
+      users: profiles.rows[0].total,
+      online: new Set([...online.values()].map(entry => entry.user.id)).size,
+      messages24h: publicMessages.rows[0].total + privateMessages.rows[0].total,
+      pendingReports: pendingReports.rows[0].total,
+      activeSuspensions: suspensions.rows[0].total,
+      premium: premium.rows[0].total
+    });
   } catch (error) {
     next(error);
   }
@@ -2013,6 +2150,11 @@ async function deleteExpiredMessages() {
       const active = times.filter(time => time > bucketCutoff);
       if (active.length) actionBuckets.set(key, active);
       else actionBuckets.delete(key);
+    }
+    for (const [key, times] of ipBuckets) {
+      const active = times.filter(time => time > bucketCutoff);
+      if (active.length) ipBuckets.set(key, active);
+      else ipBuckets.delete(key);
     }
     await pool.query(
       "DELETE FROM letchat_notifications WHERE created_at <= NOW() - INTERVAL '30 days'"
