@@ -438,6 +438,73 @@ function rateLimitAction(name, maximum, windowMs) {
   };
 }
 
+const MESSAGE_SPAM_WINDOW_MS = 2 * 60 * 1000;
+const MAX_LINKS_PER_MESSAGE = 4;
+
+function normalizedMessageBody(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLocaleLowerCase("fr")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function messageLinkCount(value) {
+  return (String(value || "").match(/(?:https?:\/\/|www\.)[^\s]+/gi) || []).length;
+}
+
+function validateMessageContent(body) {
+  if (messageLinkCount(body) > MAX_LINKS_PER_MESSAGE) {
+    return "Trop de liens dans ce message (4 maximum)";
+  }
+  if (/(?:javascript|data|vbscript)\s*:/i.test(body)) {
+    return "Ce type de lien n’est pas autorisé";
+  }
+  if (/(.)\1{39,}/u.test(body)) {
+    return "Ce message contient trop de caractères répétés";
+  }
+  return null;
+}
+
+async function isRepeatedMessage({ userId, body, recipientId = null }) {
+  const normalized = normalizedMessageBody(body);
+  if (normalized.length < 2) return false;
+  const intervalSeconds = Math.ceil(MESSAGE_SPAM_WINDOW_MS / 1000);
+  const query = recipientId
+    ? await pool.query(
+        `SELECT body FROM letchat_private_messages
+         WHERE sender_id=$1 AND recipient_id=$2
+           AND created_at > NOW() - ($3 * INTERVAL '1 second')
+           AND body IS NOT NULL AND body <> ''
+         ORDER BY created_at DESC LIMIT 8`,
+        [userId, recipientId, intervalSeconds]
+      )
+    : await pool.query(
+        `SELECT body FROM letchat_messages
+         WHERE user_id=$1
+           AND created_at > NOW() - ($2 * INTERVAL '1 second')
+           AND body IS NOT NULL AND body <> ''
+         ORDER BY created_at DESC LIMIT 8`,
+        [userId, intervalSeconds]
+      );
+  return query.rows.filter(row => normalizedMessageBody(row.body) === normalized).length >= 2;
+}
+
+async function rejectSpamMessage(req, res, body, recipientId = null) {
+  const contentError = validateMessageContent(body);
+  if (contentError) {
+    res.status(400).json({ error: contentError });
+    return true;
+  }
+  if (await isRepeatedMessage({ userId: req.user.id, body, recipientId })) {
+    res.status(429).json({
+      error: "Message répété détecté. Modifiez votre texte ou attendez deux minutes"
+    });
+    return true;
+  }
+  return false;
+}
+
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/api/public-config", (_req, res) => {
@@ -1195,7 +1262,9 @@ app.get("/api/media/:id", auth, requireAdult, async (req, res, next) => {
   }
 });
 
-app.post("/api/messages", auth, requireAdult, requireRules, rateLimitAction("public-messages", 30, 60 * 1000), async (req, res, next) => {
+app.post("/api/messages", auth, requireAdult, requireRules,
+  rateLimitAction("public-message-burst", 8, 10 * 1000),
+  rateLimitAction("public-messages", 30, 60 * 1000), async (req, res, next) => {
   try {
     const body = String(req.body.body || "").trim().slice(0, 4000);
     const room = getRoom(req.body.room);
@@ -1206,6 +1275,7 @@ app.post("/api/messages", auth, requireAdult, requireRules, rateLimitAction("pub
       : null;
 
     if (!body && !media) return res.status(400).json({ error: "Message vide" });
+    if (body && await rejectSpamMessage(req, res, body)) return;
     if (media && media.length > 8e6) {
       return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
     }
@@ -1432,7 +1502,9 @@ app.get("/api/private-media/:id", auth, requireAdult, async (req, res, next) => 
   }
 });
 
-app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("private-messages", 30, 60 * 1000), async (req, res, next) => {
+app.post("/api/private", auth, requireAdult, requireRules,
+  rateLimitAction("private-message-burst", 8, 10 * 1000),
+  rateLimitAction("private-messages", 30, 60 * 1000), async (req, res, next) => {
   try {
     const recipientId = String(req.body.recipientId || "").slice(0, 200);
     const body = String(req.body.body || "").trim().slice(0, 4000);
@@ -1452,6 +1524,7 @@ app.post("/api/private", auth, requireAdult, requireRules, rateLimitAction("priv
     );
     if (blocked.rowCount) return res.status(403).json({ error: "Message impossible : utilisateur bloqué" });
     if (!body && !media) return res.status(400).json({ error: "Message vide" });
+    if (body && await rejectSpamMessage(req, res, body, recipientId)) return;
     if (media && media.length > 8e6) {
       return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
     }
