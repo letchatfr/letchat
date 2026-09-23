@@ -61,6 +61,10 @@ let user,
   viewedProfile = null,
   pendingIncomingCall = null,
   incomingCallTimer = null,
+  ringtoneTimer = null,
+  ringtoneContext = null,
+  callTimer = null,
+  callStartedAt = 0,
   sessionStarted = false;
 const fallbackIceServers = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
@@ -1793,12 +1797,20 @@ function peer(id, participantName = "Participant") {
     });
   pc.ontrack = (e) => addRemote(id, e.streams[0], participantName);
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === "connected") $("#error").classList.add("hidden");
+    if (pc.connectionState === "connected") {
+      $("#error").classList.add("hidden");
+      setCallStatus("Connecté");
+      setCameraStatus();
+      startCallTimer();
+    }
+    if (pc.connectionState === "connecting") setCallStatus("Connexion en cours…");
+    if (pc.connectionState === "disconnected") setCallStatus("Reconnexion…");
     if (["failed", "closed"].includes(pc.connectionState)) {
       document.getElementById(`v-${id}`)?.remove();
       peers.delete(id);
       if (pc.connectionState === "failed")
         showError("Connexion vidéo interrompue");
+      if (pc.connectionState === "failed") setCallStatus("Connexion interrompue");
     }
   };
   peers.set(id, pc);
@@ -1824,6 +1836,57 @@ function setCameraStatus(message = "") {
   if (!status) return;
   status.textContent = message;
   status.classList.toggle("hidden", !message);
+}
+function setCallStatus(message = "") {
+  const status = $("#callConnectionStatus");
+  if (status) status.textContent = message;
+}
+function startCallTimer() {
+  if (callTimer) return;
+  callStartedAt = Date.now();
+  callTimer = setInterval(() => {
+    const seconds = Math.floor((Date.now() - callStartedAt) / 1000);
+    $("#callDuration").textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  }, 1000);
+}
+function stopCallTimer() {
+  clearInterval(callTimer);
+  callTimer = null;
+  callStartedAt = 0;
+  if ($("#callDuration")) $("#callDuration").textContent = "00:00";
+}
+function ringPulse() {
+  try {
+    ringtoneContext ||= new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ringtoneContext.createOscillator(), gain = ringtoneContext.createGain();
+    oscillator.frequency.value = 740;
+    gain.gain.setValueAtTime(0.0001, ringtoneContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, ringtoneContext.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ringtoneContext.currentTime + 0.28);
+    oscillator.connect(gain).connect(ringtoneContext.destination);
+    oscillator.start();
+    oscillator.stop(ringtoneContext.currentTime + 0.3);
+  } catch {}
+}
+function startRingtone() {
+  stopRingtone();
+  ringPulse();
+  ringtoneTimer = setInterval(ringPulse, 1200);
+}
+function stopRingtone() {
+  clearInterval(ringtoneTimer);
+  ringtoneTimer = null;
+  navigator.vibrate?.(0);
+}
+function updateMediaControls() {
+  const audioEnabled = Boolean(stream?.getAudioTracks().some(t => t.enabled && t.readyState === "live"));
+  const videoEnabled = Boolean(stream?.getVideoTracks().some(t => t.enabled && t.readyState === "live"));
+  $("#mic").classList.toggle("control-off", !audioEnabled);
+  $("#cam").classList.toggle("control-off", !videoEnabled);
+  $("#mic").setAttribute("aria-pressed", String(audioEnabled));
+  $("#cam").setAttribute("aria-pressed", String(videoEnabled));
+  $("#mic span").textContent = audioEnabled ? "Micro" : "Micro coupé";
+  $("#cam span").textContent = videoEnabled ? "Caméra" : "Caméra coupée";
 }
 async function openCamera() {
   let lastError;
@@ -1859,6 +1922,7 @@ async function startMediaOnce() {
     $("#localVideo").srcObject = stream;
     $("#call").classList.remove("hidden");
     inVideoCall = true;
+    updateMediaControls();
     return true;
   }
   stream?.getTracks().forEach((track) => track.stop());
@@ -1905,6 +1969,7 @@ async function startMediaOnce() {
   }
   $("#call").classList.remove("hidden");
   inVideoCall = true;
+  updateMediaControls();
   await prepareIce();
   return true;
 }
@@ -1926,6 +1991,7 @@ async function handleSignal({ from, user: remoteUser, data }) {
     pendingIncomingCall = { from, user: remoteUser };
     $("#incomingCallerName").textContent = remoteUser?.name || "Un utilisateur";
     $("#incomingCall").classList.remove("hidden");
+    startRingtone();
     clearTimeout(incomingCallTimer);
     incomingCallTimer = setTimeout(() => declineIncomingCall("timeout"), 30000);
     navigator.vibrate?.([250, 150, 250]);
@@ -1933,6 +1999,7 @@ async function handleSignal({ from, user: remoteUser, data }) {
   }
   if (data.type === "decline") {
     showError(data.reason === "busy" ? "La personne est déjà en appel" : "Appel refusé ou sans réponse");
+    hang();
     return;
   }
   if (data.type === "leave") {
@@ -2006,10 +2073,12 @@ function addRemote(id, s, participantName = "Participant") {
 $("#callBtn").onclick = async () => {
   if (await startMedia()) {
     setCameraStatus("Appel en cours… En attente d’un participant.");
+    setCallStatus("Sonnerie…");
     socket.emit("webrtc", { target: null, data: { type: "invite" } });
   }
 };
 function closeIncomingCall() {
+  stopRingtone();
   clearTimeout(incomingCallTimer);
   incomingCallTimer = null;
   pendingIncomingCall = null;
@@ -2029,6 +2098,7 @@ $("#acceptIncomingCall").onclick = async () => {
     if (!await startMedia()) return;
     closeIncomingCall();
     setCameraStatus();
+    setCallStatus("Connexion en cours…");
     socket.emit("webrtc", { target: call.from, data: { type: "join" } });
   } finally {
     $("#acceptIncomingCall").disabled = false;
@@ -2041,6 +2111,8 @@ function hang() {
   stream = null;
   mediaStartPromise = null;
   inVideoCall = false;
+  stopCallTimer();
+  setCallStatus("Appel terminé");
   peers.forEach((p) => p.close());
   peers.clear();
   pendingIce.clear();
@@ -2051,13 +2123,16 @@ function hang() {
   closeIncomingCall();
 }
 $("#hangup").onclick = $("#closeCall").onclick = hang;
-$("#mic").onclick = () =>
+$("#mic").onclick = () => {
   stream?.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
+  updateMediaControls();
+};
 $("#cam").onclick = async () => {
   const track = stream?.getVideoTracks()[0];
   if (track) {
     track.enabled = !track.enabled;
     setCameraStatus(track.enabled ? "" : "Caméra désactivée");
+    updateMediaControls();
     return;
   }
   try {
@@ -2073,9 +2148,16 @@ $("#cam").onclick = async () => {
       socket.emit("webrtc", { target: id, data: { type: "offer", sdp: offer } });
     }
     setCameraStatus();
+    updateMediaControls();
   } catch (error) {
     setCameraStatus(`${mediaErrorMessage(error)}. Vérifiez l’autorisation caméra du navigateur.`);
   }
+};
+$("#fullscreenCall").onclick = async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await $("#call").requestFullscreen();
+  } catch { showError("Le plein écran n’est pas disponible sur cet appareil"); }
 };
 $("#screen").onclick = async () => {
   try {

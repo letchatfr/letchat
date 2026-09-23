@@ -354,5 +354,6 @@
 .incoming-call-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:25px}
 .incoming-call-actions button{height:52px;border:0;border-radius:14px;color:#fff;font-weight:800;font-size:15px}
 .incoming-decline{background:#c84a43}.incoming-accept{background:#278560}
+.call header h2{margin:0}.call header p{margin:3px 0 0;color:#aeb5b0;font-size:11px}.call-window-actions{display:flex!important;gap:8px!important}.call footer button.control-off{background:#68433f;color:#ffd7d1}.call footer button.control-off span{font-size:10px}
 @media(max-width:650px){.incoming-call{align-items:end;padding:0}.incoming-call-card{width:100%;border-radius:24px 24px 0 0;padding:32px 20px max(28px,env(safe-area-inset-bottom))}.incoming-call-actions button{min-height:54px}}
 .report-evidence{margin:10px 0;padding:12px;border-left:4px solid #c54b3c;background:#fff3f0;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere}

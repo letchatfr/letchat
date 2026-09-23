@@ -409,9 +409,9 @@
       <header>
         <div>
           <b>● EN DIRECT</b>
-          <h2>Le Café</h2>
+          <div><h2>Le Café</h2><p><span id="callConnectionStatus">Préparation…</span> · <time id="callDuration">00:00</time></p></div>
         </div>
-        <button id="closeCall">×</button>
+        <div class="call-window-actions"><button id="fullscreenCall" title="Plein écran">⛶</button><button id="closeCall" title="Fermer">×</button></div>
       </header>
       <div id="videoGrid" class="video-grid">
         <div class="video">
@@ -421,8 +421,8 @@
         </div>
       </div>
       <footer>
-        <button id="mic">●<span>Micro</span></button
-        ><button id="cam">▣<span>Caméra</span></button
+        <button id="mic" aria-pressed="true">●<span>Micro</span></button
+        ><button id="cam" aria-pressed="true">▣<span>Caméra</span></button
         ><button id="screen">▤<span>Partager</span></button
         ><button id="hangup" class="hang">⌕<span>Quitter</span></button>
       </footer>
@@ -440,6 +440,6 @@
       </div>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=free-video-calls-fix-1"></script>
+    <script type="module" src="app.js?v=enhanced-video-calls-1"></script>
   </body>
 </html>
