@@ -103,6 +103,8 @@ getRedirectResult(auth).catch((error) =>
 );
 onAuthStateChanged(auth, async (u) => {
   if (!u) {
+    user = null;
+    token = null;
     sessionStarted = false;
     $("#login").classList.remove("hidden");
     $("#app").classList.add("hidden");
@@ -118,8 +120,27 @@ onAuthStateChanged(auth, async (u) => {
   $("#mePhoto").src = u.photoURL || "";
   if (await checkAge()) await beginSession();
 });
+async function getAuthenticatedUser() {
+  const current = auth.currentUser || user;
+  if (current) return current;
+  return new Promise((resolve, reject) => {
+    let unsubscribe = () => {};
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Connexion en cours. Réessayez dans quelques secondes"));
+    }, 5000);
+    unsubscribe = onAuthStateChanged(auth, activeUser => {
+      if (!activeUser) return;
+      clearTimeout(timeout);
+      unsubscribe();
+      user = activeUser;
+      resolve(activeUser);
+    });
+  });
+}
 const api = async (path, opt = {}) => {
-  token = await user.getIdToken();
+  const activeUser = await getAuthenticatedUser();
+  token = await activeUser.getIdToken();
   opt.headers = { ...opt.headers, Authorization: `Bearer ${token}` };
   const r = await fetch(path, opt);
   if (!r.ok) {
@@ -135,18 +156,23 @@ const api = async (path, opt = {}) => {
 async function beginSession() {
   if (sessionStarted) return;
   sessionStarted = true;
-  await checkRules();
-  await loadBlocks();
-  await loadFriends();
-  await loadPrivateConversations();
-  await loadNotifications();
-  await checkAdmin();
-  await loadSubscription();
-  connect();
-  load();
-  loadProfile();
-  loadContactEmail();
-  setupAppFeatures();
+  try {
+    await checkRules();
+    await loadBlocks();
+    await loadFriends();
+    await loadPrivateConversations();
+    await loadNotifications();
+    await checkAdmin();
+    await loadSubscription();
+    connect();
+    load();
+    loadProfile();
+    loadContactEmail();
+    setupAppFeatures();
+  } catch (error) {
+    sessionStarted = false;
+    showError(error.message);
+  }
 }
 
 window.addEventListener("beforeinstallprompt", event => {

@@ -1,4 +1,4 @@
-const CACHE = "letchat-shell-v2";
+const CACHE = "letchat-shell-v3";
 const SHELL = ["/", "/index.html", "/style.css", "/app.js", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", event => {
