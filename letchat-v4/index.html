@@ -22,6 +22,29 @@
         <h1>Bienvenue sur Letchat</h1>
         <p>Discutez, partagez et appelez vos proches en toute simplicité.</p>
         <button id="googleLogin"><span>G</span> Continuer avec Google</button>
+        <div class="login-separator"><span>ou</span></div>
+        <div class="login-tabs"><button type="button" data-auth-tab="login" class="active">Pseudonyme</button><button type="button" data-auth-tab="register">Créer un compte</button><button type="button" data-auth-tab="guest">Invité</button></div>
+        <form id="localLoginForm" class="local-auth-form">
+          <input id="localLoginName" required minlength="3" maxlength="40" placeholder="Pseudonyme" autocomplete="username">
+          <input id="localLoginPassword" required minlength="8" maxlength="200" type="password" placeholder="Mot de passe" autocomplete="current-password">
+          <button type="submit">Se connecter</button>
+        </form>
+        <form id="localRegisterForm" class="local-auth-form hidden">
+          <input id="localRegisterName" required minlength="3" maxlength="40" placeholder="Choisir un pseudonyme" autocomplete="username">
+          <input id="localRegisterPassword" required minlength="8" maxlength="200" type="password" placeholder="Mot de passe (8 caractères minimum)" autocomplete="new-password">
+          <input id="localRegisterAge" required min="18" max="120" type="number" placeholder="Âge">
+          <select id="localRegisterGender" required><option value="">Sexe / couleur du profil</option><option value="female">Femme — rose</option><option value="male">Homme — bleu</option><option value="neutral">Neutre</option></select>
+          <input id="localRegisterCity" required minlength="2" maxlength="100" placeholder="Ville" autocomplete="address-level2">
+          <button type="submit">Créer mon compte</button>
+        </form>
+        <form id="guestLoginForm" class="local-auth-form hidden">
+          <input id="guestName" required minlength="3" maxlength="40" placeholder="Pseudonyme temporaire">
+          <input id="guestAge" required min="18" max="120" type="number" placeholder="Âge">
+          <select id="guestGender" required><option value="">Sexe / couleur du profil</option><option value="female">Femme — rose</option><option value="male">Homme — bleu</option><option value="neutral">Neutre</option></select>
+          <input id="guestCity" required minlength="2" maxlength="100" placeholder="Ville">
+          <button type="submit">Entrer comme invité</button>
+          <small>Le compte invité expire après 24 heures et ne peut pas être récupéré.</small>
+        </form>
         <div id="loginError" class="login-error hidden"></div>
         <small
           >En continuant, vous acceptez les
@@ -44,11 +67,11 @@
         </div>
         <button class="new">＋ Nouveau message</button>
         <nav>
-          <a class="active">◌ Messages</a><a>◇ Découvrir</a><a>♡ Enregistrés</a>
+          <a class="room" data-room="messages">◌ messages</a><a class="room" data-room="amateurs">◇ Vidéos / Photo amateurs</a><a class="room" data-room="webcam">♡ Webcam</a>
         </nav>
         <h3>ESPACES</h3>
-        <a class="room active">☀ Le Café</a><a class="room">✦ Créatifs</a
-        ><a class="room">⌁ Entraide</a>
+        <a class="room active" data-room="cafe">☀ Le Café</a><a class="room" data-room="creatifs">✦ Rencontres</a
+        ><a class="room" data-room="entraide">⌁ XXX</a>
         <div class="account">
           <img id="mePhoto" />
           <div><strong id="meName"></strong><small>En ligne</small></div>
@@ -84,7 +107,7 @@
               <span id="unreadBadge" class="unread-badge hidden"
                 >0</span
               ></button
-            ><button id="callBtn" class="hidden" disabled>▣ Appeler</button>
+            ><button id="callBtn">▣ Appeler</button>
           </div>
         </header>
         <aside id="adBanner" class="ad-banner">
@@ -409,9 +432,9 @@
       <header>
         <div>
           <b>● EN DIRECT</b>
-          <h2>Le Café</h2>
+          <div><h2>Le Café</h2><p><span id="callConnectionStatus">Préparation…</span> · <time id="callDuration">00:00</time></p></div>
         </div>
-        <button id="closeCall">×</button>
+        <div class="call-window-actions"><button id="fullscreenCall" title="Plein écran">⛶</button><button id="closeCall" title="Fermer">×</button></div>
       </header>
       <div id="videoGrid" class="video-grid">
         <div class="video">
@@ -421,13 +444,25 @@
         </div>
       </div>
       <footer>
-        <button id="mic">●<span>Micro</span></button
-        ><button id="cam">▣<span>Caméra</span></button
+        <button id="mic" aria-pressed="true">●<span>Micro</span></button
+        ><button id="cam" aria-pressed="true">▣<span>Caméra</span></button
         ><button id="screen">▤<span>Partager</span></button
         ><button id="hangup" class="hang">⌕<span>Quitter</span></button>
       </footer>
     </section>
+    <section id="incomingCall" class="incoming-call hidden" role="dialog" aria-modal="true" aria-labelledby="incomingCallTitle">
+      <div class="incoming-call-card">
+        <div class="incoming-call-avatar">▣</div>
+        <p>APPEL VIDÉO ENTRANT</p>
+        <h2 id="incomingCallTitle"><span id="incomingCallerName">Un utilisateur</span> vous appelle</h2>
+        <small>La caméra et le microphone seront ouverts uniquement si vous acceptez.</small>
+        <div class="incoming-call-actions">
+          <button type="button" id="declineIncomingCall" class="incoming-decline">Refuser</button>
+          <button type="button" id="acceptIncomingCall" class="incoming-accept">Accepter</button>
+        </div>
+      </div>
+    </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=complete-mobile-video-fix-1"></script>
+    <script type="module" src="app.js?v=salons-v7-0"></script>
   </body>
 </html>

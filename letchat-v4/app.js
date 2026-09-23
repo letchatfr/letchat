@@ -23,6 +23,7 @@ const config = {
 const auth = getAuth(initializeApp(config)),
   provider = new GoogleAuthProvider(),
   $ = (s) => document.querySelector(s);
+let localSessionToken = localStorage.getItem("letchatLocalToken") || sessionStorage.getItem("letchatGuestToken") || "";
 let user,
   token,
   socket,
@@ -45,7 +46,6 @@ let user,
   iceServers = [],
   icePromise,
   mediaStartPromise,
-  hasPremiumSubscription = false,
   inVideoCall = false,
   currentRoom = "cafe",
   currentPrivate = null,
@@ -60,14 +60,23 @@ let user,
   viewOnceEnabled = false,
   pendingProfilePhoto = null,
   viewedProfile = null,
+  pendingIncomingCall = null,
+  incomingCallTimer = null,
+  ringtoneTimer = null,
+  ringtoneContext = null,
+  callTimer = null,
+  callStartedAt = 0,
   sessionStarted = false;
 const fallbackIceServers = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
 ];
 const rooms = {
+  messages: { title: "◌ messages", welcome: "Bienvenue dans messages" },
+  amateurs: { title: "◇ Vidéos / Photo amateurs", welcome: "Partagez vos vidéos et photos amateurs" },
+  webcam: { title: "♡ Webcam", welcome: "Bienvenue dans le salon Webcam" },
   cafe: { title: "☀ Le Café", welcome: "Bienvenue au Café" },
-  creatifs: { title: "✦ Créatifs", welcome: "Bienvenue chez les Créatifs" },
-  entraide: { title: "⌁ Entraide", welcome: "Bienvenue dans l’Entraide" },
+  creatifs: { title: "✦ Rencontres", welcome: "Bienvenue dans Rencontres" },
+  entraide: { title: "⌁ XXX", welcome: "Bienvenue dans XXX" },
 };
 provider.setCustomParameters({ prompt: "select_account" });
 const useGoogleRedirect = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
@@ -100,11 +109,45 @@ $("#googleLogin").onclick = async () => {
       button.innerHTML = '<span>G</span> Continuer avec Google';
   }
 };
-$("#logout").onclick = () => signOut(auth);
+function logoutSession() {
+  if (localSessionToken) {
+    localStorage.removeItem("letchatLocalToken");
+    sessionStorage.removeItem("letchatGuestToken");
+    localSessionToken = "";
+    location.reload();
+    return;
+  }
+  signOut(auth);
+}
+$("#logout").onclick = logoutSession;
 getRedirectResult(auth).catch((error) =>
   loginError(`Retour Google impossible (${error.code || "erreur"}) : ${error.message}`),
 );
+function localUser(data, sessionToken) {
+  return { uid:data.id, displayName:data.name, email:"", photoURL:data.photo || "", guest:Boolean(data.guest), getIdToken:async()=>sessionToken };
+}
+async function activateLocalSession(data, sessionToken, guest = false) {
+  localSessionToken = sessionToken;
+  if (guest) { sessionStorage.setItem("letchatGuestToken",sessionToken); localStorage.removeItem("letchatLocalToken"); }
+  else { localStorage.setItem("letchatLocalToken",sessionToken); sessionStorage.removeItem("letchatGuestToken"); }
+  user = localUser(data,sessionToken); token = sessionToken;
+  $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
+  $("#meName").textContent = data.name; $("#mePhoto").src = data.photo || "";
+  if (await checkAge()) await beginSession();
+}
+async function restoreLocalSession() {
+  if (!localSessionToken) return false;
+  try {
+    const response = await fetch("/api/auth/me",{headers:{Authorization:`Bearer ${localSessionToken}`}});
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    await activateLocalSession(data.user,localSessionToken,Boolean(data.user.guest));
+    return true;
+  } catch { localStorage.removeItem("letchatLocalToken"); sessionStorage.removeItem("letchatGuestToken"); localSessionToken=""; return false; }
+}
+const localRestorePromise = restoreLocalSession();
 onAuthStateChanged(auth, async (u) => {
+  if (await localRestorePromise) return;
   if (!u) {
     user = null;
     token = null;
@@ -123,6 +166,22 @@ onAuthStateChanged(auth, async (u) => {
   $("#mePhoto").src = u.photoURL || "";
   if (await checkAge()) await beginSession();
 });
+document.querySelectorAll("[data-auth-tab]").forEach(button => button.onclick=()=>{
+  document.querySelectorAll("[data-auth-tab]").forEach(item=>item.classList.toggle("active",item===button));
+  $("#localLoginForm").classList.toggle("hidden",button.dataset.authTab!=="login");
+  $("#localRegisterForm").classList.toggle("hidden",button.dataset.authTab!=="register");
+  $("#guestLoginForm").classList.toggle("hidden",button.dataset.authTab!=="guest");
+  $("#loginError").classList.add("hidden");
+});
+async function submitLocalAuth(path,payload,guest=false) {
+  const response = await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  const data = await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(data.error||"Connexion impossible");
+  await activateLocalSession(data.user,data.token,guest);
+}
+$("#localLoginForm").onsubmit=async event=>{event.preventDefault();try{await submitLocalAuth("/api/auth/login",{username:$("#localLoginName").value,password:$("#localLoginPassword").value});}catch(e){loginError(e.message)}};
+$("#localRegisterForm").onsubmit=async event=>{event.preventDefault();try{await submitLocalAuth("/api/auth/register",{username:$("#localRegisterName").value,password:$("#localRegisterPassword").value,age:Number($("#localRegisterAge").value),gender:$("#localRegisterGender").value,city:$("#localRegisterCity").value});}catch(e){loginError(e.message)}};
+$("#guestLoginForm").onsubmit=async event=>{event.preventDefault();try{await submitLocalAuth("/api/auth/guest",{username:$("#guestName").value,age:Number($("#guestAge").value),gender:$("#guestGender").value,city:$("#guestCity").value},true);}catch(e){loginError(e.message)}};
 async function getAuthenticatedUser() {
   const current = auth.currentUser || user;
   if (current) return current;
@@ -287,7 +346,7 @@ $("#ageForm").onsubmit = async (event) => {
     button.disabled = false;
   }
 };
-$("#ageLeave").onclick = () => signOut(auth);
+$("#ageLeave").onclick = logoutSession;
 async function load() {
   try {
     if (currentPrivate) {
@@ -1384,7 +1443,6 @@ async function loadSubscription() {
   try {
     const data = await (await api("/api/subscription")).json(),
       label = data.plan === "premium_plus" ? "Premium+" : "Premium";
-    hasPremiumSubscription = Boolean(data.premium);
     $("#premiumState").textContent = data.premium
       ? `${label} actif — sans publicité`
       : "Compte gratuit — avec publicité";
@@ -1392,8 +1450,8 @@ async function loadSubscription() {
     $("#managePremium").classList.toggle("hidden", !data.canManage);
     $("#premiumBadge").classList.toggle("hidden", !data.premium);
     $("#adBanner").classList.toggle("hidden", data.premium);
-    $("#callBtn").classList.toggle("hidden", !data.premium);
-    $("#callBtn").disabled = !data.premium;
+    $("#callBtn").classList.remove("hidden");
+    $("#callBtn").disabled = false;
   } catch (e) {
     showError(e.message);
   }
@@ -1471,10 +1529,16 @@ $("#deleteAccount").onclick = async () => {
       body: JSON.stringify({ confirmation }),
     });
     socket?.disconnect();
-    try {
-      await deleteUser(user);
-    } catch {
-      await signOut(auth);
+    if (localSessionToken) {
+      localStorage.removeItem("letchatLocalToken");
+      sessionStorage.removeItem("letchatGuestToken");
+      localSessionToken = "";
+    } else {
+      try {
+        await deleteUser(user);
+      } catch {
+        await signOut(auth);
+      }
     }
     alert("Votre compte et vos données Letchat ont été supprimés.");
     location.reload();
@@ -1709,9 +1773,9 @@ $("#viewOnceBtn").onclick = () => {
   viewOnceEnabled = !viewOnceEnabled;
   updateViewOnceButton();
 };
-["cafe", "creatifs", "entraide"].forEach((id, index) => {
-  const link = roomLinks[index];
-  if (!link) return;
+roomLinks.forEach((link) => {
+  const id = link.dataset.room;
+  if (!id || !rooms[id]) return;
   link.onclick = () => {
     clearReply();
     const previousPrivateId = currentPrivate?.id;
@@ -1737,22 +1801,6 @@ $("#viewOnceBtn").onclick = () => {
   };
 });
 document.querySelector(".new").onclick = () => $("#input").focus();
-document.querySelector(".side nav a.active").onclick = () => {
-  clearReply();
-  const previousPrivateId = currentPrivate?.id;
-  if (previousPrivateId) stopTyping(previousPrivateId);
-  currentPrivate = null;
-  privateContactStatus = null;
-  socket?.emit("watch-private-status", "");
-  viewOnceEnabled = false;
-  updateViewOnceButton();
-  $("#blockBtn").classList.add("hidden");
-  $("#reportBtn").classList.add("hidden");
-  $(".chat header h1").textContent = rooms[currentRoom].title;
-  $("#roomPresence").classList.remove("hidden");
-  $("#privateTypingStatus").classList.add("hidden");
-  load();
-};
 $("#peopleBtn").onclick = () => {
   $(".people").classList.add("open");
   requestNotifications();
@@ -1793,12 +1841,20 @@ function peer(id, participantName = "Participant") {
     });
   pc.ontrack = (e) => addRemote(id, e.streams[0], participantName);
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === "connected") $("#error").classList.add("hidden");
+    if (pc.connectionState === "connected") {
+      $("#error").classList.add("hidden");
+      setCallStatus("Connecté");
+      setCameraStatus();
+      startCallTimer();
+    }
+    if (pc.connectionState === "connecting") setCallStatus("Connexion en cours…");
+    if (pc.connectionState === "disconnected") setCallStatus("Reconnexion…");
     if (["failed", "closed"].includes(pc.connectionState)) {
       document.getElementById(`v-${id}`)?.remove();
       peers.delete(id);
       if (pc.connectionState === "failed")
         showError("Connexion vidéo interrompue");
+      if (pc.connectionState === "failed") setCallStatus("Connexion interrompue");
     }
   };
   peers.set(id, pc);
@@ -1824,6 +1880,57 @@ function setCameraStatus(message = "") {
   if (!status) return;
   status.textContent = message;
   status.classList.toggle("hidden", !message);
+}
+function setCallStatus(message = "") {
+  const status = $("#callConnectionStatus");
+  if (status) status.textContent = message;
+}
+function startCallTimer() {
+  if (callTimer) return;
+  callStartedAt = Date.now();
+  callTimer = setInterval(() => {
+    const seconds = Math.floor((Date.now() - callStartedAt) / 1000);
+    $("#callDuration").textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  }, 1000);
+}
+function stopCallTimer() {
+  clearInterval(callTimer);
+  callTimer = null;
+  callStartedAt = 0;
+  if ($("#callDuration")) $("#callDuration").textContent = "00:00";
+}
+function ringPulse() {
+  try {
+    ringtoneContext ||= new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ringtoneContext.createOscillator(), gain = ringtoneContext.createGain();
+    oscillator.frequency.value = 740;
+    gain.gain.setValueAtTime(0.0001, ringtoneContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, ringtoneContext.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ringtoneContext.currentTime + 0.28);
+    oscillator.connect(gain).connect(ringtoneContext.destination);
+    oscillator.start();
+    oscillator.stop(ringtoneContext.currentTime + 0.3);
+  } catch {}
+}
+function startRingtone() {
+  stopRingtone();
+  ringPulse();
+  ringtoneTimer = setInterval(ringPulse, 1200);
+}
+function stopRingtone() {
+  clearInterval(ringtoneTimer);
+  ringtoneTimer = null;
+  navigator.vibrate?.(0);
+}
+function updateMediaControls() {
+  const audioEnabled = Boolean(stream?.getAudioTracks().some(t => t.enabled && t.readyState === "live"));
+  const videoEnabled = Boolean(stream?.getVideoTracks().some(t => t.enabled && t.readyState === "live"));
+  $("#mic").classList.toggle("control-off", !audioEnabled);
+  $("#cam").classList.toggle("control-off", !videoEnabled);
+  $("#mic").setAttribute("aria-pressed", String(audioEnabled));
+  $("#cam").setAttribute("aria-pressed", String(videoEnabled));
+  $("#mic span").textContent = audioEnabled ? "Micro" : "Micro coupé";
+  $("#cam span").textContent = videoEnabled ? "Caméra" : "Caméra coupée";
 }
 async function openCamera() {
   let lastError;
@@ -1853,16 +1960,13 @@ async function startMedia() {
   }
 }
 async function startMediaOnce() {
-  if (!hasPremiumSubscription) {
-    showError("La webcam est réservée aux membres Premium");
-    return false;
-  }
   const active =
     stream && stream.getTracks().some((track) => track.readyState === "live");
   if (active) {
     $("#localVideo").srcObject = stream;
     $("#call").classList.remove("hidden");
     inVideoCall = true;
+    updateMediaControls();
     return true;
   }
   stream?.getTracks().forEach((track) => track.stop());
@@ -1909,6 +2013,7 @@ async function startMediaOnce() {
   }
   $("#call").classList.remove("hidden");
   inVideoCall = true;
+  updateMediaControls();
   await prepareIce();
   return true;
 }
@@ -1921,9 +2026,28 @@ async function flushIce(id, pc) {
     } catch {}
 }
 async function handleSignal({ from, user: remoteUser, data }) {
-  if (!hasPremiumSubscription) return;
   if (!from || !data?.type) return;
+  if (data.type === "invite") {
+    if (inVideoCall) {
+      socket.emit("webrtc", { target: from, data: { type: "decline", reason: "busy" } });
+      return;
+    }
+    pendingIncomingCall = { from, user: remoteUser };
+    $("#incomingCallerName").textContent = remoteUser?.name || "Un utilisateur";
+    $("#incomingCall").classList.remove("hidden");
+    startRingtone();
+    clearTimeout(incomingCallTimer);
+    incomingCallTimer = setTimeout(() => declineIncomingCall("timeout"), 30000);
+    navigator.vibrate?.([250, 150, 250]);
+    return;
+  }
+  if (data.type === "decline") {
+    showError(data.reason === "busy" ? "La personne est déjà en appel" : "Appel refusé ou sans réponse");
+    hang();
+    return;
+  }
   if (data.type === "leave") {
+    if (pendingIncomingCall?.from === from) closeIncomingCall();
     const old = peers.get(from);
     old?.close();
     peers.delete(from);
@@ -1938,7 +2062,7 @@ async function handleSignal({ from, user: remoteUser, data }) {
     return;
   }
   if (data.type === "join" && !inVideoCall) {
-    showError("Un membre Premium a lancé un appel. Cliquez sur « Appeler » pour le rejoindre.");
+    showError("Un utilisateur a lancé un appel. Cliquez sur « Appeler » pour le rejoindre.");
     return;
   }
   if (data.type === "offer" && !inVideoCall) return;
@@ -1991,26 +2115,48 @@ function addRemote(id, s, participantName = "Participant") {
   remoteVideo.play().catch((error) => console.warn("Lecture vidéo distante :", error));
 }
 $("#callBtn").onclick = async () => {
-  try {
-    const status = await (await api("/api/subscription")).json();
-    hasPremiumSubscription = Boolean(status.premium);
-  } catch (error) {
-    showError(error.message);
-    return;
+  if (await startMedia()) {
+    setCameraStatus("Appel en cours… En attente d’un participant.");
+    setCallStatus("Sonnerie…");
+    socket.emit("webrtc", { target: null, data: { type: "invite" } });
   }
-  if (!hasPremiumSubscription) {
-    showError("La webcam est réservée aux membres Premium");
-    return;
-  }
-  if (await startMedia())
-    socket.emit("webrtc", { target: null, data: { type: "join" } });
 };
+function closeIncomingCall() {
+  stopRingtone();
+  clearTimeout(incomingCallTimer);
+  incomingCallTimer = null;
+  pendingIncomingCall = null;
+  $("#incomingCall").classList.add("hidden");
+}
+function declineIncomingCall(reason = "declined") {
+  const call = pendingIncomingCall;
+  closeIncomingCall();
+  if (call) socket.emit("webrtc", { target: call.from, data: { type: "decline", reason } });
+}
+$("#acceptIncomingCall").onclick = async () => {
+  const call = pendingIncomingCall;
+  if (!call) return;
+  clearTimeout(incomingCallTimer);
+  $("#acceptIncomingCall").disabled = true;
+  try {
+    if (!await startMedia()) return;
+    closeIncomingCall();
+    setCameraStatus();
+    setCallStatus("Connexion en cours…");
+    socket.emit("webrtc", { target: call.from, data: { type: "join" } });
+  } finally {
+    $("#acceptIncomingCall").disabled = false;
+  }
+};
+$("#declineIncomingCall").onclick = () => declineIncomingCall();
 function hang() {
   socket.emit("webrtc", { target: null, data: { type: "leave" } });
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
   mediaStartPromise = null;
   inVideoCall = false;
+  stopCallTimer();
+  setCallStatus("Appel terminé");
   peers.forEach((p) => p.close());
   peers.clear();
   pendingIce.clear();
@@ -2018,15 +2164,19 @@ function hang() {
     .querySelectorAll("#videoGrid .video:not(:first-child)")
     .forEach((x) => x.remove());
   $("#call").classList.add("hidden");
+  closeIncomingCall();
 }
 $("#hangup").onclick = $("#closeCall").onclick = hang;
-$("#mic").onclick = () =>
+$("#mic").onclick = () => {
   stream?.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
+  updateMediaControls();
+};
 $("#cam").onclick = async () => {
   const track = stream?.getVideoTracks()[0];
   if (track) {
     track.enabled = !track.enabled;
     setCameraStatus(track.enabled ? "" : "Caméra désactivée");
+    updateMediaControls();
     return;
   }
   try {
@@ -2042,9 +2192,16 @@ $("#cam").onclick = async () => {
       socket.emit("webrtc", { target: id, data: { type: "offer", sdp: offer } });
     }
     setCameraStatus();
+    updateMediaControls();
   } catch (error) {
     setCameraStatus(`${mediaErrorMessage(error)}. Vérifiez l’autorisation caméra du navigateur.`);
   }
+};
+$("#fullscreenCall").onclick = async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await $("#call").requestFullscreen();
+  } catch { showError("Le plein écran n’est pas disponible sur cet appareil"); }
 };
 $("#screen").onclick = async () => {
   try {
