@@ -13,7 +13,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" />
     <title>Letchat</title>
-    <link rel="stylesheet" href="style.css?v=complete-mobile-video-fix-1" />
+    <link rel="stylesheet" href="style.css?v=salons-mobile-v7-1" />
   </head>
   <body>
     <section id="login" class="login">
@@ -61,17 +61,18 @@
     </section>
     <main id="app" class="app hidden">
       <aside class="side">
+        <button id="closeSide" class="close-side" type="button" aria-label="Fermer les salons">×</button>
         <div class="brand">
           <b>◒</b>Letchat
           <span id="premiumBadge" class="premium-badge hidden">PRO</span>
         </div>
         <button class="new">＋ Nouveau message</button>
         <nav>
-          <a class="active">◌ messages</a><a>◇ Vidéos / Photo amateurs</a><a>♡ Webcam</a>
+          <a class="room" data-room="messages">◌ messages</a><a class="room" data-room="amateurs">◇ Vidéos / Photo amateurs</a><a class="room" data-room="webcam">♡ Webcam</a>
         </nav>
         <h3>ESPACES</h3>
-        <a class="room active">☀ Le Café</a><a class="room">✦ Rencontres</a
-        ><a class="room">⌁ XXX</a>
+        <a class="room active" data-room="cafe">☀ Le Café</a><a class="room" data-room="creatifs">✦ Rencontres</a
+        ><a class="room" data-room="entraide">⌁ XXX</a>
         <div class="account">
           <img id="mePhoto" />
           <div><strong id="meName"></strong><small>En ligne</small></div>
@@ -86,7 +87,8 @@
             <p><span></span><span id="roomPresence"><b id="onlineCount">1</b> en ligne</span><span id="privateTypingStatus" class="hidden"></span></p>
           </div>
           <div class="chat-actions">
-            <button id="searchBtn" class="search-button" title="Rechercher">
+            <button id="roomsBtn" class="rooms-button" title="Ouvrir les salons" aria-label="Ouvrir les salons">☰</button
+            ><button id="searchBtn" class="search-button" title="Rechercher">
               🔍</button
             ><button
               id="notificationsBtn"
@@ -463,6 +465,6 @@
       </div>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=menus-v6-9"></script>
+    <script type="module" src="app.js?v=salons-mobile-v7-1"></script>
   </body>
 </html>

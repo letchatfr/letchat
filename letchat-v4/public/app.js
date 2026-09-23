@@ -71,6 +71,9 @@ const fallbackIceServers = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
 ];
 const rooms = {
+  messages: { title: "◌ messages", welcome: "Bienvenue dans messages" },
+  amateurs: { title: "◇ Vidéos / Photo amateurs", welcome: "Partagez vos vidéos et photos amateurs" },
+  webcam: { title: "♡ Webcam", welcome: "Bienvenue dans le salon Webcam" },
   cafe: { title: "☀ Le Café", welcome: "Bienvenue au Café" },
   creatifs: { title: "✦ Rencontres", welcome: "Bienvenue dans Rencontres" },
   entraide: { title: "⌁ XXX", welcome: "Bienvenue dans XXX" },
@@ -1770,9 +1773,9 @@ $("#viewOnceBtn").onclick = () => {
   viewOnceEnabled = !viewOnceEnabled;
   updateViewOnceButton();
 };
-["cafe", "creatifs", "entraide"].forEach((id, index) => {
-  const link = roomLinks[index];
-  if (!link) return;
+roomLinks.forEach((link) => {
+  const id = link.dataset.room;
+  if (!id || !rooms[id]) return;
   link.onclick = () => {
     clearReply();
     const previousPrivateId = currentPrivate?.id;
@@ -1790,6 +1793,7 @@ $("#viewOnceBtn").onclick = () => {
     }
     roomLinks.forEach((item) => item.classList.remove("active"));
     link.classList.add("active");
+    $(".side").classList.remove("open");
     $(".chat header h1").textContent = rooms[id].title;
     $("#roomPresence").classList.remove("hidden");
     $("#privateTypingStatus").classList.add("hidden");
@@ -1798,22 +1802,8 @@ $("#viewOnceBtn").onclick = () => {
   };
 });
 document.querySelector(".new").onclick = () => $("#input").focus();
-document.querySelector(".side nav a.active").onclick = () => {
-  clearReply();
-  const previousPrivateId = currentPrivate?.id;
-  if (previousPrivateId) stopTyping(previousPrivateId);
-  currentPrivate = null;
-  privateContactStatus = null;
-  socket?.emit("watch-private-status", "");
-  viewOnceEnabled = false;
-  updateViewOnceButton();
-  $("#blockBtn").classList.add("hidden");
-  $("#reportBtn").classList.add("hidden");
-  $(".chat header h1").textContent = rooms[currentRoom].title;
-  $("#roomPresence").classList.remove("hidden");
-  $("#privateTypingStatus").classList.add("hidden");
-  load();
-};
+$("#roomsBtn").onclick = () => $(".side").classList.add("open");
+$("#closeSide").onclick = () => $(".side").classList.remove("open");
 $("#peopleBtn").onclick = () => {
   $(".people").classList.add("open");
   requestNotifications();
