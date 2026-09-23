@@ -72,8 +72,8 @@ const fallbackIceServers = [
 ];
 const rooms = {
   cafe: { title: "☀ Le Café", welcome: "Bienvenue au Café" },
-  creatifs: { title: "✦ Créatifs", welcome: "Bienvenue chez les Créatifs" },
-  entraide: { title: "⌁ Entraide", welcome: "Bienvenue dans l’Entraide" },
+  creatifs: { title: "✦ Rencontres", welcome: "Bienvenue dans Rencontres" },
+  entraide: { title: "⌁ XXX", welcome: "Bienvenue dans XXX" },
 };
 provider.setCustomParameters({ prompt: "select_account" });
 const useGoogleRedirect = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
