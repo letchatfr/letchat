@@ -190,6 +190,8 @@
 .report-head time { color: #888; font-size: 11px; }
 .report-item p { margin: 8px 0; }
 .report-details { padding: 10px; border-radius: 9px; background: #f4f0ea; white-space: pre-wrap; }
+.moderation-log-item { border-left: 5px solid #315b76; }
+.moderation-log-item .report-details { color: #445661; }
 .suspension-state { color: #8b4b2a; font-weight: 700; }
 .admin-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .admin-actions button { border: 0; border-radius: 8px; padding: 8px 10px; background: #e7edf1; color: #263b48; font-weight: 700; }

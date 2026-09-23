@@ -1382,6 +1382,23 @@ async function loadAdminReports() {
   list.innerHTML = '<p class="admin-loading">Chargement…</p>';
   $("#adminError").textContent = "";
   try {
+    if ($("#adminStatus").value === "journal") {
+      const rows = await (await api("/api/admin/moderation-log")).json();
+      const actionLabels = {
+        report_resolved: "Signalement traité",
+        report_dismissed: "Signalement rejeté",
+        report_reopened: "Signalement rouvert",
+        message_deleted: "Message supprimé",
+        user_suspended: "Compte suspendu",
+        user_unsuspended: "Compte réactivé",
+      };
+      list.innerHTML = rows.length
+        ? rows.map((entry) =>
+            `<article class="report-item moderation-log-item"><div class="report-head"><strong>${safe(actionLabels[entry.action] || entry.action)}</strong><time>${new Date(entry.created_at).toLocaleString("fr-FR")}</time></div><p><b>Administrateur :</b> ${safe(entry.admin_name)}</p>${entry.target_user_id ? `<p><b>Utilisateur concerné :</b> ${safe(entry.target_name || "Utilisateur")}</p>` : ""}${entry.report_id ? `<p><b>Signalement :</b> n°${safe(entry.report_id)}</p>` : ""}${entry.details ? `<p class="report-details">${safe(entry.details)}</p>` : ""}</article>`
+          ).join("")
+        : '<p class="admin-empty">Aucune action de modération enregistrée.</p>';
+      return;
+    }
     const rows = await (
       await api(
         `/api/admin/reports?status=${encodeURIComponent($("#adminStatus").value)}`,
