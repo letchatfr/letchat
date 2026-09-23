@@ -3,6 +3,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
   getRedirectResult,
   setPersistence,
   browserLocalPersistence,
@@ -12,7 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
 const config = {
   apiKey: "AIzaSyCfOel5JKgjxmVslddn_Xdar1XR_vb2Cgs",
-  authDomain: "letchat-1d79d.firebaseapp.com",
+  authDomain: "www.letchat.fr",
   projectId: "letchat-1d79d",
   storageBucket: "letchat-1d79d.firebasestorage.app",
   messagingSenderId: "289359647477",
@@ -64,6 +65,7 @@ const rooms = {
   entraide: { title: "⌁ Entraide", welcome: "Bienvenue dans l’Entraide" },
 };
 provider.setCustomParameters({ prompt: "select_account" });
+const useGoogleRedirect = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 function loginError(message) {
   const box = $("#loginError");
   box.textContent = message;
@@ -76,14 +78,17 @@ $("#googleLogin").onclick = async () => {
   try {
     await setPersistence(auth, browserLocalPersistence);
     button.textContent = "Ouverture de Google…";
+    if (useGoogleRedirect) {
+      await signInWithRedirect(auth, provider);
+      return;
+    }
     await signInWithPopup(auth, provider);
   } catch (error) {
     if (error.code === "auth/popup-blocked")
       return loginError("Chrome bloque la fenêtre Google. Autorisez les fenêtres pop-up pour www.letchat.fr, puis réessayez.");
     if (error.code === "auth/unauthorized-domain")
       return loginError("Le domaine www.letchat.fr doit être autorisé dans Firebase Authentication.");
-    if (error.code !== "auth/popup-closed-by-user")
-      loginError(`Connexion Google impossible : ${error.message}`);
+    loginError(`Connexion Google impossible (${error.code || "erreur"}) : ${error.message}`);
   } finally {
     button.disabled = false;
     if (document.body.contains(button))
@@ -91,7 +96,9 @@ $("#googleLogin").onclick = async () => {
   }
 };
 $("#logout").onclick = () => signOut(auth);
-getRedirectResult(auth).catch(() => {});
+getRedirectResult(auth).catch((error) =>
+  loginError(`Retour Google impossible (${error.code || "erreur"}) : ${error.message}`),
+);
 onAuthStateChanged(auth, async (u) => {
   if (!u) {
     sessionStarted = false;
