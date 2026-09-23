@@ -3,7 +3,6 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
-  signInWithRedirect,
   getRedirectResult,
   setPersistence,
   browserLocalPersistence,
@@ -64,9 +63,6 @@ const rooms = {
   creatifs: { title: "✦ Créatifs", welcome: "Bienvenue chez les Créatifs" },
   entraide: { title: "⌁ Entraide", welcome: "Bienvenue dans l’Entraide" },
 };
-const mobileGoogleLogin =
-  /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
-  window.matchMedia("(max-width: 700px)").matches;
 provider.setCustomParameters({ prompt: "select_account" });
 function loginError(message) {
   const box = $("#loginError");
@@ -79,22 +75,13 @@ $("#googleLogin").onclick = async () => {
   $("#loginError").classList.add("hidden");
   try {
     await setPersistence(auth, browserLocalPersistence);
-    if (mobileGoogleLogin) {
-      button.textContent = "Ouverture de Google…";
-      await signInWithRedirect(auth, provider);
-      return;
-    }
+    button.textContent = "Ouverture de Google…";
     await signInWithPopup(auth, provider);
   } catch (error) {
-    if (
-      [
-        "auth/popup-blocked",
-        "auth/operation-not-supported-in-this-environment",
-      ].includes(error.code)
-    ) {
-      await signInWithRedirect(auth, provider);
-      return;
-    }
+    if (error.code === "auth/popup-blocked")
+      return loginError("Chrome bloque la fenêtre Google. Autorisez les fenêtres pop-up pour www.letchat.fr, puis réessayez.");
+    if (error.code === "auth/unauthorized-domain")
+      return loginError("Le domaine www.letchat.fr doit être autorisé dans Firebase Authentication.");
     if (error.code !== "auth/popup-closed-by-user")
       loginError(`Connexion Google impossible : ${error.message}`);
   } finally {
@@ -104,11 +91,7 @@ $("#googleLogin").onclick = async () => {
   }
 };
 $("#logout").onclick = () => signOut(auth);
-getRedirectResult(auth)
-  .then((result) => {
-    if (result?.user) $("#loginError").classList.add("hidden");
-  })
-  .catch((e) => loginError(`Connexion Google impossible : ${e.message}`));
+getRedirectResult(auth).catch(() => {});
 onAuthStateChanged(auth, async (u) => {
   if (!u) {
     sessionStarted = false;
