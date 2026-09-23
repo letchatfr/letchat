@@ -70,6 +70,7 @@ await pool.query(`
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS gender TEXT NOT NULL DEFAULT 'neutral';
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS availability TEXT NOT NULL DEFAULT 'available';
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  ALTER TABLE profiles ADD COLUMN IF NOT EXISTS private_message_policy TEXT NOT NULL DEFAULT 'everyone';
 `);
 
 await pool.query(`
@@ -714,7 +715,7 @@ app.post("/api/rules-accept", auth, rateLimitAction("rules", 5, 60 * 60 * 1000),
 app.get("/api/profile", auth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      "SELECT display_name, photo, city, bio, gender, availability, last_seen, location_visible FROM profiles WHERE user_id = $1",
+      "SELECT display_name, photo, city, bio, gender, availability, last_seen, location_visible, private_message_policy FROM profiles WHERE user_id = $1",
       [req.user.id]
     );
     res.json(rows[0] || null);
@@ -731,6 +732,8 @@ app.put("/api/profile", auth, async (req, res, next) => {
     const bio = String(req.body.bio || "").trim().slice(0, 280);
     const gender = ["female", "male"].includes(String(req.body.gender)) ? String(req.body.gender) : "neutral";
     const availability = ["available", "busy", "away"].includes(String(req.body.availability)) ? String(req.body.availability) : "available";
+    const privateMessagePolicy = ["everyone", "friends", "nobody"].includes(String(req.body.privateMessagePolicy))
+      ? String(req.body.privateMessagePolicy) : "everyone";
     const photoData = String(req.body.photoData || "");
     if (photoData && (!/^data:image\/(jpeg|png|webp);base64,/i.test(photoData) || photoData.length > 2100000)) {
       return res.status(400).json({ error: "Photo incorrecte ou trop volumineuse" });
@@ -742,16 +745,17 @@ app.put("/api/profile", auth, async (req, res, next) => {
     }
     const { rows } = await pool.query(
       `INSERT INTO profiles
-       (user_id, email, display_name, photo, region, department, city, bio, gender, availability, location_visible, last_seen)
-       VALUES ($1,$2,$3,$4,'','',$5,$6,$7,$8,$9,NOW())
+       (user_id, email, display_name, photo, region, department, city, bio, gender, availability, location_visible, private_message_policy, last_seen)
+       VALUES ($1,$2,$3,$4,'','',$5,$6,$7,$8,$9,$10,NOW())
        ON CONFLICT (user_id) DO UPDATE SET
          email=EXCLUDED.email, display_name=EXCLUDED.display_name,
          photo=EXCLUDED.photo, region='',
          department='', city=EXCLUDED.city, bio=EXCLUDED.bio, gender=EXCLUDED.gender,
          availability=EXCLUDED.availability,
-         location_visible=EXCLUDED.location_visible, updated_at=NOW()
-       RETURNING display_name, photo, city, bio, gender, availability, last_seen, location_visible`,
-      [req.user.id, req.user.email, displayName, photo, city, bio, gender, availability, locationVisible]
+         location_visible=EXCLUDED.location_visible,
+         private_message_policy=EXCLUDED.private_message_policy, updated_at=NOW()
+       RETURNING display_name, photo, city, bio, gender, availability, last_seen, location_visible, private_message_policy`,
+      [req.user.id, req.user.email, displayName, photo, city, bio, gender, availability, locationVisible, privateMessagePolicy]
     );
     for (const [socketId, entry] of online) {
       if (entry.user.id === req.user.id) {
@@ -1585,6 +1589,27 @@ app.post("/api/private", auth, requireAdult, requireRules,
       [req.user.id, recipientId]
     );
     if (blocked.rowCount) return res.status(403).json({ error: "Message impossible : utilisateur bloqué" });
+    const recipientProfile = await pool.query(
+      "SELECT private_message_policy FROM profiles WHERE user_id=$1",
+      [recipientId]
+    );
+    const privateMessagePolicy = recipientProfile.rows[0]?.private_message_policy || "everyone";
+    if (privateMessagePolicy === "nobody") {
+      return res.status(403).json({ error: "Cet utilisateur n’accepte pas les messages privés" });
+    }
+    if (privateMessagePolicy === "friends") {
+      const friendship = await pool.query(
+        `SELECT 1 FROM letchat_friends
+         WHERE status='accepted'
+           AND ((requester_id=$1 AND addressee_id=$2)
+             OR (requester_id=$2 AND addressee_id=$1))
+         LIMIT 1`,
+        [req.user.id, recipientId]
+      );
+      if (!friendship.rowCount) {
+        return res.status(403).json({ error: "Cet utilisateur accepte uniquement les messages de ses amis" });
+      }
+    }
     if (!body && !media) return res.status(400).json({ error: "Message vide" });
     if (body && await rejectSpamMessage(req, res, body, recipientId)) return;
     if (media && media.length > 8e6) {
