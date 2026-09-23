@@ -1,15 +1,19 @@
 <!doctype html>
 <html lang="fr">
-  <head> <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3317597986908171"
-     crossorigin="anonymous"></script>
+  <head>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
       content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#f36f58" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" />
     <title>Letchat</title>
-    <link rel="stylesheet" href="style.css?v=premium-pack-2" />
+    <link rel="stylesheet" href="style.css?v=complete-mobile-video-fix-1" />
   </head>
   <body>
     <section id="login" class="login">
@@ -56,10 +60,12 @@
         <header>
           <div>
             <h1>☀ Le Café</h1>
-            <p><span></span><b id="onlineCount">1</b> en ligne</p>
+            <p><span></span><span id="roomPresence"><b id="onlineCount">1</b> en ligne</span><span id="privateTypingStatus" class="hidden"></span></p>
           </div>
           <div class="chat-actions">
-            <button
+            <button id="searchBtn" class="search-button" title="Rechercher">
+              🔍</button
+            ><button
               id="notificationsBtn"
               class="notifications-button"
               title="Notifications"
@@ -78,7 +84,7 @@
               <span id="unreadBadge" class="unread-badge hidden"
                 >0</span
               ></button
-            ><button id="callBtn">▣ Appeler</button>
+            ><button id="callBtn" class="hidden" disabled>▣ Appeler</button>
           </div>
         </header>
         <aside id="adBanner" class="ad-banner">
@@ -96,19 +102,41 @@
         <div id="typing" class="typing"></div>
         <div id="error" class="error hidden"></div>
         <footer>
-          <input id="file" type="file" accept="image/*,video/*" hidden /><input
+          <input
+            id="file"
+            type="file"
+            accept="image/*,video/*,audio/*"
+            hidden
+          /><input
             id="camera"
             type="file"
             accept="image/*,video/*"
             capture="user"
             hidden
           />
+          <div id="voiceRecording" class="voice-recording hidden">
+            <span class="recording-dot"></span><strong>Enregistrement</strong
+            ><time id="voiceTimer">00:00</time>
+            <button id="cancelVoice" type="button">Annuler</button
+            ><button id="sendVoice" type="button">Envoyer</button>
+          </div>
+          <div id="replyPreview" class="reply-preview hidden">
+            <div>
+              <strong id="replyPreviewAuthor"></strong
+              ><span id="replyPreviewText"></span>
+            </div>
+            <button id="cancelReply" type="button" title="Annuler la réponse">
+              ×
+            </button>
+          </div>
           <div class="composer">
             <button id="attach">⌕</button><button id="cameraBtn">▣</button
+            ><button id="voiceBtn" type="button" title="Message vocal">🎙</button
             ><textarea
               id="input"
               placeholder="Écrivez votre message…"
             ></textarea
+            ><button id="viewOnceBtn" class="hidden" type="button" title="Photo ou vidéo visible une seule fois">①</button
             ><button id="emoji">☺</button><button id="send">➤</button>
           </div>
           <small>Entrée pour envoyer · Médias jusqu’à 8 Mo</small>
@@ -116,6 +144,19 @@
       </section>
       <aside class="people">
         <button id="closePeople" class="close-people">×</button>
+        <section class="conversation-section">
+          <div class="conversation-heading">
+            <h2>Conversations</h2><span id="conversationTotal" class="conversation-total hidden">0</span>
+          </div>
+          <div class="conversation-tabs">
+            <button id="activeConversations" class="active" type="button">Actives</button>
+            <button id="archivedConversations" type="button">Archivées</button>
+          </div>
+          <div id="conversationList" class="conversation-list">
+            <p class="no-conversations">Aucune conversation privée.</p>
+          </div>
+        </section>
+        <hr />
         <h2>Amis et contacts</h2>
         <div id="friendRequests"></div>
         <div id="friendsList"></div>
@@ -133,9 +174,13 @@
         <button type="button" id="closeProfile" class="profile-close">×</button>
         <h2>Mon profil public</h2>
         <p>
-          Votre photo Google est utilisée automatiquement. Ne partagez jamais
-          votre adresse exacte.
+          Choisissez votre photo et votre statut. Ne partagez jamais votre adresse exacte.
         </p>
+        <div class="profile-photo-editor">
+          <img id="profilePhotoPreview" alt="Votre photo de profil" />
+          <div><button id="chooseProfilePhoto" type="button">Choisir une photo</button><small>JPG, PNG ou WebP · recadrage automatique</small></div>
+          <input id="profilePhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+        </div>
         <label
           >Pseudonyme<input
             id="profileName"
@@ -160,6 +205,18 @@
             <option value="neutral">Ne pas préciser — neutre</option>
             <option value="female">Femme — rose</option>
             <option value="male">Homme — bleu</option>
+          </select></label
+        ><label
+          >Statut<select id="profileAvailability">
+            <option value="available">Disponible</option>
+            <option value="busy">Occupé</option>
+            <option value="away">Absent</option>
+          </select></label
+        ><label
+          >Qui peut m’envoyer un message privé ?<select id="profilePrivateMessages">
+            <option value="everyone">Tout le monde</option>
+            <option value="friends">Mes amis uniquement</option>
+            <option value="nobody">Personne</option>
           </select></label
         ><label class="profile-check"
           ><input id="profileVisible" type="checkbox" checked /> Afficher ma
@@ -190,6 +247,12 @@
           >
         </section>
         <section class="account-data">
+          <h3>Application et notifications</h3>
+          <p id="appFeatureStatus">Installation et notifications disponibles sur les appareils compatibles.</p>
+          <button id="installApp" type="button" class="account-export hidden">Installer Letchat</button>
+          <button id="enablePush" type="button" class="account-export">Activer les notifications</button>
+        </section>
+        <section class="account-data">
           <h3>Mes données et mon compte</h3>
           <p>Contact officiel : <a id="contactEmail">Chargement…</a></p>
           <button id="exportAccount" type="button" class="account-export">
@@ -203,6 +266,16 @@
         </section>
         <div id="profileError" class="profile-error"></div>
       </form>
+    </section>
+    <section id="publicProfileModal" class="profile-modal hidden">
+      <div class="profile-card public-profile-card">
+        <button type="button" id="closePublicProfile" class="profile-close">×</button>
+        <div class="public-profile-head"><img id="publicProfilePhoto" alt="Photo du profil" /><div><h2 id="publicProfileName"></h2><p id="publicProfileStatus"></p></div></div>
+        <p id="publicProfileBio" class="public-profile-bio"></p>
+        <dl class="public-profile-details"><div><dt>Ville</dt><dd id="publicProfileCity"></dd></div><div><dt>Dernière connexion</dt><dd id="publicProfileLastSeen"></dd></div></dl>
+        <div class="public-profile-actions"><button id="publicProfileMessage" type="button">Écrire en privé</button><button id="publicProfileFriend" type="button">Ajouter en ami</button></div>
+        <div id="publicProfileError" class="profile-error"></div>
+      </div>
     </section>
     <section id="reportModal" class="profile-modal hidden">
       <form id="reportForm" class="profile-card report-card">
@@ -283,12 +356,35 @@
         <div id="notificationsList" class="notifications-list"></div>
       </div>
     </section>
+    <section id="searchModal" class="search-modal hidden">
+      <div class="search-panel">
+        <header>
+          <div>
+            <h2>Rechercher</h2>
+            <p>Messages et contacts</p>
+          </div>
+          <button type="button" id="closeSearch">×</button>
+        </header>
+        <div class="search-field">
+          <span>🔍</span
+          ><input
+            id="searchInput"
+            type="search"
+            placeholder="Écrivez un mot ou un nom…"
+            autocomplete="off"
+          />
+        </div>
+        <div id="searchResults" class="search-results">
+          <p class="search-empty">Commencez à écrire pour rechercher.</p>
+        </div>
+      </div>
+    </section>
     <section id="adminModal" class="admin-modal hidden">
       <div class="admin-panel">
         <header>
           <div>
             <h2>Administration</h2>
-            <p>Signalements et suspensions</p>
+            <p>Signalements, suspensions et historique</p>
           </div>
           <button type="button" id="closeAdmin">×</button>
         </header>
@@ -299,6 +395,9 @@
               <option value="pending">À traiter</option>
               <option value="resolved">Traités</option>
               <option value="dismissed">Rejetés</option>
+              <option value="journal">Journal de modération</option>
+              <option value="profiles">Profils et vérifications</option>
+              <option value="stats">Tableau de bord</option>
             </select></label
           ><button type="button" id="refreshReports">Actualiser</button>
         </div>
@@ -318,6 +417,7 @@
         <div class="video">
           <video id="localVideo" autoplay muted playsinline></video
           ><span>Vous</span>
+          <p id="cameraStatus" class="camera-status hidden"></p>
         </div>
       </div>
       <footer>
@@ -328,6 +428,6 @@
       </footer>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=premium-pack-2"></script>
+    <script type="module" src="app.js?v=complete-mobile-video-fix-1"></script>
   </body>
 </html>
