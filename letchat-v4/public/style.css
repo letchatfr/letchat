@@ -374,3 +374,76 @@
   .side.open .room{cursor:pointer;min-height:44px;display:flex;align-items:center}
   .room-feature{margin:6px 8px 0;padding:10px}.room-feature-title{align-items:flex-start;flex-direction:column;gap:3px}.webcam-members article{display:grid;grid-template-columns:34px auto auto}.webcam-members article strong{grid-column:2/4}.messages.media-gallery{grid-template-columns:1fr 1fr;gap:8px;padding:10px}.media-gallery .message{padding:8px;gap:6px}.media-gallery .message>.avatar{display:none}.media-gallery .message .meta{font-size:11px}.media-gallery .message-actions{flex-wrap:wrap}.adult-room-warning{align-items:end;padding:0}.adult-room-card{border-radius:24px 24px 0 0;padding:28px 19px max(24px,env(safe-area-inset-bottom))}
 }
+/* =========================================================
+   PIED DE PAGE LÉGAL — LETCHAT.FR
+   ========================================================= */
+
+.legal-footer {
+  width: 100%;
+  padding: 18px 15px;
+  margin-top: 25px;
+
+  background: #171b26;
+  color: #aeb5c5;
+
+  text-align: center;
+  font-size: 13px;
+
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.legal-footer nav {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+
+  gap: 8px;
+}
+
+.legal-footer a {
+  color: #dce2ef;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.legal-footer a:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+.legal-footer span {
+  color: #626b7d;
+}
+
+.legal-footer p {
+  margin: 10px 0 0;
+  color: #7f8796;
+}
+
+
+/* =========================
+   VERSION TÉLÉPHONE
+   ========================= */
+
+@media (max-width: 700px) {
+
+  .legal-footer {
+    padding: 16px 10px;
+    margin-top: 15px;
+    font-size: 12px;
+  }
+
+  .legal-footer nav {
+    gap: 6px;
+  }
+
+  .legal-footer a {
+    padding: 4px 2px;
+  }
+
+  .legal-footer p {
+    margin-top: 8px;
+  }
+
+}
