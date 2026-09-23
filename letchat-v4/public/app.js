@@ -43,6 +43,8 @@ let user,
   privateContactStatus = null,
   notifications = [],
   lastPeople = [],
+  roomUnread = new Map(),
+  pendingAdultSelection = null,
   iceServers = [],
   icePromise,
   mediaStartPromise,
@@ -371,6 +373,8 @@ function render(rows) {
   expiryTimers.forEach(clearTimeout);
   expiryTimers.clear();
   const box = $("#messages");
+  box.classList.toggle("media-gallery", !currentPrivate && currentRoom === "amateurs");
+  updateRoomFeature();
   if (currentPrivate) {
     box.innerHTML = rows.length
       ? ""
@@ -1257,6 +1261,7 @@ function renderPeople(list) {
         (button.onclick = () => sendFriendRequest(button.dataset.addFriend)),
     );
   renderFriends();
+  updateRoomFeature();
 }
 function connect() {
   socket = io({ auth: { token }, transports: ["websocket", "polling"] });
@@ -1266,6 +1271,11 @@ function connect() {
     load();
   });
   socket.on("message", (m) => addMessage(m));
+  socket.on("room-activity", ({ room, userId } = {}) => {
+    if (!rooms[room] || userId === user.uid || (!currentPrivate && room === currentRoom)) return;
+    roomUnread.set(room, (roomUnread.get(room) || 0) + 1);
+    updateRoomBadges();
+  });
   socket.on("private-message", showPrivateNotification);
   socket.on("private-receipt", updatePrivateReceipts);
   socket.on("private-typing", data => {
@@ -1763,6 +1773,70 @@ $("#blockBtn").onclick = async () => {
   }
 };
 const roomLinks = [...document.querySelectorAll(".room")];
+function updateRoomBadges() {
+  roomLinks.forEach((link) => {
+    const count = roomUnread.get(link.dataset.room) || 0;
+    let badge = link.querySelector(".room-unread");
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "room-unread hidden";
+      link.append(badge);
+    }
+    badge.textContent = count > 99 ? "99+" : String(count);
+    badge.classList.toggle("hidden", count === 0);
+  });
+}
+function updateRoomFeature() {
+  const panel = $("#roomFeature");
+  if (!panel) return;
+  if (currentPrivate || !["amateurs", "webcam"].includes(currentRoom)) {
+    panel.classList.add("hidden");
+    panel.innerHTML = "";
+    return;
+  }
+  panel.classList.remove("hidden");
+  if (currentRoom === "amateurs") {
+    panel.innerHTML = `<div class="room-feature-title"><b>▣ Galerie des membres</b><span>Ajoutez une photo ou une vidéo avec le bouton de pièce jointe.</span></div>`;
+    return;
+  }
+  const seen = new Set();
+  const available = lastPeople.filter((person) => {
+    if (person.id === user.uid || person.availability !== "available" || seen.has(person.id)) return false;
+    seen.add(person.id);
+    return true;
+  });
+  panel.innerHTML = `<div class="room-feature-title"><b>▣ Membres disponibles en Webcam</b><span>${available.length ? `${available.length} membre${available.length > 1 ? "s" : ""} disponible${available.length > 1 ? "s" : ""}` : "Aucun autre membre disponible pour le moment"}</span></div>${available.length ? `<div class="webcam-members">${available.map((person) => `<article><span class="webcam-avatar">${person.photo ? `<img src="${safe(person.photo)}" alt="">` : safe(initials(person.name))}</span><strong>${safe(person.name)}</strong><button type="button" data-webcam-message="${safe(person.id)}" data-webcam-name="${safe(person.name)}">Écrire</button><button type="button" data-webcam-call="${safe(person.socketId || "")}" data-webcam-name="${safe(person.name)}" ${person.socketId ? "" : "disabled"}>Appeler</button></article>`).join("")}</div>` : ""}`;
+  panel.querySelectorAll("[data-webcam-message]").forEach((button) => button.onclick = () => openPrivate(button.dataset.webcamMessage, button.dataset.webcamName));
+  panel.querySelectorAll("[data-webcam-call]").forEach((button) => button.onclick = () => startDirectCall(button.dataset.webcamCall, button.dataset.webcamName));
+}
+function selectRoom(link, id) {
+  clearReply();
+  const previousPrivateId = currentPrivate?.id;
+  if (previousPrivateId) stopTyping(previousPrivateId);
+  currentPrivate = null;
+  privateContactStatus = null;
+  socket?.emit("watch-private-status", "");
+  viewOnceEnabled = false;
+  updateViewOnceButton();
+  $("#blockBtn").classList.add("hidden");
+  $("#reportBtn").classList.add("hidden");
+  if (currentRoom !== id) {
+    currentRoom = id;
+    lastPeople = [];
+    socket?.emit("join-room", id);
+  }
+  roomUnread.delete(id);
+  updateRoomBadges();
+  roomLinks.forEach((item) => item.classList.remove("active"));
+  link.classList.add("active");
+  $(".side").classList.remove("open");
+  $(".chat header h1").textContent = rooms[id].title;
+  $("#roomPresence").classList.remove("hidden");
+  $("#privateTypingStatus").classList.add("hidden");
+  $("#typing").textContent = "";
+  updateRoomFeature();
+  load();
+}
 function updateViewOnceButton() {
   const button = $("#viewOnceBtn");
   button.classList.toggle("hidden", !currentPrivate);
@@ -1777,30 +1851,22 @@ roomLinks.forEach((link) => {
   const id = link.dataset.room;
   if (!id || !rooms[id]) return;
   link.onclick = () => {
-    clearReply();
-    const previousPrivateId = currentPrivate?.id;
-    if (previousPrivateId) stopTyping(previousPrivateId);
-    currentPrivate = null;
-    privateContactStatus = null;
-    socket?.emit("watch-private-status", "");
-    viewOnceEnabled = false;
-    updateViewOnceButton();
-    $("#blockBtn").classList.add("hidden");
-    $("#reportBtn").classList.add("hidden");
-    if (currentRoom !== id) {
-      currentRoom = id;
-      socket?.emit("join-room", id);
+    if (id === "entraide" && localStorage.getItem("letchatAdultRoomAccepted") !== "yes") {
+      pendingAdultSelection = { link, id };
+      $(".side").classList.remove("open");
+      $("#adultRoomWarning").classList.remove("hidden");
+      return;
     }
-    roomLinks.forEach((item) => item.classList.remove("active"));
-    link.classList.add("active");
-    $(".side").classList.remove("open");
-    $(".chat header h1").textContent = rooms[id].title;
-    $("#roomPresence").classList.remove("hidden");
-    $("#privateTypingStatus").classList.add("hidden");
-    $("#typing").textContent = "";
-    load();
+    selectRoom(link, id);
   };
 });
+$("#leaveAdultRoom").onclick = () => { pendingAdultSelection = null; $("#adultRoomWarning").classList.add("hidden"); };
+$("#enterAdultRoom").onclick = () => {
+  localStorage.setItem("letchatAdultRoomAccepted", "yes");
+  $("#adultRoomWarning").classList.add("hidden");
+  if (pendingAdultSelection) selectRoom(pendingAdultSelection.link, pendingAdultSelection.id);
+  pendingAdultSelection = null;
+};
 document.querySelector(".new").onclick = () => $("#input").focus();
 $("#roomsBtn").onclick = () => $(".side").classList.add("open");
 $("#closeSide").onclick = () => $(".side").classList.remove("open");
@@ -2116,6 +2182,14 @@ function addRemote(id, s, participantName = "Participant") {
   const remoteVideo = d.querySelector("video");
   remoteVideo.srcObject = s;
   remoteVideo.play().catch((error) => console.warn("Lecture vidéo distante :", error));
+}
+async function startDirectCall(socketId, participantName) {
+  if (!socketId) return showError("Ce membre n’est plus disponible");
+  if (await startMedia()) {
+    setCameraStatus(`Appel de ${participantName}…`);
+    setCallStatus("Sonnerie…");
+    socket.emit("webrtc", { target: socketId, data: { type: "invite" } });
+  }
 }
 $("#callBtn").onclick = async () => {
   if (await startMedia()) {
