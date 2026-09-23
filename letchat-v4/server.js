@@ -178,6 +178,9 @@ await pool.query(`
   ON letchat_reports(status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_letchat_reports_reporter
   ON letchat_reports(reporter_id, reported_id, created_at DESC);
+  ALTER TABLE letchat_reports ADD COLUMN IF NOT EXISTS message_kind TEXT;
+  ALTER TABLE letchat_reports ADD COLUMN IF NOT EXISTS message_id BIGINT;
+  ALTER TABLE letchat_reports ADD COLUMN IF NOT EXISTS evidence_body TEXT NOT NULL DEFAULT '';
 `);
 
 await pool.query(`
@@ -896,12 +899,33 @@ app.delete("/api/friends/:id", auth, async (req, res, next) => {
   }
 });
 
-app.post("/api/reports", auth, rateLimitAction("reports", 5, 60 * 60 * 1000), async (req, res, next) => {
+app.post("/api/reports", auth, requireAdult, requireRules, rateLimitAction("reports", 5, 60 * 60 * 1000), async (req, res, next) => {
   try {
-    const reportedId = String(req.body.reportedId || "").slice(0, 200);
+    let reportedId = String(req.body.reportedId || "").slice(0, 200);
     const reason = String(req.body.reason || "");
     const details = String(req.body.details || "").trim().slice(0, 1000);
+    const messageKind = ["public", "private"].includes(String(req.body.messageKind))
+      ? String(req.body.messageKind) : null;
+    const messageId = /^\d+$/.test(String(req.body.messageId || ""))
+      ? String(req.body.messageId) : null;
+    let evidenceBody = "";
     const allowedReasons = new Set(["harassment", "spam", "inappropriate", "fake", "other"]);
+    if (messageKind && messageId) {
+      const evidence = messageKind === "public"
+        ? await pool.query(
+            `SELECT user_id AS author_id, LEFT(COALESCE(NULLIF(body,''), '[Média]'), 2000) AS body
+             FROM letchat_messages WHERE id=$1 AND expires_at > NOW()`, [messageId]
+          )
+        : await pool.query(
+            `SELECT sender_id AS author_id, LEFT(COALESCE(NULLIF(body,''), '[Média]'), 2000) AS body
+             FROM letchat_private_messages
+             WHERE id=$1 AND expires_at > NOW() AND (sender_id=$2 OR recipient_id=$2)`,
+            [messageId, req.user.id]
+          );
+      if (!evidence.rowCount) return res.status(404).json({ error: "Message à signaler introuvable" });
+      reportedId = evidence.rows[0].author_id;
+      evidenceBody = evidence.rows[0].body;
+    }
     if (!reportedId || reportedId === req.user.id) {
       return res.status(400).json({ error: "Utilisateur incorrect" });
     }
@@ -911,17 +935,19 @@ app.post("/api/reports", auth, rateLimitAction("reports", 5, 60 * 60 * 1000), as
     const recent = await pool.query(
       `SELECT 1 FROM letchat_reports
        WHERE reporter_id=$1 AND reported_id=$2
+         AND (($3::bigint IS NULL AND message_id IS NULL) OR message_id=$3)
          AND created_at > NOW() - INTERVAL '24 hours'
        LIMIT 1`,
-      [req.user.id, reportedId]
+      [req.user.id, reportedId, messageId]
     );
     if (recent.rowCount) {
       return res.status(429).json({ error: "Vous avez déjà signalé cet utilisateur récemment" });
     }
     await pool.query(
-      `INSERT INTO letchat_reports (reporter_id, reported_id, reason, details)
-       VALUES ($1, $2, $3, $4)`,
-      [req.user.id, reportedId, reason, details]
+      `INSERT INTO letchat_reports
+         (reporter_id, reported_id, reason, details, message_kind, message_id, evidence_body)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [req.user.id, reportedId, reason, details, messageKind, messageId, evidenceBody]
     );
     res.status(201).json({ ok: true });
   } catch (error) {
@@ -939,6 +965,7 @@ app.get("/api/admin/reports", auth, adminAuth, async (req, res, next) => {
       ? String(req.query.status) : "pending";
     const { rows } = await pool.query(
       `SELECT r.id, r.reporter_id, r.reported_id, r.reason, r.details,
+              r.message_kind, r.message_id, r.evidence_body,
               r.status, r.created_at,
               COALESCE(reporter.display_name, 'Utilisateur') AS reporter_name,
               COALESCE(reported.display_name, 'Utilisateur') AS reported_name,
@@ -976,6 +1003,40 @@ app.patch("/api/admin/reports/:id", auth, adminAuth, async (req, res, next) => {
       null, String(result.rows[0].id)
     );
     res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/admin/reports/:id/message", auth, adminAuth, async (req, res, next) => {
+  try {
+    const report = await pool.query(
+      "SELECT message_kind, message_id FROM letchat_reports WHERE id=$1",
+      [req.params.id]
+    );
+    if (!report.rowCount || !report.rows[0].message_kind || !report.rows[0].message_id) {
+      return res.status(404).json({ error: "Message signalé introuvable" });
+    }
+    const { message_kind: kind, message_id: id } = report.rows[0];
+    let deleted;
+    if (kind === "public") {
+      deleted = await pool.query("DELETE FROM letchat_messages WHERE id=$1 RETURNING room", [id]);
+    } else {
+      deleted = await pool.query(
+        `DELETE FROM letchat_private_messages WHERE id=$1
+         RETURNING sender_id AS user_id, recipient_id`, [id]
+      );
+    }
+    await pool.query(
+      "DELETE FROM letchat_message_reactions WHERE message_kind=$1 AND message_id=$2",
+      [kind, id]
+    );
+    if (deleted.rowCount) {
+      const payload = { id: String(id), private: kind === "private" };
+      if (kind === "public") io.to(deleted.rows[0].room).emit("message-deleted", payload);
+      else io.to(`user:${deleted.rows[0].user_id}`).to(`user:${deleted.rows[0].recipient_id}`).emit("message-deleted", payload);
+    }
+    res.json({ ok: true, alreadyDeleted: !deleted.rowCount });
   } catch (error) {
     next(error);
   }
