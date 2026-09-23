@@ -7,6 +7,11 @@
       content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#f36f58" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" />
     <title>Letchat</title>
     <link rel="stylesheet" href="style.css?v=private-status-1" />
   </head>
@@ -242,6 +247,12 @@
           >
         </section>
         <section class="account-data">
+          <h3>Application et notifications</h3>
+          <p id="appFeatureStatus">Installation et notifications disponibles sur les appareils compatibles.</p>
+          <button id="installApp" type="button" class="account-export hidden">Installer Letchat</button>
+          <button id="enablePush" type="button" class="account-export">Activer les notifications</button>
+        </section>
+        <section class="account-data">
           <h3>Mes données et mon compte</h3>
           <p>Contact officiel : <a id="contactEmail">Chargement…</a></p>
           <button id="exportAccount" type="button" class="account-export">
@@ -386,6 +397,7 @@
               <option value="dismissed">Rejetés</option>
               <option value="journal">Journal de modération</option>
               <option value="profiles">Profils et vérifications</option>
+              <option value="stats">Tableau de bord</option>
             </select></label
           ><button type="button" id="refreshReports">Actualiser</button>
         </div>
@@ -416,6 +428,6 @@
       </footer>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=verified-profiles-1"></script>
+    <script type="module" src="app.js?v=pwa-push-stats-security-1"></script>
   </body>
 </html>

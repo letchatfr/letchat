@@ -27,6 +27,8 @@ let user,
   token,
   socket,
   stream,
+  installPromptEvent,
+  serviceWorkerRegistration,
   peers = new Map(),
   pendingIce = new Map(),
   typingTimer,
@@ -144,7 +146,89 @@ async function beginSession() {
   load();
   loadProfile();
   loadContactEmail();
+  setupAppFeatures();
 }
+
+window.addEventListener("beforeinstallprompt", event => {
+  event.preventDefault();
+  installPromptEvent = event;
+  $("#installApp")?.classList.remove("hidden");
+});
+window.addEventListener("appinstalled", () => {
+  installPromptEvent = null;
+  $("#installApp")?.classList.add("hidden");
+  if ($("#appFeatureStatus")) $("#appFeatureStatus").textContent = "Letchat est installé sur cet appareil.";
+});
+
+function urlBase64ToUint8Array(value) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+}
+
+async function setupAppFeatures() {
+  const status = $("#appFeatureStatus"), pushButton = $("#enablePush");
+  if (!("serviceWorker" in navigator)) {
+    status.textContent = "Ce navigateur ne permet pas l’installation ou les notifications.";
+    pushButton.disabled = true;
+    return;
+  }
+  try {
+    serviceWorkerRegistration = await navigator.serviceWorker.register("/service-worker.js");
+    const config = await (await fetch("/api/public-config")).json();
+    if (!config.pushConfigured || !("PushManager" in window)) {
+      pushButton.disabled = true;
+      status.textContent = "L’application est installable. Les notifications doivent encore être configurées sur le serveur.";
+      return;
+    }
+    const subscription = await serviceWorkerRegistration.pushManager.getSubscription();
+    if (subscription) {
+      pushButton.textContent = "Notifications activées";
+      pushButton.disabled = true;
+      status.textContent = "Vous recevrez les nouveaux messages même lorsque Letchat est fermé.";
+    } else if (Notification.permission === "denied") {
+      pushButton.textContent = "Notifications bloquées";
+      pushButton.disabled = true;
+      status.textContent = "Autorisez les notifications dans les réglages de votre navigateur.";
+    } else {
+      pushButton.disabled = false;
+      pushButton.dataset.vapidKey = config.vapidPublicKey;
+    }
+  } catch (error) {
+    status.textContent = "Impossible de préparer l’application : " + error.message;
+  }
+}
+
+$("#installApp").onclick = async () => {
+  if (!installPromptEvent) return;
+  await installPromptEvent.prompt();
+  await installPromptEvent.userChoice;
+  installPromptEvent = null;
+  $("#installApp").classList.add("hidden");
+};
+
+$("#enablePush").onclick = async () => {
+  const button = $("#enablePush"), status = $("#appFeatureStatus");
+  button.disabled = true;
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("Autorisation refusée");
+    const subscription = await serviceWorkerRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(button.dataset.vapidKey)
+    });
+    await api("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(subscription.toJSON())
+    });
+    button.textContent = "Notifications activées";
+    status.textContent = "Vous recevrez les nouveaux messages même lorsque Letchat est fermé.";
+  } catch (error) {
+    button.disabled = false;
+    status.textContent = "Notifications non activées : " + error.message;
+  }
+};
 async function checkAge() {
   try {
     const status = await (await api("/api/age-status")).json();
@@ -1421,6 +1505,19 @@ async function loadAdminReports() {
       $("#adminProfileSearchButton").onclick = loadProfiles;
       $("#adminProfileSearch").onkeydown = (event) => { if (event.key === "Enter") { event.preventDefault(); loadProfiles(); } };
       await loadProfiles();
+      return;
+    }
+    if ($("#adminStatus").value === "stats") {
+      const stats = await (await api("/api/admin/stats")).json();
+      const cards = [
+        ["Utilisateurs inscrits", stats.users],
+        ["En ligne maintenant", stats.online],
+        ["Messages sur 24 h", stats.messages24h],
+        ["Signalements à traiter", stats.pendingReports],
+        ["Suspensions actives", stats.activeSuspensions],
+        ["Abonnements Premium", stats.premium],
+      ];
+      list.innerHTML = `<div class="admin-stats">${cards.map(([label, value]) => `<article><strong>${safe(value)}</strong><span>${safe(label)}</span></article>`).join("")}</div><p class="admin-stats-note">Données actualisées au ${new Date().toLocaleString("fr-FR")}.</p>`;
       return;
     }
     const rows = await (

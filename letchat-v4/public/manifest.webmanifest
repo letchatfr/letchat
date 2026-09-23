@@ -1,0 +1,19 @@
+{
+  "name": "Letchat",
+  "short_name": "Letchat",
+  "description": "Discutez, partagez et appelez vos proches.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f2ed",
+  "theme_color": "#f36f58",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

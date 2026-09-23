@@ -200,6 +200,12 @@
 .admin-profile-item div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .admin-profile-item small { color: #777; overflow-wrap: anywhere; }
 .admin-profile-item button.danger { background: #ffe5e2; color: #a9362d; }
+.admin-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+.admin-stats article { min-height: 112px; display: grid; place-items: center; align-content: center; gap: 8px; padding: 16px; border: 1px solid #ddd7cf; border-radius: 14px; background: #fff; text-align: center; }
+.admin-stats strong { color: #315b76; font-size: 30px; }
+.admin-stats span { color: #666; font-weight: 700; }
+.admin-stats-note { color: #888; text-align: center; }
+@media(max-width:650px) { .admin-stats { grid-template-columns: repeat(2,1fr); } .admin-stats article { min-height: 95px; } }
 .suspension-state { color: #8b4b2a; font-weight: 700; }
 .admin-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .admin-actions button { border: 0; border-radius: 8px; padding: 8px 10px; background: #e7edf1; color: #263b48; font-weight: 700; }
