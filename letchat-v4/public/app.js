@@ -60,6 +60,8 @@ let user,
   viewOnceEnabled = false,
   pendingProfilePhoto = null,
   viewedProfile = null,
+  pendingIncomingCall = null,
+  incomingCallTimer = null,
   sessionStarted = false;
 const fallbackIceServers = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
@@ -1781,7 +1783,7 @@ async function prepareIce() {
       });
   return icePromise;
 }
-function peer(id) {
+function peer(id, participantName = "Participant") {
   if (peers.has(id)) return peers.get(id);
   const pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 10 });
   stream?.getTracks().forEach((t) => pc.addTrack(t, stream));
@@ -1791,7 +1793,7 @@ function peer(id) {
       target: id,
       data: { type: "ice", candidate: e.candidate },
     });
-  pc.ontrack = (e) => addRemote(id, e.streams[0]);
+  pc.ontrack = (e) => addRemote(id, e.streams[0], participantName);
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === "connected") $("#error").classList.add("hidden");
     if (["failed", "closed"].includes(pc.connectionState)) {
@@ -1920,9 +1922,28 @@ async function flushIce(id, pc) {
       await pc.addIceCandidate(candidate);
     } catch {}
 }
-async function handleSignal({ from, data }) {
+async function handleSignal({ from, user: remoteUser, data }) {
   if (!hasPremiumSubscription) return;
+  if (!from || !data?.type) return;
+  if (data.type === "invite") {
+    if (inVideoCall) {
+      socket.emit("webrtc", { target: from, data: { type: "decline", reason: "busy" } });
+      return;
+    }
+    pendingIncomingCall = { from, user: remoteUser };
+    $("#incomingCallerName").textContent = remoteUser?.name || "Un membre Premium";
+    $("#incomingCall").classList.remove("hidden");
+    clearTimeout(incomingCallTimer);
+    incomingCallTimer = setTimeout(() => declineIncomingCall("timeout"), 30000);
+    navigator.vibrate?.([250, 150, 250]);
+    return;
+  }
+  if (data.type === "decline") {
+    showError(data.reason === "busy" ? "La personne est déjà en appel" : "Appel refusé ou sans réponse");
+    return;
+  }
   if (data.type === "leave") {
+    if (pendingIncomingCall?.from === from) closeIncomingCall();
     const old = peers.get(from);
     old?.close();
     peers.delete(from);
@@ -1943,39 +1964,46 @@ async function handleSignal({ from, data }) {
   if (data.type === "offer" && !inVideoCall) return;
   if ((data.type === "join" || data.type === "offer") && !(await startMedia()))
     return;
-  const pc = peer(from);
-  if (data.type === "join") {
-    const o = await pc.createOffer();
-    await pc.setLocalDescription(o);
-    socket.emit("webrtc", { target: from, data: { type: "offer", sdp: o } });
-  } else if (data.type === "offer") {
-    await pc.setRemoteDescription(data.sdp);
-    await flushIce(from, pc);
-    const a = await pc.createAnswer();
-    await pc.setLocalDescription(a);
-    socket.emit("webrtc", { target: from, data: { type: "answer", sdp: a } });
-  } else if (data.type === "answer") {
-    await pc.setRemoteDescription(data.sdp);
-    await flushIce(from, pc);
-  } else if (data.type === "ice") {
-    if (pc.remoteDescription)
-      try {
-        await pc.addIceCandidate(data.candidate);
-      } catch {}
-    else {
-      const list = pendingIce.get(from) || [];
-      list.push(data.candidate);
-      pendingIce.set(from, list);
+  const pc = peer(from, remoteUser?.name || "Participant");
+  try {
+    if (data.type === "join") {
+      const o = await pc.createOffer();
+      await pc.setLocalDescription(o);
+      socket.emit("webrtc", { target: from, data: { type: "offer", sdp: o } });
+    } else if (data.type === "offer") {
+      await pc.setRemoteDescription(data.sdp);
+      await flushIce(from, pc);
+      const a = await pc.createAnswer();
+      await pc.setLocalDescription(a);
+      socket.emit("webrtc", { target: from, data: { type: "answer", sdp: a } });
+    } else if (data.type === "answer") {
+      await pc.setRemoteDescription(data.sdp);
+      await flushIce(from, pc);
+    } else if (data.type === "ice") {
+      if (pc.remoteDescription) await pc.addIceCandidate(data.candidate);
+      else {
+        const list = pendingIce.get(from) || [];
+        list.push(data.candidate);
+        pendingIce.set(from, list);
+      }
     }
+  } catch (error) {
+    console.error("Négociation WebRTC :", error);
+    showError("La connexion vidéo a échoué. Quittez l’appel puis réessayez.");
   }
 }
-function addRemote(id, s) {
+function addRemote(id, s, participantName = "Participant") {
   let d = document.getElementById(`v-${id}`);
   if (!d) {
     d = document.createElement("div");
     d.id = `v-${id}`;
     d.className = "video";
-    d.innerHTML = `<video autoplay playsinline></video><span>Participant</span>`;
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.playsInline = true;
+    const label = document.createElement("span");
+    label.textContent = participantName;
+    d.append(video, label);
     $("#videoGrid").append(d);
   }
   const remoteVideo = d.querySelector("video");
@@ -1994,9 +2022,37 @@ $("#callBtn").onclick = async () => {
     showError("La webcam est réservée aux membres Premium");
     return;
   }
-  if (await startMedia())
-    socket.emit("webrtc", { target: null, data: { type: "join" } });
+  if (await startMedia()) {
+    setCameraStatus("Appel en cours… En attente d’un participant Premium.");
+    socket.emit("webrtc", { target: null, data: { type: "invite" } });
+  }
 };
+function closeIncomingCall() {
+  clearTimeout(incomingCallTimer);
+  incomingCallTimer = null;
+  pendingIncomingCall = null;
+  $("#incomingCall").classList.add("hidden");
+}
+function declineIncomingCall(reason = "declined") {
+  const call = pendingIncomingCall;
+  closeIncomingCall();
+  if (call) socket.emit("webrtc", { target: call.from, data: { type: "decline", reason } });
+}
+$("#acceptIncomingCall").onclick = async () => {
+  const call = pendingIncomingCall;
+  if (!call) return;
+  clearTimeout(incomingCallTimer);
+  $("#acceptIncomingCall").disabled = true;
+  try {
+    if (!await startMedia()) return;
+    closeIncomingCall();
+    setCameraStatus();
+    socket.emit("webrtc", { target: call.from, data: { type: "join" } });
+  } finally {
+    $("#acceptIncomingCall").disabled = false;
+  }
+};
+$("#declineIncomingCall").onclick = () => declineIncomingCall();
 function hang() {
   socket.emit("webrtc", { target: null, data: { type: "leave" } });
   stream?.getTracks().forEach((t) => t.stop());
@@ -2010,6 +2066,7 @@ function hang() {
     .querySelectorAll("#videoGrid .video:not(:first-child)")
     .forEach((x) => x.remove());
   $("#call").classList.add("hidden");
+  closeIncomingCall();
 }
 $("#hangup").onclick = $("#closeCall").onclick = hang;
 $("#mic").onclick = () =>

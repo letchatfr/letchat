@@ -13,7 +13,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" />
     <title>Letchat</title>
-    <link rel="stylesheet" href="style.css?v=header-presence-fix-1" />
+    <link rel="stylesheet" href="style.css?v=complete-mobile-video-fix-1" />
   </head>
   <body>
     <section id="login" class="login">
@@ -427,7 +427,19 @@
         ><button id="hangup" class="hang">⌕<span>Quitter</span></button>
       </footer>
     </section>
+    <section id="incomingCall" class="incoming-call hidden" role="dialog" aria-modal="true" aria-labelledby="incomingCallTitle">
+      <div class="incoming-call-card">
+        <div class="incoming-call-avatar">▣</div>
+        <p>APPEL VIDÉO ENTRANT</p>
+        <h2 id="incomingCallTitle"><span id="incomingCallerName">Un membre Premium</span> vous appelle</h2>
+        <small>La caméra et le microphone seront ouverts uniquement si vous acceptez.</small>
+        <div class="incoming-call-actions">
+          <button type="button" id="declineIncomingCall" class="incoming-decline">Refuser</button>
+          <button type="button" id="acceptIncomingCall" class="incoming-accept">Accepter</button>
+        </div>
+      </div>
+    </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=premium-webcam-fix-1"></script>
+    <script type="module" src="app.js?v=incoming-call-fix-1"></script>
   </body>
 </html>

@@ -331,6 +331,28 @@
   .rules-modal { align-items: end; padding: 0; }
   .rules-card { width: 100%; max-height: 96dvh; border-radius: 20px 20px 0 0; padding: 24px 19px max(22px, env(safe-area-inset-bottom)); }
 }
-/* Message affiché directement sur l'aperçu quand la caméra ne fournit aucune image. */
+@media(max-width:650px) {
+  .chat>header { gap: 8px; overflow: hidden; }
+  .chat>header>div:first-child { min-width: 0; flex: 1 1 auto; }
+  .chat>header h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-actions { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow-x: auto; display: flex; gap: 6px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .chat-actions::-webkit-scrollbar { display: none; }
+  .chat-actions button { flex: 0 0 auto; min-width: 42px; min-height: 42px; }
+  .composer button, .account button, .conversation-actions button, .message-actions button { min-height: 40px; }
+  .profile-card, .admin-panel { max-height: 96dvh; overscroll-behavior: contain; }
+  .call>footer { overflow-x: auto; justify-content: flex-start; padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+  .call>footer button { flex: 0 0 64px; min-height: 58px; }
+}
+/* Message affiché directement sur l’aperçu quand la caméra ne fournit aucune image. */
 .camera-status{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:min(85%,420px);margin:0;padding:14px;text-align:center;line-height:1.4;background:#111d;border:1px solid #ffffff33;border-radius:12px;color:#fff}
+.incoming-call{position:fixed;inset:0;z-index:300;display:grid;place-items:center;padding:20px;background:#101714d9;backdrop-filter:blur(8px)}
+.incoming-call-card{width:min(430px,100%);padding:34px 28px;text-align:center;background:#fff;border-radius:26px;box-shadow:0 30px 100px #0008}
+.incoming-call-avatar{width:78px;height:78px;margin:0 auto 18px;display:grid;place-items:center;border-radius:50%;background:#315b76;color:#fff;font-size:34px;box-shadow:0 0 0 12px #315b7617}
+.incoming-call-card>p{margin:0;color:#777;font-size:11px;font-weight:800;letter-spacing:1.2px}
+.incoming-call-card h2{margin:10px 0;font-size:23px;line-height:1.3}
+.incoming-call-card small{display:block;color:#666;line-height:1.5}
+.incoming-call-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:25px}
+.incoming-call-actions button{height:52px;border:0;border-radius:14px;color:#fff;font-weight:800;font-size:15px}
+.incoming-decline{background:#c84a43}.incoming-accept{background:#278560}
+@media(max-width:650px){.incoming-call{align-items:end;padding:0}.incoming-call-card{width:100%;border-radius:24px 24px 0 0;padding:32px 20px max(28px,env(safe-area-inset-bottom))}.incoming-call-actions button{min-height:54px}}
 .report-evidence{margin:10px 0;padding:12px;border-left:4px solid #c54b3c;background:#fff3f0;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere}
