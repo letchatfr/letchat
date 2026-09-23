@@ -64,6 +64,10 @@ const rooms = {
   creatifs: { title: "✦ Créatifs", welcome: "Bienvenue chez les Créatifs" },
   entraide: { title: "⌁ Entraide", welcome: "Bienvenue dans l’Entraide" },
 };
+const mobileGoogleLogin =
+  /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+  window.matchMedia("(max-width: 700px)").matches;
+provider.setCustomParameters({ prompt: "select_account" });
 function loginError(message) {
   const box = $("#loginError");
   box.textContent = message;
@@ -75,6 +79,11 @@ $("#googleLogin").onclick = async () => {
   $("#loginError").classList.add("hidden");
   try {
     await setPersistence(auth, browserLocalPersistence);
+    if (mobileGoogleLogin) {
+      button.textContent = "Ouverture de Google…";
+      await signInWithRedirect(auth, provider);
+      return;
+    }
     await signInWithPopup(auth, provider);
   } catch (error) {
     if (
@@ -90,12 +99,16 @@ $("#googleLogin").onclick = async () => {
       loginError(`Connexion Google impossible : ${error.message}`);
   } finally {
     button.disabled = false;
+    if (document.body.contains(button))
+      button.innerHTML = '<span>G</span> Continuer avec Google';
   }
 };
 $("#logout").onclick = () => signOut(auth);
-getRedirectResult(auth).catch((e) =>
-  loginError(`Connexion Google impossible : ${e.message}`),
-);
+getRedirectResult(auth)
+  .then((result) => {
+    if (result?.user) $("#loginError").classList.add("hidden");
+  })
+  .catch((e) => loginError(`Connexion Google impossible : ${e.message}`));
 onAuthStateChanged(auth, async (u) => {
   if (!u) {
     sessionStarted = false;
