@@ -44,6 +44,9 @@ let user,
   lastPeople = [],
   iceServers = [],
   icePromise,
+  mediaStartPromise,
+  hasPremiumSubscription = false,
+  inVideoCall = false,
   currentRoom = "cafe",
   currentPrivate = null,
   reportContext = null,
@@ -1252,6 +1255,9 @@ function connect() {
       ($("#typing").textContent = d.active ? `${d.name} écrit…` : ""),
   );
   socket.on("webrtc", handleSignal);
+  socket.on("webrtc-error", ({ error } = {}) =>
+    showError(error || "Appel vidéo refusé"),
+  );
   socket.on("connect_error", () => setTimeout(load, 1000));
 }
 async function loadBlocks() {
@@ -1378,6 +1384,7 @@ async function loadSubscription() {
   try {
     const data = await (await api("/api/subscription")).json(),
       label = data.plan === "premium_plus" ? "Premium+" : "Premium";
+    hasPremiumSubscription = Boolean(data.premium);
     $("#premiumState").textContent = data.premium
       ? `${label} actif — sans publicité`
       : "Compte gratuit — avec publicité";
@@ -1385,6 +1392,8 @@ async function loadSubscription() {
     $("#managePremium").classList.toggle("hidden", !data.canManage);
     $("#premiumBadge").classList.toggle("hidden", !data.premium);
     $("#adBanner").classList.toggle("hidden", data.premium);
+    $("#callBtn").classList.toggle("hidden", !data.premium);
+    $("#callBtn").disabled = !data.premium;
   } catch (e) {
     showError(e.message);
   }
@@ -1800,7 +1809,7 @@ function mediaErrorMessage(error) {
     NotAllowedError: "Accès caméra/micro refusé par le navigateur",
     NotFoundError: "Aucune caméra ou aucun microphone détecté",
     NotReadableError:
-      "Caméra ou microphone déjà utilisé par une autre application",
+      "La caméra ne fournit pas d’image. Fermez les autres applications vidéo puis réessayez",
     OverconstrainedError: "Caméra incompatible avec les réglages demandés",
     SecurityError: "Accès caméra/micro bloqué pour ce site",
     AbortError: "Ouverture de la caméra interrompue",
@@ -1835,11 +1844,25 @@ async function openCamera() {
   throw lastError || new DOMException("Caméra indisponible", "NotFoundError");
 }
 async function startMedia() {
+  if (mediaStartPromise) return mediaStartPromise;
+  mediaStartPromise = startMediaOnce();
+  try {
+    return await mediaStartPromise;
+  } finally {
+    mediaStartPromise = null;
+  }
+}
+async function startMediaOnce() {
+  if (!hasPremiumSubscription) {
+    showError("La webcam est réservée aux membres Premium");
+    return false;
+  }
   const active =
     stream && stream.getTracks().some((track) => track.readyState === "live");
   if (active) {
     $("#localVideo").srcObject = stream;
     $("#call").classList.remove("hidden");
+    inVideoCall = true;
     return true;
   }
   stream?.getTracks().forEach((track) => track.stop());
@@ -1872,8 +1895,20 @@ async function startMedia() {
   }
   $("#localVideo").srcObject = stream;
   $("#localVideo").muted = true;
-  await $("#localVideo").play().catch(() => {});
+  const localVideo = $("#localVideo");
+  await localVideo.play().catch((error) => console.warn("Lecture vidéo locale :", error));
+  const videoTrack = stream.getVideoTracks()[0];
+  if (videoTrack) {
+    const settings = videoTrack.getSettings?.() || {};
+    setCameraStatus(videoTrack.muted
+      ? "La caméra est ouverte mais ne fournit pas encore d’image"
+      : "");
+    videoTrack.onunmute = () => setCameraStatus();
+    videoTrack.onended = () => setCameraStatus("La caméra a été déconnectée. Cliquez sur « Caméra » pour réessayer.");
+    console.info("Caméra active", { readyState: videoTrack.readyState, muted: videoTrack.muted, width: settings.width, height: settings.height });
+  }
   $("#call").classList.remove("hidden");
+  inVideoCall = true;
   await prepareIce();
   return true;
 }
@@ -1886,6 +1921,7 @@ async function flushIce(id, pc) {
     } catch {}
 }
 async function handleSignal({ from, data }) {
+  if (!hasPremiumSubscription) return;
   if (data.type === "leave") {
     const old = peers.get(from);
     old?.close();
@@ -1900,6 +1936,11 @@ async function handleSignal({ from, data }) {
     pendingIce.set(from, list);
     return;
   }
+  if (data.type === "join" && !inVideoCall) {
+    showError("Un membre Premium a lancé un appel. Cliquez sur « Appeler » pour le rejoindre.");
+    return;
+  }
+  if (data.type === "offer" && !inVideoCall) return;
   if ((data.type === "join" || data.type === "offer") && !(await startMedia()))
     return;
   const pc = peer(from);
@@ -1937,9 +1978,22 @@ function addRemote(id, s) {
     d.innerHTML = `<video autoplay playsinline></video><span>Participant</span>`;
     $("#videoGrid").append(d);
   }
-  d.querySelector("video").srcObject = s;
+  const remoteVideo = d.querySelector("video");
+  remoteVideo.srcObject = s;
+  remoteVideo.play().catch((error) => console.warn("Lecture vidéo distante :", error));
 }
 $("#callBtn").onclick = async () => {
+  try {
+    const status = await (await api("/api/subscription")).json();
+    hasPremiumSubscription = Boolean(status.premium);
+  } catch (error) {
+    showError(error.message);
+    return;
+  }
+  if (!hasPremiumSubscription) {
+    showError("La webcam est réservée aux membres Premium");
+    return;
+  }
   if (await startMedia())
     socket.emit("webrtc", { target: null, data: { type: "join" } });
 };
@@ -1947,6 +2001,8 @@ function hang() {
   socket.emit("webrtc", { target: null, data: { type: "leave" } });
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
+  mediaStartPromise = null;
+  inVideoCall = false;
   peers.forEach((p) => p.close());
   peers.clear();
   pendingIce.clear();
