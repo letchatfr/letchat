@@ -44,6 +44,7 @@ let user,
   icePromise,
   currentRoom = "cafe",
   currentPrivate = null,
+  reportContext = null,
   replyingTo = null,
   voiceRecorder = null,
   voiceStream = null,
@@ -386,12 +387,15 @@ function addMessage(m, force = false) {
     quote = m.reply_to_id
       ? `<div class="message-quote"><strong>${safe(m.reply_author || "Message supprimé")}</strong><span>${safe(m.reply_body || "Message original indisponible")}</span></div>`
       : "";
-  a.innerHTML = `<div class="avatar">${m.photo ? `<img src="${m.photo}" class="avatar">` : initials(m.author)}</div><div class="message-content"><p class="meta"><strong>${mine ? "Vous" : safe(m.author)}</strong><time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time></p>${quote}${m.body ? `<p class="bubble">${safe(m.body)}</p>` : ""}${media}<div class="reaction-summary">${reactionHtml(m.reactions, m.my_reactions || [])}</div>${m.private && mine ? `<div class="message-status">${receiptText(m.delivered_at, m.read_at)}</div>` : ""}<div class="message-actions"><button class="reply-action" title="Répondre">↩ Répondre</button><button class="react-action" title="Réagir">☺</button>${mine ? '<button class="delete-action" title="Supprimer">Supprimer</button>' : ""}<div class="reaction-picker hidden">${["👍", "❤️", "😂", "😮"].map((emoji) => `<button data-pick-reaction="${emoji}">${emoji}</button>`).join("")}</div></div></div>`;
+  a.innerHTML = `<div class="avatar">${m.photo ? `<img src="${m.photo}" class="avatar">` : initials(m.author)}</div><div class="message-content"><p class="meta"><strong>${mine ? "Vous" : safe(m.author)}</strong><time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time></p>${quote}${m.body ? `<p class="bubble">${safe(m.body)}</p>` : ""}${media}<div class="reaction-summary">${reactionHtml(m.reactions, m.my_reactions || [])}</div>${m.private && mine ? `<div class="message-status">${receiptText(m.delivered_at, m.read_at)}</div>` : ""}<div class="message-actions"><button class="reply-action" title="Répondre">↩ Répondre</button><button class="react-action" title="Réagir">☺</button>${mine ? '<button class="delete-action" title="Supprimer">Supprimer</button>' : '<button class="report-message-action" title="Signaler ce message">⚑ Signaler</button>'}<div class="reaction-picker hidden">${["👍", "❤️", "😂", "😮"].map((emoji) => `<button data-pick-reaction="${emoji}">${emoji}</button>`).join("")}</div></div></div>`;
   a.querySelector(".reply-action").onclick = () => setReply(m);
   a.querySelector(".react-action").onclick = () =>
     a.querySelector(".reaction-picker").classList.toggle("hidden");
   a.querySelector(".delete-action")?.addEventListener("click", () =>
     deleteOwnMessage(m),
+  );
+  a.querySelector(".report-message-action")?.addEventListener("click", () =>
+    openReport({ id: m.user_id, name: m.author }, m),
   );
   a.querySelector(".view-once-open")?.addEventListener("click", openViewOnceMedia);
   a.querySelectorAll("[data-pick-reaction]").forEach(
@@ -1384,7 +1388,7 @@ async function loadAdminReports() {
       ? rows
           .map(
             (report) =>
-              `<article class="report-item" data-report-id="${report.id}" data-user-id="${safe(report.reported_id)}"><div class="report-head"><strong>${safe(report.reported_name)}</strong><time>${new Date(report.created_at).toLocaleString("fr-FR")}</time></div><p><b>Motif :</b> ${safe(reportReasons[report.reason] || report.reason)}</p><p><b>Signalé par :</b> ${safe(report.reporter_name)}</p>${report.details ? `<p class="report-details">${safe(report.details)}</p>` : ""}<p class="suspension-state">${report.suspended ? "Compte actuellement suspendu" : "Compte actif"}</p><div class="admin-actions">${$("#adminStatus").value === "pending" ? '<button data-action="resolved">Traité</button><button data-action="dismissed">Rejeter</button>' : ""}<button data-action="24h">Suspendre 24 h</button><button data-action="7d">Suspendre 7 jours</button><button data-action="permanent" class="danger">Suspendre définitivement</button>${report.suspended ? '<button data-action="unsuspend">Réactiver</button>' : ""}</div></article>`,
+              `<article class="report-item" data-report-id="${report.id}" data-user-id="${safe(report.reported_id)}"><div class="report-head"><strong>${safe(report.reported_name)}</strong><time>${new Date(report.created_at).toLocaleString("fr-FR")}</time></div><p><b>Motif :</b> ${safe(reportReasons[report.reason] || report.reason)}</p><p><b>Signalé par :</b> ${safe(report.reporter_name)}</p>${report.evidence_body ? `<blockquote class="report-evidence"><b>Message signalé :</b><br>${safe(report.evidence_body)}</blockquote>` : ""}${report.details ? `<p class="report-details">${safe(report.details)}</p>` : ""}<p class="suspension-state">${report.suspended ? "Compte actuellement suspendu" : "Compte actif"}</p><div class="admin-actions">${$("#adminStatus").value === "pending" ? '<button data-action="resolved">Traité</button><button data-action="dismissed">Rejeter</button>' : ""}${report.message_id ? '<button data-action="delete-message" class="danger">Supprimer le message</button>' : ""}<button data-action="24h">Suspendre 24 h</button><button data-action="7d">Suspendre 7 jours</button><button data-action="permanent" class="danger">Suspendre définitivement</button>${report.suspended ? '<button data-action="unsuspend">Réactiver</button>' : ""}</div></article>`,
           )
           .join("")
       : '<p class="admin-empty">Aucun signalement dans cette catégorie.</p>';
@@ -1409,6 +1413,9 @@ async function adminAction(button) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: action }),
       });
+    } else if (action === "delete-message") {
+      if (!confirm("Supprimer définitivement le message signalé ?")) return;
+      await api(`/api/admin/reports/${encodeURIComponent(reportId)}/message`, { method: "DELETE" });
     } else if (action === "unsuspend") {
       await api(`/api/admin/suspensions/${encodeURIComponent(userId)}`, {
         method: "DELETE",
@@ -1438,19 +1445,24 @@ $("#adminBtn").onclick = () => {
 $("#closeAdmin").onclick = () => $("#adminModal").classList.add("hidden");
 $("#refreshReports").onclick = loadAdminReports;
 $("#adminStatus").onchange = loadAdminReports;
-$("#reportBtn").onclick = () => {
-  if (!currentPrivate) return;
+function openReport(target, message = null) {
+  reportContext = { target, message };
   $("#reportTarget").textContent =
-    `Vous signalez ${currentPrivate.name}. Le signalement sera transmis à la modération.`;
+    message
+      ? `Vous signalez un message de ${target.name}. Son contenu sera joint comme preuve.`
+      : `Vous signalez ${target.name}. Le signalement sera transmis à la modération.`;
   $("#reportReason").value = "";
   $("#reportDetails").value = "";
   $("#reportError").textContent = "";
   $("#reportModal").classList.remove("hidden");
+}
+$("#reportBtn").onclick = () => {
+  if (currentPrivate) openReport(currentPrivate);
 };
 $("#closeReport").onclick = () => $("#reportModal").classList.add("hidden");
 $("#reportForm").onsubmit = async (event) => {
   event.preventDefault();
-  if (!currentPrivate) return;
+  if (!reportContext?.target) return;
   const button = $(".report-submit");
   button.disabled = true;
   $("#reportError").textContent = "";
@@ -1459,7 +1471,9 @@ $("#reportForm").onsubmit = async (event) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        reportedId: currentPrivate.id,
+        reportedId: reportContext.target.id,
+        messageKind: reportContext.message ? (reportContext.message.private ? "private" : "public") : null,
+        messageId: reportContext.message?.id || null,
         reason: $("#reportReason").value,
         details: $("#reportDetails").value,
       }),
