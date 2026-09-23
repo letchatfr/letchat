@@ -23,6 +23,7 @@ const config = {
 const auth = getAuth(initializeApp(config)),
   provider = new GoogleAuthProvider(),
   $ = (s) => document.querySelector(s);
+let localSessionToken = localStorage.getItem("letchatLocalToken") || sessionStorage.getItem("letchatGuestToken") || "";
 let user,
   token,
   socket,
@@ -105,11 +106,45 @@ $("#googleLogin").onclick = async () => {
       button.innerHTML = '<span>G</span> Continuer avec Google';
   }
 };
-$("#logout").onclick = () => signOut(auth);
+function logoutSession() {
+  if (localSessionToken) {
+    localStorage.removeItem("letchatLocalToken");
+    sessionStorage.removeItem("letchatGuestToken");
+    localSessionToken = "";
+    location.reload();
+    return;
+  }
+  signOut(auth);
+}
+$("#logout").onclick = logoutSession;
 getRedirectResult(auth).catch((error) =>
   loginError(`Retour Google impossible (${error.code || "erreur"}) : ${error.message}`),
 );
+function localUser(data, sessionToken) {
+  return { uid:data.id, displayName:data.name, email:"", photoURL:data.photo || "", guest:Boolean(data.guest), getIdToken:async()=>sessionToken };
+}
+async function activateLocalSession(data, sessionToken, guest = false) {
+  localSessionToken = sessionToken;
+  if (guest) { sessionStorage.setItem("letchatGuestToken",sessionToken); localStorage.removeItem("letchatLocalToken"); }
+  else { localStorage.setItem("letchatLocalToken",sessionToken); sessionStorage.removeItem("letchatGuestToken"); }
+  user = localUser(data,sessionToken); token = sessionToken;
+  $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
+  $("#meName").textContent = data.name; $("#mePhoto").src = data.photo || "";
+  if (await checkAge()) await beginSession();
+}
+async function restoreLocalSession() {
+  if (!localSessionToken) return false;
+  try {
+    const response = await fetch("/api/auth/me",{headers:{Authorization:`Bearer ${localSessionToken}`}});
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    await activateLocalSession(data.user,localSessionToken,Boolean(data.user.guest));
+    return true;
+  } catch { localStorage.removeItem("letchatLocalToken"); sessionStorage.removeItem("letchatGuestToken"); localSessionToken=""; return false; }
+}
+const localRestorePromise = restoreLocalSession();
 onAuthStateChanged(auth, async (u) => {
+  if (await localRestorePromise) return;
   if (!u) {
     user = null;
     token = null;
@@ -128,6 +163,22 @@ onAuthStateChanged(auth, async (u) => {
   $("#mePhoto").src = u.photoURL || "";
   if (await checkAge()) await beginSession();
 });
+document.querySelectorAll("[data-auth-tab]").forEach(button => button.onclick=()=>{
+  document.querySelectorAll("[data-auth-tab]").forEach(item=>item.classList.toggle("active",item===button));
+  $("#localLoginForm").classList.toggle("hidden",button.dataset.authTab!=="login");
+  $("#localRegisterForm").classList.toggle("hidden",button.dataset.authTab!=="register");
+  $("#guestLoginForm").classList.toggle("hidden",button.dataset.authTab!=="guest");
+  $("#loginError").classList.add("hidden");
+});
+async function submitLocalAuth(path,payload,guest=false) {
+  const response = await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  const data = await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(data.error||"Connexion impossible");
+  await activateLocalSession(data.user,data.token,guest);
+}
+$("#localLoginForm").onsubmit=async event=>{event.preventDefault();try{await submitLocalAuth("/api/auth/login",{username:$("#localLoginName").value,password:$("#localLoginPassword").value});}catch(e){loginError(e.message)}};
+$("#localRegisterForm").onsubmit=async event=>{event.preventDefault();try{await submitLocalAuth("/api/auth/register",{username:$("#localRegisterName").value,password:$("#localRegisterPassword").value,age:Number($("#localRegisterAge").value),gender:$("#localRegisterGender").value,city:$("#localRegisterCity").value});}catch(e){loginError(e.message)}};
+$("#guestLoginForm").onsubmit=async event=>{event.preventDefault();try{await submitLocalAuth("/api/auth/guest",{username:$("#guestName").value,age:Number($("#guestAge").value),gender:$("#guestGender").value,city:$("#guestCity").value},true);}catch(e){loginError(e.message)}};
 async function getAuthenticatedUser() {
   const current = auth.currentUser || user;
   if (current) return current;
@@ -292,7 +343,7 @@ $("#ageForm").onsubmit = async (event) => {
     button.disabled = false;
   }
 };
-$("#ageLeave").onclick = () => signOut(auth);
+$("#ageLeave").onclick = logoutSession;
 async function load() {
   try {
     if (currentPrivate) {
@@ -1475,10 +1526,16 @@ $("#deleteAccount").onclick = async () => {
       body: JSON.stringify({ confirmation }),
     });
     socket?.disconnect();
-    try {
-      await deleteUser(user);
-    } catch {
-      await signOut(auth);
+    if (localSessionToken) {
+      localStorage.removeItem("letchatLocalToken");
+      sessionStorage.removeItem("letchatGuestToken");
+      localSessionToken = "";
+    } else {
+      try {
+        await deleteUser(user);
+      } catch {
+        await signOut(auth);
+      }
     }
     alert("Votre compte et vos données Letchat ont été supprimés.");
     location.reload();

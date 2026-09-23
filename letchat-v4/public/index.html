@@ -22,6 +22,29 @@
         <h1>Bienvenue sur Letchat</h1>
         <p>Discutez, partagez et appelez vos proches en toute simplicité.</p>
         <button id="googleLogin"><span>G</span> Continuer avec Google</button>
+        <div class="login-separator"><span>ou</span></div>
+        <div class="login-tabs"><button type="button" data-auth-tab="login" class="active">Pseudonyme</button><button type="button" data-auth-tab="register">Créer un compte</button><button type="button" data-auth-tab="guest">Invité</button></div>
+        <form id="localLoginForm" class="local-auth-form">
+          <input id="localLoginName" required minlength="3" maxlength="40" placeholder="Pseudonyme" autocomplete="username">
+          <input id="localLoginPassword" required minlength="8" maxlength="200" type="password" placeholder="Mot de passe" autocomplete="current-password">
+          <button type="submit">Se connecter</button>
+        </form>
+        <form id="localRegisterForm" class="local-auth-form hidden">
+          <input id="localRegisterName" required minlength="3" maxlength="40" placeholder="Choisir un pseudonyme" autocomplete="username">
+          <input id="localRegisterPassword" required minlength="8" maxlength="200" type="password" placeholder="Mot de passe (8 caractères minimum)" autocomplete="new-password">
+          <input id="localRegisterAge" required min="18" max="120" type="number" placeholder="Âge">
+          <select id="localRegisterGender" required><option value="">Sexe / couleur du profil</option><option value="female">Femme — rose</option><option value="male">Homme — bleu</option><option value="neutral">Neutre</option></select>
+          <input id="localRegisterCity" required minlength="2" maxlength="100" placeholder="Ville" autocomplete="address-level2">
+          <button type="submit">Créer mon compte</button>
+        </form>
+        <form id="guestLoginForm" class="local-auth-form hidden">
+          <input id="guestName" required minlength="3" maxlength="40" placeholder="Pseudonyme temporaire">
+          <input id="guestAge" required min="18" max="120" type="number" placeholder="Âge">
+          <select id="guestGender" required><option value="">Sexe / couleur du profil</option><option value="female">Femme — rose</option><option value="male">Homme — bleu</option><option value="neutral">Neutre</option></select>
+          <input id="guestCity" required minlength="2" maxlength="100" placeholder="Ville">
+          <button type="submit">Entrer comme invité</button>
+          <small>Le compte invité expire après 24 heures et ne peut pas être récupéré.</small>
+        </form>
         <div id="loginError" class="login-error hidden"></div>
         <small
           >En continuant, vous acceptez les
@@ -440,6 +463,6 @@
       </div>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=enhanced-video-calls-1"></script>
+    <script type="module" src="app.js?v=local-auth-1"></script>
   </body>
 </html>
