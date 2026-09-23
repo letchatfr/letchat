@@ -192,6 +192,14 @@
 .report-details { padding: 10px; border-radius: 9px; background: #f4f0ea; white-space: pre-wrap; }
 .moderation-log-item { border-left: 5px solid #315b76; }
 .moderation-log-item .report-details { color: #445661; }
+.verified-badge { display: inline-grid; place-items: center; width: 17px; height: 17px; margin-left: 5px; border-radius: 50%; background: #2684ff; color: #fff; font-size: 11px; vertical-align: 2px; }
+.admin-profile-search { display: flex; gap: 8px; margin-bottom: 14px; }
+.admin-profile-search input { flex: 1; min-width: 0; border: 1px solid #d8d3cc; border-radius: 9px; padding: 10px 12px; }
+.admin-profile-search button, .admin-profile-item button { border: 0; border-radius: 9px; padding: 9px 12px; background: #315b76; color: #fff; font-weight: 700; }
+.admin-profile-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.admin-profile-item div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.admin-profile-item small { color: #777; overflow-wrap: anywhere; }
+.admin-profile-item button.danger { background: #ffe5e2; color: #a9362d; }
 .suspension-state { color: #8b4b2a; font-weight: 700; }
 .admin-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .admin-actions button { border: 0; border-radius: 8px; padding: 8px 10px; background: #e7edf1; color: #263b48; font-weight: 700; }

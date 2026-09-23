@@ -1066,7 +1066,7 @@ function renderPeople(list) {
               else action = '<span class="friend-state">En attente</span>';
             }
             const statusLabel={available:"Disponible",busy:"Occupé",away:"Absent"}[p.availability]||"Disponible";
-            return `<div class="person-row gender-${gender}"><button class="person person-button" data-user-id="${safe(p.id)}" data-user-name="${safe(p.name)}"><img src="${p.photo || ""}"><div><strong>${safe(p.name)}</strong><small>${p.id===user.uid?"Vous":`${statusLabel}${p.bio?` · ${safe(p.bio)}`:""}`}</small></div></button>${action}</div>`;
+            return `<div class="person-row gender-${gender}"><button class="person person-button" data-user-id="${safe(p.id)}" data-user-name="${safe(p.name)}"><img src="${p.photo || ""}"><div><strong>${safe(p.name)}${p.verified ? '<span class="verified-badge" title="Profil vérifié">✓</span>' : ""}</strong><small>${p.id===user.uid?"Vous":`${statusLabel}${p.bio?` · ${safe(p.bio)}`:""}`}</small></div></button>${action}</div>`;
           })
           .join("")}</section>`,
     )
@@ -1200,7 +1200,7 @@ function openProfile(profile) {
 $("#chooseProfilePhoto").onclick=()=>$("#profilePhotoInput").click();
 $("#profilePhotoInput").onchange=async event=>{const file=event.target.files[0];if(!file)return;if(file.size>8e6)return showError("Photo trop volumineuse");try{pendingProfilePhoto=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const image=new Image();image.onerror=reject;image.onload=()=>{const size=512,canvas=document.createElement("canvas");canvas.width=size;canvas.height=size;const context=canvas.getContext("2d"),side=Math.min(image.width,image.height),sx=(image.width-side)/2,sy=(image.height-side)/2;context.drawImage(image,sx,sy,side,side,0,0,size,size);resolve(canvas.toDataURL("image/jpeg",.82))};image.src=reader.result};reader.readAsDataURL(file)});$("#profilePhotoPreview").src=pendingProfilePhoto}catch{showError("Impossible de préparer cette photo")}};
 const availabilityLabels={available:"Disponible",busy:"Occupé",away:"Absent"};
-async function showPublicProfile(id,fallbackName="Utilisateur"){if(id===user.uid)return showProfile();viewedProfile={id:String(id),name:fallbackName};$("#publicProfileError").textContent="";$("#publicProfileModal").classList.remove("hidden");try{const profile=await(await api(`/api/profile/${encodeURIComponent(id)}`)).json();viewedProfile={id:String(profile.user_id),name:profile.display_name};$("#publicProfilePhoto").src=profile.photo||"";$("#publicProfileName").textContent=profile.display_name;$("#publicProfileStatus").textContent=availabilityLabels[profile.availability]||"Disponible";$("#publicProfileBio").textContent=profile.bio||"Aucune description.";$("#publicProfileCity").textContent=profile.city||"Ville masquée";$("#publicProfileLastSeen").textContent=isOnline(profile.user_id)?"En ligne maintenant":profile.last_seen?new Date(profile.last_seen).toLocaleString("fr-FR"):"Non disponible";const relation=friendRelations.get(String(profile.user_id)),friendButton=$("#publicProfileFriend");friendButton.classList.toggle("hidden",Boolean(relation));friendButton.textContent=relation?.status==="accepted"?"Déjà ami":"Ajouter en ami"}catch(e){$("#publicProfileError").textContent=e.message}}
+async function showPublicProfile(id,fallbackName="Utilisateur"){if(id===user.uid)return showProfile();viewedProfile={id:String(id),name:fallbackName};$("#publicProfileError").textContent="";$("#publicProfileModal").classList.remove("hidden");try{const profile=await(await api(`/api/profile/${encodeURIComponent(id)}`)).json();viewedProfile={id:String(profile.user_id),name:profile.display_name};$("#publicProfilePhoto").src=profile.photo||"";$("#publicProfileName").innerHTML=`${safe(profile.display_name)}${profile.verified?'<span class="verified-badge" title="Profil vérifié">✓</span>':""}`;$("#publicProfileStatus").textContent=availabilityLabels[profile.availability]||"Disponible";$("#publicProfileBio").textContent=profile.bio||"Aucune description.";$("#publicProfileCity").textContent=profile.city||"Ville masquée";$("#publicProfileLastSeen").textContent=isOnline(profile.user_id)?"En ligne maintenant":profile.last_seen?new Date(profile.last_seen).toLocaleString("fr-FR"):"Non disponible";const relation=friendRelations.get(String(profile.user_id)),friendButton=$("#publicProfileFriend");friendButton.classList.toggle("hidden",Boolean(relation));friendButton.textContent=relation?.status==="accepted"?"Déjà ami":"Ajouter en ami"}catch(e){$("#publicProfileError").textContent=e.message}}
 $("#closePublicProfile").onclick=()=>$("#publicProfileModal").classList.add("hidden");
 $("#publicProfileMessage").onclick=()=>{if(!viewedProfile)return;$("#publicProfileModal").classList.add("hidden");openPrivate(viewedProfile.id,viewedProfile.name)};
 $("#publicProfileFriend").onclick=async()=>{if(!viewedProfile)return;await sendFriendRequest(viewedProfile.id);$("#publicProfileFriend").classList.add("hidden")};
@@ -1393,12 +1393,34 @@ async function loadAdminReports() {
         message_deleted: "Message supprimé",
         user_suspended: "Compte suspendu",
         user_unsuspended: "Compte réactivé",
+        profile_verified: "Profil vérifié",
+        profile_unverified: "Vérification retirée",
       };
       list.innerHTML = rows.length
         ? rows.map((entry) =>
             `<article class="report-item moderation-log-item"><div class="report-head"><strong>${safe(actionLabels[entry.action] || entry.action)}</strong><time>${new Date(entry.created_at).toLocaleString("fr-FR")}</time></div><p><b>Administrateur :</b> ${safe(entry.admin_name)}</p>${entry.target_user_id ? `<p><b>Utilisateur concerné :</b> ${safe(entry.target_name || "Utilisateur")}</p>` : ""}${entry.report_id ? `<p><b>Signalement :</b> n°${safe(entry.report_id)}</p>` : ""}${entry.details ? `<p class="report-details">${safe(entry.details)}</p>` : ""}</article>`
           ).join("")
         : '<p class="admin-empty">Aucune action de modération enregistrée.</p>';
+      return;
+    }
+    if ($("#adminStatus").value === "profiles") {
+      list.innerHTML = '<div class="admin-profile-search"><input id="adminProfileSearch" maxlength="100" placeholder="Rechercher un nom, un e-mail ou une ville"><button id="adminProfileSearchButton" type="button">Rechercher</button></div><div id="adminProfilesResults"><p class="admin-loading">Chargement…</p></div>';
+      const loadProfiles = async () => {
+        const results = $("#adminProfilesResults"), query = $("#adminProfileSearch").value.trim();
+        results.innerHTML = '<p class="admin-loading">Chargement…</p>';
+        const profiles = await (await api(`/api/admin/profiles?q=${encodeURIComponent(query)}`)).json();
+        results.innerHTML = profiles.length ? profiles.map((profile) => `<article class="report-item admin-profile-item" data-user-id="${safe(profile.user_id)}"><div><strong>${safe(profile.display_name)}${profile.verified?'<span class="verified-badge">✓</span>':""}</strong><small>${safe(profile.email || "")}${profile.city?` · ${safe(profile.city)}`:""}</small></div><button type="button" data-verified="${profile.verified ? "false" : "true"}" class="${profile.verified ? "danger" : ""}">${profile.verified ? "Retirer la vérification" : "Vérifier le profil"}</button></article>`).join("") : '<p class="admin-empty">Aucun profil trouvé.</p>';
+        results.querySelectorAll("[data-verified]").forEach((button) => button.onclick = async () => {
+          button.disabled = true;
+          try {
+            await api(`/api/admin/profiles/${encodeURIComponent(button.closest(".admin-profile-item").dataset.userId)}/verification`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ verified: button.dataset.verified === "true" }) });
+            await loadProfiles();
+          } catch (error) { $("#adminError").textContent = error.message; button.disabled = false; }
+        });
+      };
+      $("#adminProfileSearchButton").onclick = loadProfiles;
+      $("#adminProfileSearch").onkeydown = (event) => { if (event.key === "Enter") { event.preventDefault(); loadProfiles(); } };
+      await loadProfiles();
       return;
     }
     const rows = await (
