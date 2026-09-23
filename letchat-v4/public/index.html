@@ -207,6 +207,12 @@
             <option value="busy">Occupé</option>
             <option value="away">Absent</option>
           </select></label
+        ><label
+          >Qui peut m’envoyer un message privé ?<select id="profilePrivateMessages">
+            <option value="everyone">Tout le monde</option>
+            <option value="friends">Mes amis uniquement</option>
+            <option value="nobody">Personne</option>
+          </select></label
         ><label class="profile-check"
           ><input id="profileVisible" type="checkbox" checked /> Afficher ma
           ville aux utilisateurs</label
@@ -409,6 +415,6 @@
       </footer>
     </section>
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=moderation-log-1"></script>
+    <script type="module" src="app.js?v=private-privacy-1"></script>
   </body>
 </html>

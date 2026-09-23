@@ -1191,6 +1191,7 @@ function openProfile(profile) {
   $("#profileBio").value = profile?.bio || "";
   $("#profileGender").value = profile?.gender || "neutral";
   $("#profileAvailability").value = profile?.availability || "available";
+  $("#profilePrivateMessages").value = profile?.private_message_policy || "everyone";
   pendingProfilePhoto = null;
   $("#profilePhotoPreview").src = profile?.photo || user?.photoURL || "";
   $("#profileVisible").checked = profile?.location_visible !== false;
@@ -1237,6 +1238,7 @@ $("#profileForm").onsubmit = async (event) => {
           bio: $("#profileBio").value,
           gender: $("#profileGender").value,
           availability: $("#profileAvailability").value,
+          privateMessagePolicy: $("#profilePrivateMessages").value,
           photoData: pendingProfilePhoto,
           locationVisible: $("#profileVisible").checked,
         }),
