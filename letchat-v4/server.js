@@ -1,10 +1,10 @@
 import express from "express";
 import helmet from "helmet";
 import http from "node:http";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import pg from "pg";
 import { Server } from "socket.io";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, jwtVerify, SignJWT } from "jose";
 import Stripe from "stripe";
 import webpush from "web-push";
 
@@ -13,6 +13,7 @@ app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 10e6 });
 const projectId = process.env.FIREBASE_PROJECT_ID || "letchat-1d79d";
+const localJwtSecret = new TextEncoder().encode(String(process.env.JWT_SECRET || "letchat-development-secret-change-me"));
 const port = process.env.PORT || 10000;
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 const vapidPublicKey = String(process.env.VAPID_PUBLIC_KEY || "").trim();
@@ -84,6 +85,22 @@ await pool.query(`
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW();
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS private_message_policy TEXT NOT NULL DEFAULT 'everyone';
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE;
+`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_local_accounts (
+    user_id TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    username_key TEXT NOT NULL UNIQUE,
+    password_hash TEXT,
+    password_salt TEXT,
+    is_guest BOOLEAN NOT NULL DEFAULT FALSE,
+    gender TEXT NOT NULL DEFAULT 'neutral',
+    city TEXT NOT NULL DEFAULT '',
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_letchat_local_accounts_expiry ON letchat_local_accounts(expires_at);
 `);
 
 await pool.query(`
@@ -391,16 +408,36 @@ app.use(express.static("public", {
 }));
 
 async function verify(token) {
-  const { payload } = await jwtVerify(token, jwks, {
-    issuer: `https://securetoken.google.com/${projectId}`,
-    audience: projectId
-  });
+  try {
+    const { payload } = await jwtVerify(token, localJwtSecret, { issuer: "letchat-local", audience: "letchat" });
+    const account = await pool.query(
+      `SELECT username,is_guest,expires_at FROM letchat_local_accounts
+       WHERE user_id=$1 AND (expires_at IS NULL OR expires_at > NOW())`, [String(payload.sub)]
+    );
+    if (!account.rowCount) throw new Error("Session locale expirée");
+    return { id: String(payload.sub), email: "", name: account.rows[0].username, photo: null, local: true, guest: account.rows[0].is_guest };
+  } catch (localError) {
+    if (localError.message === "Session locale expirée") throw localError;
+  }
+  const { payload } = await jwtVerify(token, jwks, { issuer: `https://securetoken.google.com/${projectId}`, audience: projectId });
   return {
     id: String(payload.sub),
     email: String(payload.email || ""),
     name: String(payload.name || payload.email || "Utilisateur"),
     photo: typeof payload.picture === "string" ? payload.picture : null
   };
+}
+
+function normalizeUsername(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 40);
+}
+function passwordDigest(password, salt) {
+  return scryptSync(password, salt, 64).toString("hex");
+}
+async function issueLocalToken(userId, guest = false) {
+  return new SignJWT({ guest }).setProtectedHeader({ alg: "HS256" }).setSubject(userId)
+    .setIssuer("letchat-local").setAudience("letchat").setIssuedAt()
+    .setExpirationTime(guest ? "24h" : "30d").sign(localJwtSecret);
 }
 
 function isAdminUser(user) {
@@ -482,6 +519,24 @@ async function sendPushNotification(userId, payload) {
 
 const RULES_VERSION = "2026-09-22-v1";
 const actionBuckets = new Map();
+const publicActionBuckets = new Map();
+
+function rateLimitPublicAction(name, maximum, windowMs) {
+  return (req, res, next) => {
+    const address = String(req.ip || req.socket?.remoteAddress || "unknown");
+    const key = `${name}:${address}`;
+    const now = Date.now();
+    const recent = (publicActionBuckets.get(key) || []).filter(time => now - time < windowMs);
+    if (recent.length >= maximum) {
+      const retrySeconds = Math.max(1, Math.ceil((windowMs - (now - recent[0])) / 1000));
+      res.set("Retry-After", String(retrySeconds));
+      return res.status(429).json({ error: `Trop de tentatives. Réessayez dans ${retrySeconds} secondes` });
+    }
+    recent.push(now);
+    publicActionBuckets.set(key, recent);
+    next();
+  };
+}
 
 async function requireRules(req, res, next) {
   try {
@@ -607,6 +662,60 @@ app.get("/api/public-config", (_req, res) => {
     vapidPublicKey: pushConfigured ? vapidPublicKey : ""
   });
 });
+
+app.post("/api/auth/register", rateLimitPublicAction("register", 10, 60 * 60 * 1000), async (req, res, next) => {
+  try {
+    const username = normalizeUsername(req.body?.username), key = username.toLocaleLowerCase("fr");
+    const password = String(req.body?.password || ""), age = Number(req.body?.age);
+    const gender = ["female", "male", "neutral"].includes(req.body?.gender) ? req.body.gender : "neutral";
+    const city = String(req.body?.city || "").trim().slice(0, 100);
+    if (username.length < 3) return res.status(400).json({ error: "Le pseudonyme doit contenir au moins 3 caractères" });
+    if (password.length < 8 || password.length > 200) return res.status(400).json({ error: "Le mot de passe doit contenir au moins 8 caractères" });
+    if (!Number.isInteger(age) || age < 18 || age > 120) return res.status(400).json({ error: "Letchat est réservé aux personnes majeures" });
+    if (city.length < 2) return res.status(400).json({ error: "Ville incorrecte" });
+    const userId = `local:${randomUUID()}`, salt = randomBytes(16).toString("hex");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`INSERT INTO letchat_local_accounts(user_id,username,username_key,password_hash,password_salt,gender,city) VALUES($1,$2,$3,$4,$5,$6,$7)`, [userId,username,key,passwordDigest(password,salt),salt,gender,city]);
+      await client.query(`INSERT INTO profiles(user_id,email,display_name,region,department,city,gender) VALUES($1,'',$2,'','',$3,$4)`, [userId,username,city,gender]);
+      await client.query(`INSERT INTO letchat_age_consents(user_id,over_18) VALUES($1,TRUE) ON CONFLICT(user_id) DO UPDATE SET over_18=TRUE,accepted_at=NOW()`, [userId]);
+      await client.query("COMMIT");
+    } catch (error) { await client.query("ROLLBACK"); if (error.code === "23505") return res.status(409).json({ error: "Ce pseudonyme est déjà utilisé" }); throw error; }
+    finally { client.release(); }
+    res.status(201).json({ token: await issueLocalToken(userId), user: { id:userId, name:username, guest:false } });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/auth/login", rateLimitPublicAction("login", 12, 15 * 60 * 1000), async (req, res, next) => {
+  try {
+    const key = normalizeUsername(req.body?.username).toLocaleLowerCase("fr"), password = String(req.body?.password || "");
+    const { rows } = await pool.query(`SELECT user_id,username,password_hash,password_salt FROM letchat_local_accounts WHERE username_key=$1 AND is_guest=FALSE`, [key]);
+    const row = rows[0];
+    if (!row?.password_hash || !row.password_salt) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
+    const supplied = Buffer.from(passwordDigest(password,row.password_salt), "hex"), expected = Buffer.from(row.password_hash,"hex");
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied,expected)) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
+    res.json({ token: await issueLocalToken(row.user_id), user: { id:row.user_id, name:row.username, guest:false } });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/auth/guest", rateLimitPublicAction("guest", 15, 60 * 60 * 1000), async (req, res, next) => {
+  try {
+    let username = normalizeUsername(req.body?.username), age = Number(req.body?.age);
+    const gender = ["female", "male", "neutral"].includes(req.body?.gender) ? req.body.gender : "neutral";
+    const city = String(req.body?.city || "").trim().slice(0,100);
+    if (username.length < 3 || !Number.isInteger(age) || age < 18 || age > 120 || city.length < 2) return res.status(400).json({ error: "Pseudonyme, âge ou ville incorrect" });
+    let key = username.toLocaleLowerCase("fr");
+    if ((await pool.query("SELECT 1 FROM letchat_local_accounts WHERE username_key=$1",[key])).rowCount) { const suffix = String(Math.floor(1000 + Math.random()*9000)); username = `${username.slice(0,35)}-${suffix}`; key = username.toLocaleLowerCase("fr"); }
+    const userId = `guest:${randomUUID()}`, expiresAt = new Date(Date.now()+24*60*60*1000);
+    const client = await pool.connect();
+    try { await client.query("BEGIN"); await client.query(`INSERT INTO letchat_local_accounts(user_id,username,username_key,is_guest,gender,city,expires_at) VALUES($1,$2,$3,TRUE,$4,$5,$6)`,[userId,username,key,gender,city,expiresAt]); await client.query(`INSERT INTO profiles(user_id,email,display_name,region,department,city,gender) VALUES($1,'',$2,'','',$3,$4)`,[userId,username,city,gender]); await client.query(`INSERT INTO letchat_age_consents(user_id,over_18) VALUES($1,TRUE)`,[userId]); await client.query("COMMIT"); }
+    catch(error){await client.query("ROLLBACK");throw error;} finally{client.release();}
+    res.status(201).json({ token:await issueLocalToken(userId,true), user:{id:userId,name:username,guest:true}, expiresAt });
+  } catch(error){next(error);}
+});
+
+app.get("/api/auth/me", auth, (req,res) => res.json({ user:{ id:req.user.id,name:req.user.name,photo:req.user.photo,guest:Boolean(req.user.guest) } }));
 
 app.get("/api/subscription", auth, requireAdult, async (req, res, next) => {
   try {
@@ -749,6 +858,7 @@ app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account",
     await client.query("DELETE FROM letchat_consents WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_age_consents WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_subscriptions WHERE user_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_local_accounts WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM profiles WHERE user_id=$1", [uid]);
     await client.query("COMMIT");
     io.to(`user:${uid}`).emit("account-deleted");
