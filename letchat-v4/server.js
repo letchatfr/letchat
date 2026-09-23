@@ -194,6 +194,21 @@ await pool.query(`
 `);
 
 await pool.query(`
+  CREATE TABLE IF NOT EXISTS letchat_moderation_log (
+    id BIGSERIAL PRIMARY KEY,
+    admin_id TEXT NOT NULL,
+    admin_name TEXT NOT NULL DEFAULT 'Administrateur',
+    action TEXT NOT NULL,
+    target_user_id TEXT,
+    report_id BIGINT,
+    details TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_letchat_moderation_log_created
+  ON letchat_moderation_log(created_at DESC);
+`);
+
+await pool.query(`
   CREATE TABLE IF NOT EXISTS letchat_notifications (
     id BIGSERIAL PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -1026,6 +1041,32 @@ app.get("/api/admin/me", auth, (req, res) => {
   res.json({ admin: isAdminUser(req.user) });
 });
 
+async function logModerationAction(req, action, { targetUserId = null, reportId = null, details = "" } = {}) {
+  await pool.query(
+    `INSERT INTO letchat_moderation_log
+       (admin_id, admin_name, action, target_user_id, report_id, details)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [req.user.id, req.user.name || "Administrateur", action, targetUserId, reportId, String(details || "").slice(0, 1000)]
+  );
+}
+
+app.get("/api/admin/moderation-log", auth, adminAuth, async (_req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT l.id, l.admin_id, l.admin_name, l.action, l.target_user_id,
+              l.report_id, l.details, l.created_at,
+              COALESCE(p.display_name, CASE WHEN l.target_user_id IS NULL THEN NULL ELSE 'Utilisateur' END) AS target_name
+       FROM letchat_moderation_log l
+       LEFT JOIN profiles p ON p.user_id=l.target_user_id
+       ORDER BY l.created_at DESC
+       LIMIT 300`
+    );
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/admin/reports", auth, adminAuth, async (req, res, next) => {
   try {
     const status = ["pending", "resolved", "dismissed"].includes(String(req.query.status))
@@ -1064,6 +1105,11 @@ app.patch("/api/admin/reports/:id", auth, adminAuth, async (req, res, next) => {
       [status, req.params.id]
     );
     if (!result.rowCount) return res.status(404).json({ error: "Signalement introuvable" });
+    await logModerationAction(req, status === "resolved" ? "report_resolved" : status === "dismissed" ? "report_dismissed" : "report_reopened", {
+      targetUserId: result.rows[0].reported_id,
+      reportId: result.rows[0].id,
+      details: `Statut du signalement : ${status}`
+    });
     await createNotification(
       result.rows[0].reporter_id, "report_update", "Mise à jour de votre signalement",
       status === "resolved" ? "Votre signalement a été traité par la modération." : "Votre signalement a été examiné et classé.",
@@ -1078,7 +1124,7 @@ app.patch("/api/admin/reports/:id", auth, adminAuth, async (req, res, next) => {
 app.delete("/api/admin/reports/:id/message", auth, adminAuth, async (req, res, next) => {
   try {
     const report = await pool.query(
-      "SELECT message_kind, message_id FROM letchat_reports WHERE id=$1",
+      "SELECT message_kind, message_id, reported_id FROM letchat_reports WHERE id=$1",
       [req.params.id]
     );
     if (!report.rowCount || !report.rows[0].message_kind || !report.rows[0].message_id) {
@@ -1102,6 +1148,11 @@ app.delete("/api/admin/reports/:id/message", auth, adminAuth, async (req, res, n
       const payload = { id: String(id), private: kind === "private" };
       if (kind === "public") io.to(deleted.rows[0].room).emit("message-deleted", payload);
       else io.to(`user:${deleted.rows[0].user_id}`).to(`user:${deleted.rows[0].recipient_id}`).emit("message-deleted", payload);
+      await logModerationAction(req, "message_deleted", {
+        targetUserId: report.rows[0].reported_id,
+        reportId: req.params.id,
+        details: `${kind === "private" ? "Message privé" : "Message public"} n°${id} supprimé`
+      });
     }
     res.json({ ok: true, alreadyDeleted: !deleted.rowCount });
   } catch (error) {
@@ -1130,6 +1181,10 @@ app.post("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, nex
          updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
       [userId, until, reason, req.user.id]
     );
+    await logModerationAction(req, "user_suspended", {
+      targetUserId: userId,
+      details: `Durée : ${duration}. Motif : ${reason}`
+    });
     for (const [socketId, entry] of online) {
       if (entry.user.id === userId) io.sockets.sockets.get(socketId)?.disconnect(true);
     }
@@ -1141,8 +1196,15 @@ app.post("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, nex
 
 app.delete("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, next) => {
   try {
-    await pool.query("DELETE FROM letchat_suspensions WHERE user_id=$1", [String(req.params.userId)]);
-    res.json({ ok: true });
+    const userId = String(req.params.userId || "").slice(0, 200);
+    const result = await pool.query("DELETE FROM letchat_suspensions WHERE user_id=$1 RETURNING user_id", [userId]);
+    if (result.rowCount) {
+      await logModerationAction(req, "user_unsuspended", {
+        targetUserId: userId,
+        details: "Suspension levée"
+      });
+    }
+    res.json({ ok: true, alreadyActive: !result.rowCount });
   } catch (error) {
     next(error);
   }
