@@ -2146,7 +2146,7 @@ io.on("connection", socket => {
       return;
     }
     const type = String(data?.type || "");
-    if (!new Set(["join", "offer", "answer", "ice", "leave"]).has(type)) return;
+    if (!new Set(["invite", "join", "offer", "answer", "ice", "decline", "leave"]).has(type)) return;
     const signal = { from: socket.id, user: socket.user, data };
     if (target) {
       const recipient = io.sockets.sockets.get(String(target));
