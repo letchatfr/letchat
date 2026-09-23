@@ -1661,6 +1661,7 @@ app.post("/api/messages", auth, requireAdult, requireRules,
     );
     const message = { ...query.rows[0], reply_author: reply?.author || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
     io.to(room).emit("message", message);
+    io.emit("room-activity", { room, userId: req.user.id, messageId: message.id });
     res.status(201).json(message);
   } catch (error) {
     next(error);
@@ -2121,9 +2122,9 @@ async function emitPrivateStatus(userId) {
 }
 
 function emitPresence(room) {
-  const people = [...online.values()]
-    .filter(entry => entry.room === room)
-    .map(entry => ({
+  const people = [...online.entries()]
+    .filter(([, entry]) => entry.room === room)
+    .map(([socketId, entry]) => ({
       id: entry.user.id,
       name: entry.user.name,
       photo: entry.user.photo,
@@ -2132,6 +2133,7 @@ function emitPresence(room) {
       availability: entry.user.profile?.availability || "available",
       verified: entry.user.profile?.verified === true,
       last_seen: entry.user.profile?.last_seen || null,
+      socketId,
       location: entry.user.profile?.location_visible ? {
         city: entry.user.profile.city
       } : null
