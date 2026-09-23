@@ -45,7 +45,6 @@ let user,
   iceServers = [],
   icePromise,
   mediaStartPromise,
-  hasPremiumSubscription = false,
   inVideoCall = false,
   currentRoom = "cafe",
   currentPrivate = null,
@@ -1386,7 +1385,6 @@ async function loadSubscription() {
   try {
     const data = await (await api("/api/subscription")).json(),
       label = data.plan === "premium_plus" ? "Premium+" : "Premium";
-    hasPremiumSubscription = Boolean(data.premium);
     $("#premiumState").textContent = data.premium
       ? `${label} actif — sans publicité`
       : "Compte gratuit — avec publicité";
@@ -1394,8 +1392,8 @@ async function loadSubscription() {
     $("#managePremium").classList.toggle("hidden", !data.canManage);
     $("#premiumBadge").classList.toggle("hidden", !data.premium);
     $("#adBanner").classList.toggle("hidden", data.premium);
-    $("#callBtn").classList.toggle("hidden", !data.premium);
-    $("#callBtn").disabled = !data.premium;
+    $("#callBtn").classList.remove("hidden");
+    $("#callBtn").disabled = false;
   } catch (e) {
     showError(e.message);
   }
@@ -1855,10 +1853,6 @@ async function startMedia() {
   }
 }
 async function startMediaOnce() {
-  if (!hasPremiumSubscription) {
-    showError("La webcam est réservée aux membres Premium");
-    return false;
-  }
   const active =
     stream && stream.getTracks().some((track) => track.readyState === "live");
   if (active) {
@@ -1923,7 +1917,6 @@ async function flushIce(id, pc) {
     } catch {}
 }
 async function handleSignal({ from, user: remoteUser, data }) {
-  if (!hasPremiumSubscription) return;
   if (!from || !data?.type) return;
   if (data.type === "invite") {
     if (inVideoCall) {
@@ -1931,7 +1924,7 @@ async function handleSignal({ from, user: remoteUser, data }) {
       return;
     }
     pendingIncomingCall = { from, user: remoteUser };
-    $("#incomingCallerName").textContent = remoteUser?.name || "Un membre Premium";
+    $("#incomingCallerName").textContent = remoteUser?.name || "Un utilisateur";
     $("#incomingCall").classList.remove("hidden");
     clearTimeout(incomingCallTimer);
     incomingCallTimer = setTimeout(() => declineIncomingCall("timeout"), 30000);
@@ -1958,7 +1951,7 @@ async function handleSignal({ from, user: remoteUser, data }) {
     return;
   }
   if (data.type === "join" && !inVideoCall) {
-    showError("Un membre Premium a lancé un appel. Cliquez sur « Appeler » pour le rejoindre.");
+    showError("Un utilisateur a lancé un appel. Cliquez sur « Appeler » pour le rejoindre.");
     return;
   }
   if (data.type === "offer" && !inVideoCall) return;
@@ -2011,19 +2004,8 @@ function addRemote(id, s, participantName = "Participant") {
   remoteVideo.play().catch((error) => console.warn("Lecture vidéo distante :", error));
 }
 $("#callBtn").onclick = async () => {
-  try {
-    const status = await (await api("/api/subscription")).json();
-    hasPremiumSubscription = Boolean(status.premium);
-  } catch (error) {
-    showError(error.message);
-    return;
-  }
-  if (!hasPremiumSubscription) {
-    showError("La webcam est réservée aux membres Premium");
-    return;
-  }
   if (await startMedia()) {
-    setCameraStatus("Appel en cours… En attente d’un participant Premium.");
+    setCameraStatus("Appel en cours… En attente d’un participant.");
     socket.emit("webrtc", { target: null, data: { type: "invite" } });
   }
 };
