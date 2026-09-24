@@ -18,7 +18,7 @@
 
   <title>Letchat</title>
 
-  <link rel="stylesheet" href="style.css?v=public-home-v2" />
+  <link rel="stylesheet" href="style.css?v=profil-actions-v1" />
 
   <!-- Google AdSense -->
   <script
@@ -556,7 +556,16 @@
         <div class="public-profile-head"><img id="publicProfilePhoto" alt="Photo du profil" /><div><h2 id="publicProfileName"></h2><p id="publicProfileStatus"></p></div></div>
         <p id="publicProfileBio" class="public-profile-bio"></p>
         <dl class="public-profile-details"><div><dt>Ville</dt><dd id="publicProfileCity"></dd></div><div><dt>Dernière connexion</dt><dd id="publicProfileLastSeen"></dd></div></dl>
-        <div class="public-profile-actions"><button id="publicProfileMessage" type="button">Écrire en privé</button><button id="publicProfileFriend" type="button">Ajouter en ami</button></div>
+        <div class="public-profile-actions public-profile-actions-main">
+          <button id="publicProfileMessage" type="button">💬 Écrire en privé</button>
+          <button id="publicProfileCall" type="button">📞 Appeler</button>
+          <button id="publicProfileFriend" type="button">＋ Ajouter en ami</button>
+          <button id="publicProfileMore" class="public-profile-more-button" type="button" aria-label="Plus d’actions" aria-expanded="false">⋯</button>
+        </div>
+        <div id="publicProfileMoreMenu" class="public-profile-more-menu hidden">
+          <button id="publicProfileReport" type="button">⚑ Signaler</button>
+          <button id="publicProfileBlock" class="danger-profile-action" type="button">⛔ Bloquer</button>
+        </div>
         <div id="publicProfileError" class="profile-error"></div>
       </div>
     </section>
@@ -732,6 +741,6 @@
     </section> <!-- Pied de page légal Letchat -->
 
     <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="app.js?v=salons-specialises-v7-2"></script>
+    <script type="module" src="app.js?v=profil-actions-v1"></script>
   </body>
 </html>
