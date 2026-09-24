@@ -850,38 +850,59 @@
 
 }
 /* =========================================================
-   CORRECTION ACCUEIL PUBLIC LETCHAT
-   Permet d'afficher la présentation sous la connexion
+   AFFICHAGE PAGE PUBLIQUE LETCHAT
    ========================================================= */
 
+/* Quand l'écran de connexion est affiché */
 body:has(#login:not(.hidden)) {
-  overflow-y: auto;
-  height: auto;
-}
-
-#login:not(.hidden) {
+  height: auto !important;
   min-height: 100vh;
-  height: auto;
-  position: relative;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
 }
 
-#login:not(.hidden) + .public-home {
+/* La connexion reste une belle première section plein écran */
+#login:not(.hidden) {
+  position: relative !important;
+  inset: auto !important;
+
+  width: 100% !important;
+  min-height: 100vh !important;
+  height: auto !important;
+
+  overflow: visible !important;
+}
+
+/* Présentation publique */
+.public-home {
   display: block;
+  position: relative;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
 }
 
-#login.hidden + .public-home {
-  display: none;
-}
-
-/* La partie publique ne doit jamais apparaître
-   lorsque l'application Letchat est ouverte */
+/* Dès que le tchat est ouvert, on masque toute la partie publique */
 body:has(#app:not(.hidden)) .public-home {
-  display: none;
+  display: none !important;
 }
 
-/* Mobile */
+/* Et le tchat reprend son fonctionnement normal */
+body:has(#app:not(.hidden)) {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Téléphone */
 @media (max-width: 650px) {
+
   #login:not(.hidden) {
+    min-height: 100svh !important;
+  }
+
+  body:has(#login:not(.hidden)) {
     min-height: 100svh;
   }
+
 }
