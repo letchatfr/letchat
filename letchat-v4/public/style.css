@@ -849,3 +849,39 @@
   }
 
 }
+/* =========================================================
+   CORRECTION ACCUEIL PUBLIC LETCHAT
+   Permet d'afficher la présentation sous la connexion
+   ========================================================= */
+
+body:has(#login:not(.hidden)) {
+  overflow-y: auto;
+  height: auto;
+}
+
+#login:not(.hidden) {
+  min-height: 100vh;
+  height: auto;
+  position: relative;
+}
+
+#login:not(.hidden) + .public-home {
+  display: block;
+}
+
+#login.hidden + .public-home {
+  display: none;
+}
+
+/* La partie publique ne doit jamais apparaître
+   lorsque l'application Letchat est ouverte */
+body:has(#app:not(.hidden)) .public-home {
+  display: none;
+}
+
+/* Mobile */
+@media (max-width: 650px) {
+  #login:not(.hidden) {
+    min-height: 100svh;
+  }
+}
