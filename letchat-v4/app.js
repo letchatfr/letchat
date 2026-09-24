@@ -1379,6 +1379,75 @@ async function showPublicProfile(id,fallbackName="Utilisateur"){if(id===user.uid
 $("#closePublicProfile").onclick=()=>$("#publicProfileModal").classList.add("hidden");
 $("#publicProfileMessage").onclick=()=>{if(!viewedProfile)return;$("#publicProfileModal").classList.add("hidden");openPrivate(viewedProfile.id,viewedProfile.name)};
 $("#publicProfileFriend").onclick=async()=>{if(!viewedProfile)return;await sendFriendRequest(viewedProfile.id);$("#publicProfileFriend").classList.add("hidden")};
+// ===== Actions du profil public =====
+
+$("#publicProfileCall").onclick = async () => {
+  if (!viewedProfile) return;
+
+  const onlinePerson = lastPeople.find(
+    (person) => String(person.id) === String(viewedProfile.id)
+  );
+
+  if (!onlinePerson?.socketId) {
+    return showError("Ce membre n’est plus disponible pour un appel");
+  }
+
+  $("#publicProfileModal").classList.add("hidden");
+  await startDirectCall(onlinePerson.socketId, viewedProfile.name);
+};
+
+$("#publicProfileMore").onclick = () => {
+  const menu = $("#publicProfileMoreMenu");
+  menu.classList.toggle("hidden");
+};
+
+$("#publicProfileReport").onclick = () => {
+  if (!viewedProfile) return;
+
+  const target = { ...viewedProfile };
+
+  $("#publicProfileMoreMenu").classList.add("hidden");
+  $("#publicProfileModal").classList.add("hidden");
+
+  openReport(target);
+};
+
+$("#publicProfileBlock").onclick = async () => {
+  if (!viewedProfile) return;
+
+  const target = { ...viewedProfile };
+
+  if (
+    !confirm(
+      `Bloquer ${target.name} ? Cette personne ne pourra plus vous écrire.`
+    )
+  ) {
+    return;
+  }
+
+  try {
+    await api(`/api/blocks/${encodeURIComponent(target.id)}`, {
+      method: "POST",
+    });
+
+    blockedUsers.set(String(target.id), {
+      user_id: String(target.id),
+      display_name: target.name,
+    });
+
+    await loadFriends();
+
+    $("#publicProfileMoreMenu").classList.add("hidden");
+    $("#publicProfileModal").classList.add("hidden");
+
+    renderBlockedUsers();
+    renderPeople(lastPeople);
+
+    showError(`${target.name} a été bloqué`);
+  } catch (e) {
+    $("#publicProfileError").textContent = e.message;
+  }
+};
 async function loadProfile() {
   try {
     const profile = await (await api("/api/profile")).json();
