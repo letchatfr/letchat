@@ -906,3 +906,39 @@ body:has(#app:not(.hidden)) {
   }
 
 }
+/* =========================================================
+   LETCHAT — GESTION FINALE DU SCROLL
+   ========================================================= */
+
+/* Écran public : autoriser toute la page à défiler */
+html:has(#login:not(.hidden)),
+html:has(#login:not(.hidden)) body {
+  height: auto !important;
+  min-height: 100%;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+/* Première partie : connexion */
+#login:not(.hidden) {
+  min-height: 100vh !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+/* Présentation publique sous la connexion */
+body:has(#login:not(.hidden)) .public-home {
+  display: block !important;
+}
+
+/* Utilisateur connecté : retour au tchat plein écran */
+html:has(#app:not(.hidden)),
+html:has(#app:not(.hidden)) body {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+/* Aucune page publique derrière le tchat */
+body:has(#app:not(.hidden)) .public-home {
+  display: none !important;
+}
