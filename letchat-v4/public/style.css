@@ -937,7 +937,329 @@ html:has(#app:not(.hidden)) body {
   height: 100% !important;
   overflow: hidden !important;
 }
+/* =========================================================
+   LETCHAT - PAGE PUBLIQUE AVANT CONNEXION
+   CORRECTIF FINAL
+========================================================= */
 
+.public-home {
+  display: block;
+  width: 100%;
+  background: #ffffff;
+  color: #202124;
+  overflow: visible;
+}
+
+.public-home-inner {
+  width: 100%;
+}
+
+/* INTRODUCTION */
+
+.public-home .public-intro {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 90px 30px 70px;
+  text-align: center;
+}
+
+.public-home .public-badge,
+.public-home .public-eyebrow {
+  display: inline-block;
+  margin-bottom: 18px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: #fff0ec;
+  color: #f36f58;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.public-home .public-intro h2 {
+  max-width: 800px;
+  margin: 0 auto 22px;
+  font-size: 42px;
+  line-height: 1.15;
+  letter-spacing: -1px;
+  color: #202124;
+}
+
+.public-home .public-intro p {
+  max-width: 760px;
+  margin: 0 auto;
+  color: #68707d;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+/* 4 CARTES */
+
+.public-home .public-features {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 30px 90px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.public-home .public-feature {
+  padding: 30px 25px;
+  background: #faf9f7;
+  border: 1px solid #eeeae5;
+  border-radius: 20px;
+  text-align: left;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.04);
+}
+
+.public-home .public-feature-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 20px;
+  border-radius: 15px;
+  background: #fff0ec;
+  font-size: 25px;
+}
+
+.public-home .public-feature h3 {
+  margin: 0 0 12px;
+  font-size: 19px;
+  color: #202124;
+}
+
+.public-home .public-feature p {
+  margin: 0;
+  color: #68707d;
+  line-height: 1.6;
+}
+
+/* ESPACES */
+
+.public-home .public-section {
+  background: #f8f7f5;
+  padding: 85px 30px;
+}
+
+.public-home .public-section-text {
+  max-width: 1050px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.public-home .public-section h2 {
+  margin: 0 0 15px;
+  font-size: 34px;
+  color: #202124;
+}
+
+.public-home .public-section-text > p {
+  max-width: 700px;
+  margin: 0 auto 40px;
+  color: #68707d;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.public-home .public-room-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-width: 850px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.public-home .public-room {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 22px;
+  background: #ffffff;
+  border: 1px solid #e8e3de;
+  border-radius: 16px;
+}
+
+.public-home .public-room strong {
+  font-size: 17px;
+  color: #202124;
+}
+
+.public-home .public-room span {
+  color: #68707d;
+  line-height: 1.5;
+}
+
+/* SÉCURITÉ */
+
+.public-home .public-safety {
+  padding: 90px 30px;
+  background: #ffffff;
+}
+
+.public-home .public-safety-content {
+  max-width: 1050px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.public-home .public-safety h2 {
+  margin: 0 0 15px;
+  font-size: 34px;
+  color: #202124;
+}
+
+.public-home .public-safety-content > p {
+  max-width: 720px;
+  margin: 0 auto 40px;
+  color: #68707d;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.public-home .public-safety-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.public-home .public-safety-grid > div {
+  padding: 25px;
+  background: #faf9f7;
+  border: 1px solid #eeeae5;
+  border-radius: 18px;
+  text-align: left;
+}
+
+.public-home .public-safety-grid strong {
+  font-size: 17px;
+}
+
+.public-home .public-safety-grid p {
+  margin: 10px 0 0;
+  color: #68707d;
+  line-height: 1.6;
+}
+
+/* APPEL À L'ACTION */
+
+.public-home .public-access {
+  padding: 85px 30px;
+  text-align: center;
+  background: #fff3ef;
+}
+
+.public-home .public-access h2 {
+  margin: 0 0 15px;
+  font-size: 34px;
+  color: #202124;
+}
+
+.public-home .public-access p {
+  max-width: 650px;
+  margin: 0 auto 28px;
+  color: #68707d;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.public-home .public-access-button {
+  border: 0;
+  border-radius: 12px;
+  padding: 15px 25px;
+  background: #f36f58;
+  color: white;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* FOOTER PUBLIC */
+
+.public-home .public-footer {
+  padding: 35px 30px;
+  background: #171c28;
+  color: white;
+  text-align: center;
+}
+
+.public-home .public-footer-brand {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.public-home .public-footer-brand span {
+  color: #aeb5c3;
+}
+
+.public-home .public-footer nav {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.public-home .public-footer a {
+  color: #d7dce5;
+  text-decoration: none;
+}
+
+.public-home .public-copyright {
+  margin: 20px 0 0;
+  color: #8d96a8;
+  font-size: 13px;
+}
+
+/* MOBILE */
+
+@media (max-width: 850px) {
+
+  .public-home .public-features {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .public-home .public-safety-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+
+  .public-home .public-intro {
+    padding: 60px 20px 45px;
+  }
+
+  .public-home .public-intro h2 {
+    font-size: 32px;
+  }
+
+  .public-home .public-features {
+    grid-template-columns: 1fr;
+    padding: 0 18px 60px;
+  }
+
+  .public-home .public-room-list {
+    grid-template-columns: 1fr;
+  }
+
+  .public-home .public-section,
+  .public-home .public-safety,
+  .public-home .public-access {
+    padding: 60px 20px;
+  }
+
+  .public-home .public-section h2,
+  .public-home .public-safety h2,
+  .public-home .public-access h2 {
+    font-size: 28px;
+  }
+}
 /* Aucune page publique derrière le tchat */
 body:has(#app:not(.hidden)) .public-home {
   display: none !important;
