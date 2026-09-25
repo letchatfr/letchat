@@ -280,6 +280,67 @@ html[data-theme="dark"] .person-row .person-button:hover {
   background: var(--v3-surface-strong);
 }
 
+/* V3.1 — finitions des conversations, notifications et profils. */
+.mobile-theme-button { display: none; }
+.conversation-item {
+  color: var(--v3-text);
+  border-color: transparent;
+  background: transparent;
+  transition: background-color .16s ease, border-color .16s ease, transform .16s ease;
+}
+.conversation-item:hover { border-color: var(--v3-border); transform: translateY(-1px); }
+.conversation-item.active {
+  color: var(--v3-text);
+  border-color: color-mix(in srgb, var(--v3-primary) 42%, var(--v3-border));
+  background: color-mix(in srgb, var(--v3-primary) 10%, var(--v3-surface));
+}
+.conversation-item.unread {
+  color: var(--v3-text);
+  border-color: color-mix(in srgb, var(--v3-accent) 30%, var(--v3-border));
+  background: color-mix(in srgb, var(--v3-accent) 10%, var(--v3-surface));
+}
+.conversation-item strong,
+.conversation-item span,
+.conversation-item small { color: inherit; }
+.conversation-actions button,
+.message-actions > button {
+  color: var(--v3-text-soft);
+  border: 1px solid var(--v3-border);
+  background: var(--v3-surface-strong);
+}
+.message-actions > button:hover,
+.conversation-actions button:hover { color: var(--v3-text); }
+.message-actions .delete-action { color: #d86b5d; }
+.message-toast {
+  color: var(--v3-text);
+  border: 1px solid var(--v3-border);
+  background: var(--v3-surface);
+  box-shadow: var(--v3-shadow);
+}
+.unread-badge { box-shadow: 0 0 0 3px var(--v3-surface-soft); }
+.notification-item {
+  color: var(--v3-text);
+  border-color: var(--v3-border);
+  background: var(--v3-surface);
+}
+.notification-item.unread { background: color-mix(in srgb, var(--v3-primary) 10%, var(--v3-surface)); }
+.notification-icon { background: var(--v3-surface-strong); }
+.notification-item small,
+.notification-item time,
+.notifications-panel header p { color: var(--v3-text-soft); }
+.public-profile-head img { border: 3px solid var(--v3-surface); box-shadow: 0 0 0 2px var(--v3-border), var(--v3-shadow-soft); }
+.public-profile-details > div { border-color: var(--v3-border); }
+.public-profile-details dt { color: var(--v3-text-soft); }
+.public-profile-actions button { border-radius: 13px; box-shadow: var(--v3-shadow-soft); }
+.profile-save { border-radius: 13px; box-shadow: 0 10px 22px rgba(243,111,88,.20); }
+
+@keyframes v3Enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.message { animation: v3Enter .22s ease both; }
+.profile-card, .search-panel, .notifications-panel, .admin-panel { animation: v3Enter .20s ease both; }
+
 /* Fenêtres et formulaires */
 .profile-modal, .search-modal, .notifications-modal, .admin-modal { backdrop-filter: blur(8px); }
 .profile-card, .search-panel, .notifications-panel, .admin-panel {
@@ -329,6 +390,18 @@ html[data-theme="dark"] .person-row .person-button:hover {
     box-shadow: 18px 0 50px rgba(0,0,0,.18);
   }
   .side.open { transform: translateX(0); }
+  .mobile-theme-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    margin-top: 9px;
+    border: 1px solid var(--v3-border);
+    border-radius: 13px;
+    color: var(--v3-text);
+    background: var(--v3-surface-strong);
+    font-weight: 750;
+  }
   .chat > header {
     height: 68px;
     flex-basis: 68px;
