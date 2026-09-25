@@ -13,7 +13,11 @@ app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 10e6 });
 const projectId = process.env.FIREBASE_PROJECT_ID || "letchat-1d79d";
-const localJwtSecret = new TextEncoder().encode(String(process.env.JWT_SECRET || "letchat-development-secret-change-me"));
+const jwtSecret = String(process.env.JWT_SECRET || "").trim();
+if (jwtSecret.length < 32) {
+  throw new Error("JWT_SECRET doit être défini avec au moins 32 caractères avant le démarrage de Letchat");
+}
+const localJwtSecret = new TextEncoder().encode(jwtSecret);
 const port = process.env.PORT || 10000;
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 const vapidPublicKey = String(process.env.VAPID_PUBLIC_KEY || "").trim();
@@ -1609,12 +1613,17 @@ app.get("/api/messages", auth, requireAdult, async (req, res, next) => {
 app.get("/api/media/:id", auth, requireAdult, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      "SELECT media_data, media_type FROM letchat_messages WHERE id = $1 AND expires_at > NOW()",
-      [req.params.id]
+      `SELECT m.media_data, m.media_type FROM letchat_messages m
+       WHERE m.id = $1 AND m.expires_at > NOW()
+         AND NOT EXISTS (
+           SELECT 1 FROM letchat_blocks b
+           WHERE b.blocker_id = $2 AND b.blocked_id = m.user_id
+         )`,
+      [req.params.id, req.user.id]
     );
     if (!rows[0]?.media_data) return res.sendStatus(404);
     res.type(rows[0].media_type)
-      .set("Cache-Control", "private, max-age=86400")
+      .set("Cache-Control", "private, no-store")
       .send(rows[0].media_data);
   } catch (error) {
     next(error);
