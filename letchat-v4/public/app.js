@@ -204,9 +204,27 @@ async function getAuthenticatedUser() {
 }
 const api = async (path, opt = {}) => {
   const activeUser = await getAuthenticatedUser();
-  token = await activeUser.getIdToken();
-  opt.headers = { ...opt.headers, Authorization: `Bearer ${token}` };
-  const r = await fetch(path, opt);
+  const request = async (forceRefresh = false) => {
+    token = await activeUser.getIdToken(forceRefresh);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      return await fetch(path, {
+        ...opt,
+        headers: { ...opt.headers, Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error("Le serveur met trop de temps à répondre. Réessayez dans quelques instants");
+      }
+      throw new Error(navigator.onLine ? "Connexion au serveur impossible" : "Vous êtes hors connexion");
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+  let r = await request(false);
+  if (r.status === 401 && !localSessionToken && auth.currentUser) r = await request(true);
   if (!r.ok) {
     let message = `Erreur serveur (${r.status})`;
     try {
@@ -217,6 +235,22 @@ const api = async (path, opt = {}) => {
   }
   return r;
 };
+
+function setConnectionStatus(message = "", state = "") {
+  const box = $("#connectionStatus");
+  if (!box) return;
+  box.textContent = message;
+  box.dataset.state = state;
+  box.classList.toggle("hidden", !message);
+}
+
+window.addEventListener("offline", () => setConnectionStatus("Vous êtes hors connexion", "offline"));
+window.addEventListener("online", () => {
+  setConnectionStatus("Connexion rétablie", "online");
+  socket?.connect();
+  load();
+  setTimeout(() => setConnectionStatus(), 1800);
+});
 async function beginSession() {
   if (sessionStarted) return;
   sessionStarted = true;
@@ -1264,8 +1298,11 @@ function renderPeople(list) {
   updateRoomFeature();
 }
 function connect() {
+  socket?.removeAllListeners();
+  socket?.disconnect();
   socket = io({ auth: { token }, transports: ["websocket", "polling"] });
   socket.on("connect", () => {
+    setConnectionStatus();
     socket.emit("join-room", currentRoom);
     if (currentPrivate) socket.emit("watch-private-status", currentPrivate.id);
     load();
@@ -1327,7 +1364,16 @@ function connect() {
   socket.on("webrtc-error", ({ error } = {}) =>
     showError(error || "Appel vidéo refusé"),
   );
-  socket.on("connect_error", () => setTimeout(load, 1000));
+  socket.on("disconnect", (reason) => {
+    if (reason !== "io client disconnect") setConnectionStatus("Reconnexion au direct…", "reconnecting");
+  });
+  socket.io.on("reconnect_attempt", () => setConnectionStatus("Reconnexion au direct…", "reconnecting"));
+  socket.io.on("reconnect", () => {
+    setConnectionStatus("Direct rétabli", "online");
+    load();
+    setTimeout(() => setConnectionStatus(), 1800);
+  });
+  socket.on("connect_error", () => setConnectionStatus("Direct momentanément indisponible", "offline"));
 }
 async function loadBlocks() {
   try {

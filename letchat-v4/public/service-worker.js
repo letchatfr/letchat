@@ -1,4 +1,4 @@
-const CACHE = "letchat-shell-v16-interface-finitions";
+const CACHE = "letchat-shell-v17-stability";
 const SHELL = ["/", "/index.html", "/style.css", "/v3-modern.css", "/v3-theme.js", "/app.js", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", event => {
@@ -47,6 +47,7 @@ self.addEventListener("notificationclick", event => {
   const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
   event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then(windows => {
     const existing = windows.find(client => client.url.startsWith(self.location.origin));
-    return existing ? existing.focus() : clients.openWindow(url);
+    if (!existing) return clients.openWindow(url);
+    return existing.navigate(url).then(client => client.focus());
   }));
 });
