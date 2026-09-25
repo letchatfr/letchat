@@ -239,6 +239,46 @@ html[data-theme="dark"] .message.mine .bubble { color: #ffe5df; }
 .conversation-tabs button { color: var(--v3-text-soft); background: var(--v3-surface-strong); }
 .conversation-tabs button.active { color: #fff; background: var(--v3-accent); }
 .conversation-item:hover, .person-row, .friend-card { background: var(--v3-surface); }
+.friend-card {
+  border: 1px solid var(--v3-border);
+}
+.friend-card button {
+  color: var(--v3-text);
+  background: var(--v3-surface-strong);
+}
+
+/* Les anciennes couleurs de profil étaient presque blanches en mode sombre. */
+html[data-theme="dark"] .person-row.gender-female {
+  color: var(--v3-text);
+  border-color: #57394a;
+  background: #2b222d;
+}
+html[data-theme="dark"] .person-row.gender-male {
+  color: var(--v3-text);
+  border-color: #354b63;
+  background: #202b39;
+}
+html[data-theme="dark"] .person-row.gender-neutral {
+  color: var(--v3-text);
+  border-color: var(--v3-border);
+  background: #202734;
+}
+html[data-theme="dark"] .person-row.gender-female strong { color: #f4a8c8; }
+html[data-theme="dark"] .person-row.gender-male strong { color: #9bc9f2; }
+html[data-theme="dark"] .person-row.gender-neutral strong { color: var(--v3-text); }
+html[data-theme="dark"] .person-row .person-button,
+html[data-theme="dark"] .friend-card button {
+  color: var(--v3-text);
+  background: transparent;
+}
+html[data-theme="dark"] .friend-card {
+  border-color: var(--v3-border);
+  background: #202734;
+}
+html[data-theme="dark"] .friend-card button:hover,
+html[data-theme="dark"] .person-row .person-button:hover {
+  background: var(--v3-surface-strong);
+}
 
 /* Fenêtres et formulaires */
 .profile-modal, .search-modal, .notifications-modal, .admin-modal { backdrop-filter: blur(8px); }
