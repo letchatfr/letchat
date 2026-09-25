@@ -656,7 +656,14 @@ async function rejectSpamMessage(req, res, body, recipientId = null) {
   return false;
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.get("/api/health", async (_req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.set("Cache-Control", "no-store").json({ ok: true, database: "connected" });
+  } catch {
+    res.status(503).json({ ok: false, database: "unavailable" });
+  }
+});
 
 app.get("/api/public-config", (_req, res) => {
   res.json({
@@ -2301,6 +2308,11 @@ async function deleteExpiredMessages() {
       if (active.length) ipBuckets.set(key, active);
       else ipBuckets.delete(key);
     }
+    for (const [key, times] of publicActionBuckets) {
+      const active = times.filter(time => time > bucketCutoff);
+      if (active.length) publicActionBuckets.set(key, active);
+      else publicActionBuckets.delete(key);
+    }
     await pool.query(
       "DELETE FROM letchat_notifications WHERE created_at <= NOW() - INTERVAL '30 days'"
     );
@@ -2338,6 +2350,12 @@ app.use("/api", (_req, res) => {
 
 app.use((error, _req, res, _next) => {
   console.error(error);
+  if (error?.type === "entity.too.large") {
+    return res.status(413).json({ error: "Données trop volumineuses" });
+  }
+  if (error instanceof SyntaxError && "body" in error) {
+    return res.status(400).json({ error: "Requête JSON incorrecte" });
+  }
   res.status(500).json({ error: "Erreur interne du serveur" });
 });
 
