@@ -1827,20 +1827,10 @@ app.get("/api/private-media/:id", auth, requireAdult, async (req, res, next) => 
   try {
     await client.query("BEGIN");
     const { rows } = await client.query(
-      `SELECT m.media_data, m.media_type, m.sender_id, m.recipient_id, m.view_once, m.opened_at
-       FROM letchat_private_messages m
-       WHERE m.id=$1 AND m.expires_at > NOW()
-         AND (m.sender_id=$2 OR m.recipient_id=$2)
-         AND NOT EXISTS (
-           SELECT 1 FROM letchat_blocks b
-           WHERE (b.blocker_id=m.sender_id AND b.blocked_id=m.recipient_id)
-              OR (b.blocker_id=m.recipient_id AND b.blocked_id=m.sender_id)
-         )
-         AND m.created_at > COALESCE((
-           SELECT cp.hidden_before FROM letchat_conversation_preferences cp
-           WHERE cp.user_id=$2 AND cp.other_id=CASE
-             WHEN m.sender_id=$2 THEN m.recipient_id ELSE m.sender_id END
-         ), '-infinity'::timestamptz)
+      `SELECT media_data, media_type, sender_id, recipient_id, view_once, opened_at
+       FROM letchat_private_messages
+       WHERE id=$1 AND expires_at > NOW()
+         AND (sender_id=$2 OR recipient_id=$2)
        FOR UPDATE`,
       [req.params.id, req.user.id]
     );
