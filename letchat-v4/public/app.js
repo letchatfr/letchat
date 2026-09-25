@@ -1388,7 +1388,51 @@ const availabilityLabels={available:"Disponible",busy:"Occupé",away:"Absent"};
 async function showPublicProfile(id,fallbackName="Utilisateur"){if(id===user.uid)return showProfile();viewedProfile={id:String(id),name:fallbackName};$("#publicProfileError").textContent="";$("#publicProfileModal").classList.remove("hidden");try{const profile=await(await api(`/api/profile/${encodeURIComponent(id)}`)).json();viewedProfile={id:String(profile.user_id),name:profile.display_name};$("#publicProfilePhoto").src=profile.photo||"";$("#publicProfileName").innerHTML=`${safe(profile.display_name)}${profile.verified?'<span class="verified-badge" title="Profil vérifié">✓</span>':""}`;$("#publicProfileStatus").textContent=availabilityLabels[profile.availability]||"Disponible";$("#publicProfileBio").textContent=profile.bio||"Aucune description.";$("#publicProfileCity").textContent=profile.city||"Ville masquée";$("#publicProfileLastSeen").textContent=isOnline(profile.user_id)?"En ligne maintenant":profile.last_seen?new Date(profile.last_seen).toLocaleString("fr-FR"):"Non disponible";const relation=friendRelations.get(String(profile.user_id)),friendButton=$("#publicProfileFriend");friendButton.classList.toggle("hidden",Boolean(relation));friendButton.textContent=relation?.status==="accepted"?"Déjà ami":"Ajouter en ami"}catch(e){$("#publicProfileError").textContent=e.message}}
 $("#closePublicProfile").onclick=()=>$("#publicProfileModal").classList.add("hidden");
 $("#publicProfileMessage").onclick=()=>{if(!viewedProfile)return;$("#publicProfileModal").classList.add("hidden");openPrivate(viewedProfile.id,viewedProfile.name)};
-$("#publicProfileFriend").onclick=async()=>{if(!viewedProfile)return;await sendFriendRequest(viewedProfile.id);$("#publicProfileFriend").classList.add("hidden")};
+$("#publicProfileFriend").onclick
+  $("#publicProfileCall").onclick = async () => {
+  if (!viewedProfile) return;
+  const person = lastPeople.find(p => String(p.id) === String(viewedProfile.id));
+  if (!person?.socketId) {
+    $("#publicProfileError").textContent = "Ce membre n’est plus disponible pour un appel.";
+    return;
+  }
+  $("#publicProfileModal").classList.add("hidden");
+  await startDirectCall(person.socketId, viewedProfile.name);
+};
+
+$("#publicProfileMore").onclick = () => {
+  const menu = $("#publicProfileMoreMenu");
+  const isOpen = menu.classList.toggle("hidden") === false;
+  $("#publicProfileMore").setAttribute("aria-expanded", String(isOpen));
+};
+
+$("#publicProfileReport").onclick = () => {
+  if (!viewedProfile) return;
+  const target = { ...viewedProfile };
+  $("#publicProfileMoreMenu").classList.add("hidden");
+  $("#publicProfileModal").classList.add("hidden");
+  openReport(target);
+};
+
+$("#publicProfileBlock").onclick = async () => {
+  if (!viewedProfile) return;
+  const target = { ...viewedProfile };
+  if (!confirm(`Bloquer ${target.name} ? Cette personne ne pourra plus vous écrire.`)) return;
+  try {
+    await api(`/api/blocks/${encodeURIComponent(target.id)}`, { method: "POST" });
+    blockedUsers.set(String(target.id), {
+      user_id: String(target.id),
+      display_name: target.name
+    });
+    await loadFriends();
+    $("#publicProfileMoreMenu").classList.add("hidden");
+    $("#publicProfileModal").classList.add("hidden");
+    renderBlockedUsers();
+    renderPeople(lastPeople);
+  } catch (error) {
+    $("#publicProfileError").textContent = error.message;
+  }
+};=async()=>{if(!viewedProfile)return;await sendFriendRequest(viewedProfile.id);$("#publicProfileFriend").classList.add("hidden")};
 async function loadProfile() {
   try {
     const profile = await (await api("/api/profile")).json();
