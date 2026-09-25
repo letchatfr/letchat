@@ -454,7 +454,8 @@ function isAdminUser(user) {
 
 async function auth(req, res, next) {
   try {
-    const token = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.query.t;
+    const mediaRequest = req.method === "GET" && /^\/api\/(?:private-)?media\/[^/]+$/.test(req.path);
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, "") || (mediaRequest ? req.query.t : null);
     if (!token) throw new Error("Jeton absent");
     req.user = await verify(String(token));
     if (!isAdminUser(req.user)) {
@@ -694,6 +695,7 @@ app.post("/api/auth/register", rateLimitPublicAction("register", 10, 60 * 60 * 1
 app.post("/api/auth/login", rateLimitPublicAction("login", 12, 15 * 60 * 1000), async (req, res, next) => {
   try {
     const key = normalizeUsername(req.body?.username).toLocaleLowerCase("fr"), password = String(req.body?.password || "");
+    if (password.length > 200) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
     const { rows } = await pool.query(`SELECT user_id,username,password_hash,password_salt FROM letchat_local_accounts WHERE username_key=$1 AND is_guest=FALSE`, [key]);
     const row = rows[0];
     if (!row?.password_hash || !row.password_salt) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
