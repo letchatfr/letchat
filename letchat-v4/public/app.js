@@ -391,7 +391,7 @@ function render(rows) {
 function safe(v) {
   const d = document.createElement("div");
   d.textContent = v;
-  return d.innerHTML;
+  return d.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 function initials(n) {
   return n
@@ -566,7 +566,7 @@ function addMessage(m, force = false) {
     quote = m.reply_to_id
       ? `<div class="message-quote"><strong>${safe(m.reply_author || "Message supprimé")}</strong><span>${safe(m.reply_body || "Message original indisponible")}</span></div>`
       : "";
-  a.innerHTML = `<div class="avatar">${m.photo ? `<img src="${m.photo}" class="avatar">` : initials(m.author)}</div><div class="message-content"><p class="meta"><strong>${mine ? "Vous" : safe(m.author)}</strong><time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time></p>${quote}${m.body ? `<p class="bubble">${safe(m.body)}</p>` : ""}${media}<div class="reaction-summary">${reactionHtml(m.reactions, m.my_reactions || [])}</div>${m.private && mine ? `<div class="message-status">${receiptText(m.delivered_at, m.read_at)}</div>` : ""}<div class="message-actions"><button class="reply-action" title="Répondre">↩ Répondre</button><button class="react-action" title="Réagir">☺</button>${mine ? '<button class="delete-action" title="Supprimer">Supprimer</button>' : '<button class="report-message-action" title="Signaler ce message">⚑ Signaler</button>'}<div class="reaction-picker hidden">${["👍", "❤️", "😂", "😮"].map((emoji) => `<button data-pick-reaction="${emoji}">${emoji}</button>`).join("")}</div></div></div>`;
+  a.innerHTML = `<div class="avatar">${m.photo ? `<img src="${safe(m.photo)}" class="avatar">` : safe(initials(m.author))}</div><div class="message-content"><p class="meta"><strong>${mine ? "Vous" : safe(m.author)}</strong><time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time></p>${quote}${m.body ? `<p class="bubble">${safe(m.body)}</p>` : ""}${media}<div class="reaction-summary">${reactionHtml(m.reactions, m.my_reactions || [])}</div>${m.private && mine ? `<div class="message-status">${receiptText(m.delivered_at, m.read_at)}</div>` : ""}<div class="message-actions"><button class="reply-action" title="Répondre">↩ Répondre</button><button class="react-action" title="Réagir">☺</button>${mine ? '<button class="delete-action" title="Supprimer">Supprimer</button>' : '<button class="report-message-action" title="Signaler ce message">⚑ Signaler</button>'}<div class="reaction-picker hidden">${["👍", "❤️", "😂", "😮"].map((emoji) => `<button data-pick-reaction="${emoji}">${emoji}</button>`).join("")}</div></div></div>`;
   a.querySelector(".reply-action").onclick = () => setReply(m);
   a.querySelector(".react-action").onclick = () =>
     a.querySelector(".reaction-picker").classList.toggle("hidden");
