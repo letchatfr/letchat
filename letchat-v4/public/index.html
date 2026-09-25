@@ -19,6 +19,7 @@
   <title>Letchat</title>
 
   <link rel="stylesheet" href="style.css?v=profil-actions-v1" />
+  <link rel="stylesheet" href="v3-modern.css?v=modern-interface-v2" />
 
   <!-- Google AdSense -->
   <script
@@ -345,6 +346,7 @@
           </div>
           <div class="chat-actions">
             <button id="roomsBtn" class="rooms-button" title="Ouvrir les salons" aria-label="Ouvrir les salons">☰</button
+            ><button id="themeBtn" class="theme-button" type="button" title="Changer de thème" aria-label="Activer le mode sombre" aria-pressed="false">☾</button
             ><button id="searchBtn" class="search-button" title="Rechercher">
               🔍</button
             ><button
@@ -741,6 +743,7 @@
     </section> <!-- Pied de page légal Letchat -->
 
     <script src="/socket.io/socket.io.js"></script>
+    <script src="v3-theme.js?v=modern-interface-v1"></script>
     <script type="module" src="app.js?v=profil-actions-v1"></script>
   </body>
 </html>
