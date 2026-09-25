@@ -414,7 +414,9 @@ html[data-theme="dark"] .person-row .person-button:hover {
   .chat-actions #peopleBtn, .chat-actions #callBtn { font-size: 0; }
   .chat-actions #peopleBtn::after { content: "👥"; font-size: 17px; }
   .chat-actions #callBtn::after { content: "▣"; font-size: 17px; }
-  .chat-actions #searchBtn, .chat-actions #notificationsBtn { display: none; }
+  .chat-actions #searchBtn, .chat-actions .chat-actions #searchBtn { display: none; }
+.chat-actions #notificationsBtn { display: inline-flex; align-items: center; justify-content: center; order: -2; }
+.chat-actions #roomsBtn { order: -1; }
   .ad-banner { margin: 7px 8px 0; border-radius: 12px; }
   .messages { padding: 18px 10px; }
   .message { max-width: 96%; gap: 8px; }
