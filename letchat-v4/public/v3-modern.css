@@ -177,6 +177,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .chat header .chat-actions #adminBtn { color: #fff; background: var(--v3-accent); }
 .chat header .chat-actions #callBtn { color: #fff; background: #242b35; }
 .theme-button { font-size: 19px; }
+.connection-status {
+  flex: 0 0 auto;
+  margin: 8px 24px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--v3-border);
+  border-radius: 11px;
+  color: var(--v3-text);
+  background: var(--v3-surface-strong);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 750;
+}
+.connection-status[data-state="offline"] { color: #9f342b; background: color-mix(in srgb, #f36f58 13%, var(--v3-surface)); }
+.connection-status[data-state="online"] { color: #237049; background: color-mix(in srgb, #49c98c 13%, var(--v3-surface)); }
+html[data-theme="dark"] .connection-status[data-state="offline"] { color: #ffb3a7; }
+html[data-theme="dark"] .connection-status[data-state="online"] { color: #91e2b8; }
 
 .ad-banner {
   margin: 12px 24px 0;
@@ -416,6 +432,7 @@ html[data-theme="dark"] .person-row .person-button:hover {
   .chat-actions #callBtn::after { content: "▣"; font-size: 17px; }
   .chat-actions #searchBtn, .chat-actions #notificationsBtn { display: none; }
   .ad-banner { margin: 7px 8px 0; border-radius: 12px; }
+  .connection-status { margin: 6px 8px 0; }
   .messages { padding: 18px 10px; }
   .message { max-width: 96%; gap: 8px; }
   .message .bubble { padding: 10px 12px; }
