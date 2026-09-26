@@ -18,7 +18,7 @@
 
   <title>Letchat</title>
 
-  <link rel="stylesheet" href="style.css?v=galerie-amateurs-v2" />
+  <link rel="stylesheet" href="style.css?v=webcam-espace-v1" />
   <link rel="stylesheet" href="v3-modern.css?v=notifications-mobile-v1" />
 
   <!-- Google AdSense -->
@@ -327,7 +327,7 @@
         <button class="new">＋ Nouveau message</button>
         <button id="mobileThemeBtn" class="mobile-theme-button" type="button" aria-label="Activer le mode sombre" aria-pressed="false">☾ Mode sombre</button>
         <nav>
-          <a id="privateMessagesLink" href="#private-messages" style="text-decoration:none">◌ Messages <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a><a class="room" data-room="amateurs">◇ Vidéos / Photos amateurs</a><a class="room" data-room="webcam">♡ Webcam</a>
+          <a id="privateMessagesLink" href="#private-messages" style="text-decoration:none">◌ Messages <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a><a class="room" data-room="amateurs">◇ Vidéos / Photos amateurs</a><a class="room" data-room="webcam">♡ Webcam en direct</a>
         </nav>
         <h3>ESPACES</h3>
         <a class="room active" data-room="cafe">☀ Le Café</a><a class="room" data-room="creatifs">✦ Rencontres</a
@@ -704,6 +704,16 @@
         <div id="reportList" class="report-list"></div>
       </div>
     </section>
+    <section id="webcamTest" class="webcam-test hidden" role="dialog" aria-modal="true" aria-labelledby="webcamTestTitle">
+      <div class="webcam-test-card">
+        <button id="closeWebcamTest" class="webcam-test-close" type="button" aria-label="Fermer">×</button>
+        <h2 id="webcamTestTitle">Tester ma caméra</h2>
+        <p>Vérifiez votre image et votre micro avant de lancer un appel.</p>
+        <div class="webcam-test-video"><video id="webcamTestVideo" autoplay muted playsinline></video></div>
+        <p id="webcamTestStatus" class="webcam-test-status">Préparation de la caméra…</p>
+        <button id="finishWebcamTest" type="button">Terminer le test</button>
+      </div>
+    </section>
     <section id="call" class="call hidden">
       <header>
         <div>
@@ -749,6 +759,6 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-galerie.js?v=1"></script>
+    <script type="module" src="app-v4-webcam.js?v=1"></script>
   </body>
 </html>
