@@ -327,7 +327,7 @@
         <button class="new">＋ Nouveau message</button>
         <button id="mobileThemeBtn" class="mobile-theme-button" type="button" aria-label="Activer le mode sombre" aria-pressed="false">☾ Mode sombre</button>
         <nav>
-          <a class="room" data-room="messages">◌ messages</a><a class="room" data-room="amateurs">◇ Vidéos / Photo amateurs</a><a class="room" data-room="webcam">♡ Webcam</a>
+          <a id="privateMessagesLink" href="#private-messages">◌ Messages <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a><a class="room" data-room="amateurs">◇ Vidéos / Photo amateurs</a><a class="room" data-room="webcam">♡ Webcam</a>
         </nav>
         <h3>ESPACES</h3>
         <a class="room active" data-room="cafe">☀ Le Café</a><a class="room" data-room="creatifs">✦ Rencontres</a
@@ -745,6 +745,6 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-notifications-v2.js?v=1"></script>
+    <script type="module" src="app-v4-messages-prives.js?v=1"></script>
   </body>
 </html>
