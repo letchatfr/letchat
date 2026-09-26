@@ -621,15 +621,24 @@ function addMessage(m, force = false) {
     openReport({ id: m.user_id, name: m.author }, m),
   );
   a.querySelector(".view-once-open")?.addEventListener("click", openViewOnceMedia);
+  a.querySelectorAll("img.media, video.media").forEach((element) => {
+    element.classList.add("gallery-media-open");
+    element.setAttribute("tabindex", "0");
+    element.setAttribute("role", "button");
+    element.setAttribute("aria-label", "Agrandir le média");
+    element.addEventListener("click", () => openGalleryMedia(element));
+    element.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openGalleryMedia(element);
+      }
+    });
+  });
   if (!m.private && currentRoom === "amateurs" && m.has_media) {
     const replyButton = a.querySelector(".reply-action");
     const reactButton = a.querySelector(".react-action");
     if (replyButton) replyButton.textContent = "💬 Commenter";
     if (reactButton) reactButton.textContent = "❤️ J’aime";
-    a.querySelectorAll("img.media, video.media").forEach((element) => {
-      element.classList.add("gallery-media-open");
-      element.addEventListener("click", () => openGalleryMedia(element));
-    });
   }
   a.querySelectorAll("[data-pick-reaction]").forEach(
     (button) =>
@@ -656,8 +665,17 @@ async function openViewOnceMedia(event) {
     element.className = "media view-once-media";
     element.src = url;
     if (element.tagName === "VIDEO") { element.controls = true; element.autoplay = true; element.playsInline = true; }
-    if (element.tagName === "VIDEO") element.onended = () => URL.revokeObjectURL(url);
-    else element.onload = () => URL.revokeObjectURL(url);
+    element.classList.add("gallery-media-open");
+    element.setAttribute("tabindex", "0");
+    element.setAttribute("role", "button");
+    element.setAttribute("aria-label", "Agrandir le média");
+    element.addEventListener("click", () => openGalleryMedia(element));
+    element.addEventListener("keydown", (keyEvent) => {
+      if (keyEvent.key === "Enter" || keyEvent.key === " ") {
+        keyEvent.preventDefault();
+        openGalleryMedia(element);
+      }
+    });
     const wrapper = document.createElement("div");
     wrapper.className = "view-once-opened";
     wrapper.append(element);
@@ -681,8 +699,11 @@ function openGalleryMedia(source) {
     media.autoplay = true;
     media.playsInline = true;
   }
+  media.title = "Touchez l’image pour afficher sa taille réelle";
+  media.addEventListener("click", () => media.classList.toggle("is-zoomed"));
   content.append(media);
   $("#mediaLightbox").classList.remove("hidden");
+  $("#mediaLightbox").scrollTo({ top: 0, left: 0 });
 }
 function closeGalleryMedia() {
   $("#mediaLightbox").classList.add("hidden");

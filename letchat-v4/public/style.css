@@ -102,6 +102,14 @@
   max-height: none;
   object-fit: contain;
   border-radius: 12px;
+  cursor: zoom-in;
+  touch-action: pan-x pan-y;
+}
+.media-lightbox-content img.is-zoomed,
+.media-lightbox-content video.is-zoomed {
+  max-width: none;
+  width: auto;
+  cursor: zoom-out;
 }
 .media-lightbox-close {
   position: fixed;
