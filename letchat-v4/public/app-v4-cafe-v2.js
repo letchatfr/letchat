@@ -1,3 +1,4 @@
+import { rooms } from "./room-catalog.js?v=v2-categories-1";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
 import {
   getAuth,
@@ -79,14 +80,7 @@ let user,
 const fallbackIceServers = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
 ];
-const rooms = {
-  messages: { title: "◌ messages", welcome: "Bienvenue dans messages" },
-  amateurs: { title: "◇ Vidéos / Photo amateurs", welcome: "Partagez vos vidéos et photos amateurs" },
-  webcam: { title: "♡ Webcam en direct", welcome: "Choisissez une personne disponible" },
-  cafe: { title: "☀ Le Café", welcome: "Bienvenue au Café" },
-  creatifs: { title: "✦ Rencontres", welcome: "Bienvenue dans Rencontres" },
-  entraide: { title: "⌁ XXX", welcome: "Bienvenue dans XXX" },
-};
+
 provider.setCustomParameters({ prompt: "select_account" });
 const useGoogleRedirect = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 function loginError(message) {
@@ -2067,6 +2061,7 @@ function selectRoom(link, id) {
   updateRoomBadges();
   roomLinks.forEach((item) => item.classList.remove("active"));
   link.classList.add("active");
+  roomLinks.forEach(item => item.setAttribute("aria-current", item === link ? "true" : "false"));
   $(".side").classList.remove("open");
   $(".chat header h1").textContent = rooms[id].title;
   $("#roomPresence").classList.remove("hidden");
@@ -2088,7 +2083,8 @@ $("#viewOnceBtn").onclick = () => {
 roomLinks.forEach((link) => {
   const id = link.dataset.room;
   if (!id || !rooms[id]) return;
-  link.onclick = () => {
+  link.onclick = event => {
+    event.preventDefault();
     if (id === "entraide" && localStorage.getItem("letchatAdultRoomAccepted") !== "yes") {
       pendingAdultSelection = { link, id };
       $(".side").classList.remove("open");

@@ -27,6 +27,7 @@
     src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3317597986908171"
     crossorigin="anonymous">
   </script>
+    <link rel="stylesheet" href="v2-community.css?v=1">
 </head>
 
 <body>
@@ -326,12 +327,37 @@
         </div>
         <button class="new">＋ Nouveau message</button>
         <button id="mobileThemeBtn" class="mobile-theme-button" type="button" aria-label="Activer le mode sombre" aria-pressed="false">☾ Mode sombre</button>
-        <nav>
-          <a id="privateMessagesLink" href="#private-messages" style="text-decoration:none">◌ Messages <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a><a class="room" data-room="amateurs">◇ Vidéos / Photos amateurs</a><a class="room" data-room="webcam">♡ Webcam en direct</a>
-        </nav>
-        <h3>ESPACES</h3>
-        <a class="room active" data-room="cafe">☀ Le Café</a><a class="room" data-room="creatifs">✦ Rencontres</a
-        ><a class="room adult-room-link" data-room="entraide">🔞 XXX</a>
+        <nav aria-label="Messagerie"><a id="privateMessagesLink" href="#private-messages" style="text-decoration:none">◌ Messages privés <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a></nav>
+        <div class="v2-explore-heading"><h2>Explorer les salons</h2><span>V2</span></div>
+        <label class="v2-room-search"><span class="v2-sr-only">Rechercher un salon</span><input id="roomSearch" type="search" placeholder="Rechercher un salon…" autocomplete="off"></label>
+        <button id="favoriteRoomsOnly" class="v2-favorites-filter" type="button" aria-pressed="false">☆ Mes favoris</button>
+        <div id="roomDirectory" class="v2-room-directory">
+          <details class="v2-room-group" open><summary>Discussions</summary>
+            <div class="v2-room-row" data-room-row="cafe"><a href="#salon-cafe" class="room active" data-room="cafe" title="Le rendez-vous de la communauté" aria-current="true"><span class="v2-room-icon" aria-hidden="true">☀</span><span class="v2-room-name">Le Café</span></a><button type="button" class="v2-room-favorite" data-favorite="cafe" aria-label="Ajouter Le Café aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="actualites"><a href="#salon-actualites" class="room" data-room="actualites" title="Échangez sur les nouvelles du jour"><span class="v2-room-icon" aria-hidden="true">◎</span><span class="v2-room-name">Actualités</span></a><button type="button" class="v2-room-favorite" data-favorite="actualites" aria-label="Ajouter Actualités aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="debats"><a href="#salon-debats" class="room" data-room="debats" title="Des points de vue différents, dans le respect"><span class="v2-room-icon" aria-hidden="true">◈</span><span class="v2-room-name">Débats</span></a><button type="button" class="v2-room-favorite" data-favorite="debats" aria-label="Ajouter Débats aux favoris" aria-pressed="false">☆</button></div>
+          </details>
+          <details class="v2-room-group" open><summary>Loisirs</summary>
+            <div class="v2-room-row" data-room-row="musique"><a href="#salon-musique" class="room" data-room="musique" title="Vos découvertes et artistes préférés"><span class="v2-room-icon" aria-hidden="true">♫</span><span class="v2-room-name">Musique</span></a><button type="button" class="v2-room-favorite" data-favorite="musique" aria-label="Ajouter Musique aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="cinema"><a href="#salon-cinema" class="room" data-room="cinema" title="À voir, à revoir, à partager"><span class="v2-room-icon" aria-hidden="true">▣</span><span class="v2-room-name">Cinéma & séries</span></a><button type="button" class="v2-room-favorite" data-favorite="cinema" aria-label="Ajouter Cinéma & séries aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="gaming"><a href="#salon-gaming" class="room" data-room="gaming" title="Trouvez des partenaires de jeu"><span class="v2-room-icon" aria-hidden="true">⌘</span><span class="v2-room-name">Jeux vidéo</span></a><button type="button" class="v2-room-favorite" data-favorite="gaming" aria-label="Ajouter Jeux vidéo aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="sport"><a href="#salon-sport" class="room" data-room="sport" title="Matchs, pratique et motivation"><span class="v2-room-icon" aria-hidden="true">⚽</span><span class="v2-room-name">Sport</span></a><button type="button" class="v2-room-favorite" data-favorite="sport" aria-label="Ajouter Sport aux favoris" aria-pressed="false">☆</button></div>
+          </details>
+          <details class="v2-room-group" open><summary>Vie pratique</summary>
+            <div class="v2-room-row" data-room-row="voyages"><a href="#salon-voyages" class="room" data-room="voyages" title="Destinations et bonnes adresses"><span class="v2-room-icon" aria-hidden="true">✈</span><span class="v2-room-name">Voyages</span></a><button type="button" class="v2-room-favorite" data-favorite="voyages" aria-label="Ajouter Voyages aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="cuisine"><a href="#salon-cuisine" class="room" data-room="cuisine" title="Recettes et astuces à partager"><span class="v2-room-icon" aria-hidden="true">♨</span><span class="v2-room-name">Cuisine</span></a><button type="button" class="v2-room-favorite" data-favorite="cuisine" aria-label="Ajouter Cuisine aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="entraide-vie"><a href="#salon-entraide-vie" class="room" data-room="entraide-vie" title="Posez vos questions à la communauté"><span class="v2-room-icon" aria-hidden="true">✧</span><span class="v2-room-name">Entraide</span></a><button type="button" class="v2-room-favorite" data-favorite="entraide-vie" aria-label="Ajouter Entraide aux favoris" aria-pressed="false">☆</button></div>
+          </details>
+          <details class="v2-room-group" open><summary>Rencontres & médias</summary>
+            <div class="v2-room-row" data-room-row="creatifs"><a href="#salon-creatifs" class="room" data-room="creatifs" title="Faites connaissance"><span class="v2-room-icon" aria-hidden="true">✦</span><span class="v2-room-name">Rencontres</span></a><button type="button" class="v2-room-favorite" data-favorite="creatifs" aria-label="Ajouter Rencontres aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="amateurs"><a href="#salon-amateurs" class="room" data-room="amateurs" title="Partagez vos créations"><span class="v2-room-icon" aria-hidden="true">◇</span><span class="v2-room-name">Photos & vidéos</span></a><button type="button" class="v2-room-favorite" data-favorite="amateurs" aria-label="Ajouter Photos & vidéos aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="webcam"><a href="#salon-webcam" class="room" data-room="webcam" title="Choisissez une personne disponible"><span class="v2-room-icon" aria-hidden="true">♡</span><span class="v2-room-name">Webcam en direct</span></a><button type="button" class="v2-room-favorite" data-favorite="webcam" aria-label="Ajouter Webcam en direct aux favoris" aria-pressed="false">☆</button></div>
+          </details>
+          <details class="v2-room-group" open><summary>Espace adulte</summary>
+            <div class="v2-room-row" data-room-row="entraide"><a href="#salon-entraide" class="room adult-room-link" data-room="entraide" title="Salon réservé aux adultes"><span class="v2-room-icon" aria-hidden="true">18+</span><span class="v2-room-name">XXX</span></a><button type="button" class="v2-room-favorite" data-favorite="entraide" aria-label="Ajouter XXX aux favoris" aria-pressed="false">☆</button></div>
+          </details>
+        </div>
+        <p id="roomSearchEmpty" class="v2-empty hidden" role="status">Aucun salon trouvé. Essayez un autre mot ou désactivez le filtre favoris.</p>
         <div class="account">
           <img id="mePhoto" />
           <div><strong id="meName"></strong><small>En ligne</small></div>
@@ -773,6 +799,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-cafe-v2.js?v=media-zoom-v4"></script>
+    <script type="module" src="app-v4-cafe-v2.js?v=v2-categories-1"></script>
+      <script src="v2-community.js?v=1" defer></script>
   </body>
 </html>
