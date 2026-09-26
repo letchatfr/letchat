@@ -1975,7 +1975,7 @@ function updateRoomFeature() {
     return;
   }
   if (currentRoom === "entraide") {
-    panel.innerHTML = `<div class="adult-safety-panel"><div><b>🔞 Salon XXX — adultes uniquement</b><span>Respect, consentement et anonymat obligatoires. Ne partagez jamais vos coordonnées personnelles.</span></div><ul><li>Contenu impliquant un mineur strictement interdit</li><li>Aucun contenu non consenti ou illégal</li><li>Bloquez et signalez immédiatement tout comportement dangereux</li></ul><button id="adultSafetyReport" type="button">⚑ Signaler un utilisateur</button></div>`;
+    panel.innerHTML = `<details class="adult-safety-compact" style="color:var(--v3-text, #232420)"><summary style="min-height:32px;padding:5px 2px;cursor:pointer;font-size:13px;font-weight:700;line-height:22px">18+ · Règles du salon</summary><div style="max-height:25dvh;overflow-y:auto;overscroll-behavior:contain;padding:8px 2px 2px;font-size:13px;line-height:1.5"><p style="margin:0 0 8px">Salon réservé aux adultes. Respect, consentement et anonymat obligatoires. Ne partagez jamais vos coordonnées personnelles.</p><ul style="margin:0 0 10px;padding-left:20px"><li>Contenu impliquant un mineur strictement interdit</li><li>Aucun contenu non consenti ou illégal</li><li>Bloquez et signalez immédiatement tout comportement dangereux</li></ul><button id="adultSafetyReport" type="button" style="min-height:44px;border:0;border-radius:9px;padding:8px 12px;background:#b94138;color:#fff;font-weight:700">⚑ Signaler un utilisateur</button></div></details>`;
     $("#adultSafetyReport").onclick = () => showError("Touchez un profil ou utilisez le bouton Signaler sous un message.");
     return;
   }
