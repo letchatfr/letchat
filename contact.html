@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <meta name="description"
+        content="Contactez l'équipe de Letchat.fr">
+
+  <title>Contact | Letchat.fr</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f4f6f9;
+      color: #222;
+      line-height: 1.6;
+    }
+
+    header {
+      background: #171b26;
+      color: white;
+      padding: 22px;
+      text-align: center;
+    }
+
+    header a {
+      color: white;
+      text-decoration: none;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 28px;
+    }
+
+    .container {
+      max-width: 850px;
+      margin: 35px auto;
+      padding: 35px;
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 3px 18px rgba(0,0,0,.08);
+    }
+
+    h2 {
+      margin-top: 35px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .intro {
+      background: #f2f5ff;
+      border-left: 4px solid #4267e8;
+      padding: 15px 18px;
+      margin: 20px 0;
+      border-radius: 5px;
+    }
+
+    .contact-box {
+      margin-top: 25px;
+      padding: 25px;
+      background: #f8f9fb;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+    }
+
+    label {
+      display: block;
+      margin-top: 18px;
+      margin-bottom: 6px;
+      font-weight: bold;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      padding: 13px;
+      border: 1px solid #bbb;
+      border-radius: 7px;
+      font-size: 16px;
+      font-family: inherit;
+    }
+
+    textarea {
+      min-height: 170px;
+      resize: vertical;
+    }
+
+    button {
+      margin-top: 20px;
+      padding: 13px 25px;
+      border: 0;
+      border-radius: 7px;
+      background: #4267e8;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      opacity: .9;
+    }
+
+    .notice {
+      margin-top: 15px;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .success,
+    .error {
+      display: none;
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 7px;
+    }
+
+    .success {
+      background: #e9f8ee;
+      border: 1px solid #9bd3aa;
+    }
+
+    .error {
+      background: #fff0f0;
+      border: 1px solid #e4aaaa;
+    }
+
+    a {
+      color: #3367d6;
+    }
+
+    .back {
+      display: inline-block;
+      margin-bottom: 25px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    footer {
+      margin-top: 40px;
+      background: #171b26;
+      color: #ccc;
+      padding: 30px 20px;
+      text-align: center;
+    }
+
+    footer a {
+      color: white;
+      text-decoration: none;
+      margin: 0 10px;
+    }
+
+    @media (max-width: 700px) {
+      .container {
+        margin: 15px;
+        padding: 22px;
+      }
+
+      header h1 {
+        font-size: 23px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <a href="/">
+    <h1>Letchat.fr</h1>
+  </a>
+</header>
+
+<main class="container">
+
+  <a class="back" href="/">
+    ← Retour à Letchat
+  </a>
+
+  <h1>Nous contacter</h1>
+
+  <div class="intro">
+    Une question, un problème avec votre compte ou un contenu
+    à signaler ? Vous pouvez contacter l'équipe de Letchat.fr
+    depuis cette page.
+  </div>
+
+  <h2>Contact</h2>
+
+  <div class="contact-box">
+
+    <form id="contactForm">
+
+      <label for="name">
+        Votre nom ou pseudonyme
+      </label>
+
+      <input
+        id="name"
+        name="name"
+        type="text"
+        maxlength="80"
+        required
+      >
+
+      <label for="email">
+        Votre adresse e-mail
+      </label>
+
+      <input
+        id="email"
+        name="email"
+        type="email"
+        maxlength="150"
+        required
+      >
+
+      <label for="subject">
+        Motif de votre demande
+      </label>
+
+      <select
+        id="subject"
+        name="subject"
+        required
+      >
+        <option value="">
+          Sélectionnez un motif
+        </option>
+
+        <option value="general">
+          Question générale
+        </option>
+
+        <option value="account">
+          Compte utilisateur
+        </option>
+
+        <option value="payment">
+          Abonnement / paiement
+        </option>
+
+        <option value="report">
+          Signaler un utilisateur
+        </option>
+
+        <option value="content">
+          Signaler un contenu
+        </option>
+
+        <option value="privacy">
+          Données personnelles / confidentialité
+        </option>
+
+        <option value="technical">
+          Problème technique
+        </option>
+
+        <option value="other">
+          Autre demande
+        </option>
+      </select>
+
+      <label for="message">
+        Votre message
+      </label>
+
+      <textarea
+        id="message"
+        name="message"
+        maxlength="5000"
+        required
+        placeholder="Décrivez votre demande..."
+      ></textarea>
+
+      <button type="submit">
+        Envoyer le message
+      </button>
+
+      <p class="notice">
+        N'indiquez jamais votre mot de passe ou vos informations
+        bancaires dans ce formulaire.
+      </p>
+
+      <div
+        id="successMessage"
+        class="success"
+      >
+        Votre message a bien été envoyé.
+      </div>
+
+      <div
+        id="errorMessage"
+        class="error"
+      >
+        Impossible d'envoyer le message pour le moment.
+        Veuillez réessayer ultérieurement.
+      </div>
+
+    </form>
+
+  </div>
+
+  <h2>Protection des données</h2>
+
+  <p>
+    Pour une demande concernant vos données personnelles,
+    choisissez « Données personnelles / confidentialité »
+    dans le formulaire.
+  </p>
+
+  <p>
+    Vous pouvez également consulter notre
+    <a href="/privacy.html">
+      politique de confidentialité
+    </a>.
+  </p>
+
+  <h2>Signalement</h2>
+
+  <p>
+    Pour signaler un utilisateur ou un contenu, sélectionnez
+    le motif correspondant dans le formulaire et fournissez
+    suffisamment d'informations pour permettre l'identification
+    du contenu ou du compte concerné.
+  </p>
+
+</main>
+
+<footer>
+
+  <p>© 2026 Letchat.fr</p>
+
+  <p>
+    <a href="/">Accueil</a>
+    <a href="/privacy.html">Confidentialité</a>
+    <a href="/mentions-legales.html">Mentions légales</a>
+    <a href="/cgu.html">CGU</a>
+    <a href="/contact.html">Contact</a>
+  </p>
+
+</footer>
+
+
+<script>
+
+const form = document.getElementById("contactForm");
+
+const successMessage =
+  document.getElementById("successMessage");
+
+const errorMessage =
+  document.getElementById("errorMessage");
+
+
+form.addEventListener("submit", async function(event) {
+
+  event.preventDefault();
+
+  successMessage.style.display = "none";
+  errorMessage.style.display = "none";
+
+  const data = {
+
+    name:
+      document.getElementById("name").value.trim(),
+
+    email:
+      document.getElementById("email").value.trim(),
+
+    subject:
+      document.getElementById("subject").value,
+
+    message:
+      document.getElementById("message").value.trim()
+
+  };
+
+
+  try {
+
+    const response = await fetch("/api/contact", {
+
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json"
+      },
+
+      body: JSON.stringify(data)
+
+    });
+
+
+    if (!response.ok) {
+      throw new Error("Erreur serveur");
+    }
+
+
+    successMessage.style.display = "block";
+
+    form.reset();
+
+
+  } catch (error) {
+
+    console.error(error);
+
+    errorMessage.style.display = "block";
+
+  }
+
+});
+
+</script>
+
+</body>
+</html>
