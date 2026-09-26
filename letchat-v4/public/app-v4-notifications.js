@@ -1,0 +1,2372 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  setPersistence,
+  browserLocalPersistence,
+  onAuthStateChanged,
+  signOut,
+  deleteUser,
+} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
+const config = {
+  apiKey: "AIzaSyCfOel5JKgjxmVslddn_Xdar1XR_vb2Cgs",
+  authDomain: "www.letchat.fr",
+  projectId: "letchat-1d79d",
+  storageBucket: "letchat-1d79d.firebasestorage.app",
+  messagingSenderId: "289359647477",
+  appId: "1:289359647477:web:893d579c6bf94b98226bbc",
+  measurementId: "G-L3Z35BP6FG",
+};
+const auth = getAuth(initializeApp(config)),
+  provider = new GoogleAuthProvider(),
+  $ = (s) => document.querySelector(s);
+let localSessionToken = localStorage.getItem("letchatLocalToken") || sessionStorage.getItem("letchatGuestToken") || "";
+let user,
+  token,
+  socket,
+  stream,
+  installPromptEvent,
+  serviceWorkerRegistration,
+  peers = new Map(),
+  pendingIce = new Map(),
+  typingTimer,
+  toastTimer,
+  expiryTimers = new Map(),
+  unreadPrivate = new Map(),
+  blockedUsers = new Map(),
+  friendRelations = new Map(),
+  privateConversations = [],
+  showArchivedConversations = false,
+  privateContactStatus = null,
+  notifications = [],
+  lastPeople = [],
+  roomUnread = new Map(),
+  pendingAdultSelection = null,
+  iceServers = [],
+  icePromise,
+  mediaStartPromise,
+  inVideoCall = false,
+  currentRoom = "cafe",
+  currentPrivate = null,
+  reportContext = null,
+  replyingTo = null,
+  voiceRecorder = null,
+  voiceStream = null,
+  voiceChunks = [],
+  voiceInterval = null,
+  voiceStartedAt = 0,
+  voiceCancelled = false,
+  viewOnceEnabled = false,
+  pendingProfilePhoto = null,
+  viewedProfile = null,
+  pendingIncomingCall = null,
+  incomingCallTimer = null,
+  ringtoneTimer = null,
+  ringtoneContext = null,
+  callTimer = null,
+  callStartedAt = 0,
+  sessionStarted = false;
+const fallbackIceServers = [
+  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+];
+const rooms = {
+  messages: { title: "◌ messages", welcome: "Bienvenue dans messages" },
+  amateurs: { title: "◇ Vidéos / Photo amateurs", welcome: "Partagez vos vidéos et photos amateurs" },
+  webcam: { title: "♡ Webcam", welcome: "Bienvenue dans le salon Webcam" },
+  cafe: { title: "☀ Le Café", welcome: "Bienvenue au Café" },
+  creatifs: { title: "✦ Rencontres", welcome: "Bienvenue dans Rencontres" },
+  entraide: { title: "⌁ XXX", welcome: "Bienvenue dans XXX" },
+};
+provider.setCustomParameters({ prompt: "select_account" });
+const useGoogleRedirect = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+function loginError(message) {
+  const box = $("#loginError");
+  box.textContent = message;
+  box.classList.remove("hidden");
+}
+$("#googleLogin").onclick = async () => {
+  const button = $("#googleLogin");
+  button.disabled = true;
+  $("#loginError").classList.add("hidden");
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+    button.textContent = "Ouverture de Google…";
+    if (useGoogleRedirect) {
+      await signInWithRedirect(auth, provider);
+      return;
+    }
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    if (error.code === "auth/popup-blocked")
+      return loginError("Chrome bloque la fenêtre Google. Autorisez les fenêtres pop-up pour www.letchat.fr, puis réessayez.");
+    if (error.code === "auth/unauthorized-domain")
+      return loginError("Le domaine www.letchat.fr doit être autorisé dans Firebase Authentication.");
+    loginError(`Connexion Google impossible (${error.code || "erreur"}) : ${error.message}`);
+  } finally {
+    button.disabled = false;
+    if (document.body.contains(button))
+      button.innerHTML = '<span>G</span> Continuer avec Google';
+  }
+};
+function logoutSession() {
+  if (localSessionToken) {
+    localStorage.removeItem("letchatLocalToken");
+    sessionStorage.removeItem("letchatGuestToken");
+    localSessionToken = "";
+    location.reload();
+    return;
+  }
+  signOut(auth);
+}
+$("#logout").onclick = logoutSession;
+getRedirectResult(auth).catch((error) =>
+  loginError(`Retour Google impossible (${error.code || "erreur"}) : ${error.message}`),
+);
+function localUser(data, sessionToken) {
+  return { uid:data.id, displayName:data.name, email:"", photoURL:data.photo || "", guest:Boolean(data.guest), getIdToken:async()=>sessionToken };
+}
+async function activateLocalSession(data, sessionToken, guest = false) {
+  localSessionToken = sessionToken;
+  if (guest) { sessionStorage.setItem("letchatGuestToken",sessionToken); localStorage.removeItem("letchatLocalToken"); }
+  else { localStorage.setItem("letchatLocalToken",sessionToken); sessionStorage.removeItem("letchatGuestToken"); }
+  user = localUser(data,sessionToken); token = sessionToken;
+  $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
+  $("#meName").textContent = data.name; $("#mePhoto").src = data.photo || "";
+  if (await checkAge()) await beginSession();
+}
+async function restoreLocalSession() {
+  if (!localSessionToken) return false;
+  try {
+    const response = await fetch("/api/auth/me",{headers:{Authorization:`Bearer ${localSessionToken}`}});
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    await activateLocalSession(data.user,localSessionToken,Boolean(data.user.guest));
+    return true;
+  } catch { localStorage.removeItem("letchatLocalToken"); sessionStorage.removeItem("letchatGuestToken"); localSessionToken=""; return false; }
+}
+const localRestorePromise = restoreLocalSession();
+onAuthStateChanged(auth, async (u) => {
+  if (await localRestorePromise) return;
+  if (!u) {
+    user = null;
+    token = null;
+    sessionStarted = false;
+    $("#login").classList.remove("hidden");
+    $("#app").classList.add("hidden");
+    $("#ageModal").classList.add("hidden");
+    socket?.disconnect();
+    return;
+  }
+  user = u;
+  token = await u.getIdToken();
+  $("#login").classList.add("hidden");
+  $("#app").classList.remove("hidden");
+  $("#meName").textContent = u.displayName || u.email;
+  $("#mePhoto").src = u.photoURL || "";
+  if (await checkAge()) await beginSession();
+});
+document.querySelectorAll("[data-auth-tab]").forEach(button => button.onclick=()=>{
+  document.querySelectorAll("[data-auth-tab]").forEach(item=>item.classList.toggle("active",item===button));
+  $("#localLoginForm").classList.toggle("hidden",button.dataset.authTab!=="login");
+  $("#localRegisterForm").classList.toggle("hidden",button.dataset.authTab!=="register");
+  $("#guestLoginForm").classList.toggle("hidden",button.dataset.authTab!=="guest");
+  $("#loginError").classList.add("hidden");
+});
+async function submitLocalAuth(path,payload,guest=false) {
+  const response = await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  const data = await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(data.error||"Connexion impossible");
+  await activateLocalSession(data.user,data.token,guest);
+}
+$("#localLoginForm").onsubmit=async event=>{event.preventDefault();try{await submitLocalAuth("/api/auth/login",{username:$("#localLoginName").value,password:$("#localLoginPassword").value});}catch(e){loginError(e.message)}};
+$("#localRegisterForm").onsubmit=async event=>{event.preventDefault();try{await submitLocalAuth("/api/auth/register",{username:$("#localRegisterName").value,password:$("#localRegisterPassword").value,age:Number($("#localRegisterAge").value),gender:$("#localRegisterGender").value,city:$("#localRegisterCity").value});}catch(e){loginError(e.message)}};
+$("#guestLoginForm").onsubmit=async event=>{event.preventDefault();try{await submitLocalAuth("/api/auth/guest",{username:$("#guestName").value,age:Number($("#guestAge").value),gender:$("#guestGender").value,city:$("#guestCity").value},true);}catch(e){loginError(e.message)}};
+async function getAuthenticatedUser() {
+  const current = auth.currentUser || user;
+  if (current) return current;
+  return new Promise((resolve, reject) => {
+    let unsubscribe = () => {};
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Connexion en cours. Réessayez dans quelques secondes"));
+    }, 5000);
+    unsubscribe = onAuthStateChanged(auth, activeUser => {
+      if (!activeUser) return;
+      clearTimeout(timeout);
+      unsubscribe();
+      user = activeUser;
+      resolve(activeUser);
+    });
+  });
+}
+const api = async (path, opt = {}) => {
+  const activeUser = await getAuthenticatedUser();
+  token = await activeUser.getIdToken();
+  opt.headers = { ...opt.headers, Authorization: `Bearer ${token}` };
+  const r = await fetch(path, opt);
+  if (!r.ok) {
+    let message = `Erreur serveur (${r.status})`;
+    try {
+      const data = await r.json();
+      if (data?.error) message = data.error;
+    } catch {}
+    throw new Error(message);
+  }
+  return r;
+};
+async function beginSession() {
+  if (sessionStarted) return;
+  sessionStarted = true;
+  try {
+    await checkRules();
+    await loadBlocks();
+    await loadFriends();
+    await loadPrivateConversations();
+    await loadNotifications();
+    await checkAdmin();
+    await loadSubscription();
+    connect();
+    load();
+    loadProfile();
+    loadContactEmail();
+    setupAppFeatures();
+  } catch (error) {
+    sessionStarted = false;
+    showError(error.message);
+  }
+}
+
+window.addEventListener("beforeinstallprompt", event => {
+  event.preventDefault();
+  installPromptEvent = event;
+  $("#installApp")?.classList.remove("hidden");
+});
+window.addEventListener("appinstalled", () => {
+  installPromptEvent = null;
+  $("#installApp")?.classList.add("hidden");
+  if ($("#appFeatureStatus")) $("#appFeatureStatus").textContent = "Letchat est installé sur cet appareil.";
+});
+
+function urlBase64ToUint8Array(value) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+}
+
+async function setupAppFeatures() {
+  const status = $("#appFeatureStatus"), pushButton = $("#enablePush");
+  if (!("serviceWorker" in navigator)) {
+    status.textContent = "Ce navigateur ne permet pas l’installation ou les notifications.";
+    pushButton.disabled = true;
+    return;
+  }
+  try {
+    serviceWorkerRegistration = await navigator.serviceWorker.register("/service-worker.js");
+    const config = await (await fetch("/api/public-config")).json();
+    if (!config.pushConfigured || !("PushManager" in window)) {
+      pushButton.disabled = true;
+      status.textContent = "L’application est installable. Les notifications doivent encore être configurées sur le serveur.";
+      return;
+    }
+    const subscription = await serviceWorkerRegistration.pushManager.getSubscription();
+    if (subscription) {
+      pushButton.textContent = "Désactiver les notifications";
+      pushButton.disabled = false;
+      pushButton.dataset.pushEnabled = "true";
+      status.textContent = "Vous recevrez les nouveaux messages même lorsque Letchat est fermé.";
+    } else if (Notification.permission === "denied") {
+      pushButton.textContent = "Notifications bloquées";
+      pushButton.disabled = true;
+      status.textContent = "Autorisez les notifications dans les réglages de votre navigateur.";
+    } else {
+      pushButton.textContent = "Activer les notifications";
+      pushButton.disabled = false;
+      pushButton.dataset.pushEnabled = "false";
+      pushButton.dataset.vapidKey = config.vapidPublicKey;
+    }
+  } catch (error) {
+    status.textContent = "Impossible de préparer l’application : " + error.message;
+  }
+}
+
+$("#installApp").onclick = async () => {
+  if (!installPromptEvent) return;
+  await installPromptEvent.prompt();
+  await installPromptEvent.userChoice;
+  installPromptEvent = null;
+  $("#installApp").classList.add("hidden");
+};
+
+$("#enablePush").onclick = async () => {
+  const button = $("#enablePush"), status = $("#appFeatureStatus");
+  button.disabled = true;
+  try {
+    const currentSubscription = await serviceWorkerRegistration.pushManager.getSubscription();
+    if (currentSubscription) {
+      await api("/api/push/subscribe", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: currentSubscription.endpoint })
+      });
+      await currentSubscription.unsubscribe();
+      button.dataset.pushEnabled = "false";
+      button.textContent = "Activer les notifications";
+      status.textContent = "Les notifications sont désactivées sur cet appareil.";
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("Autorisation refusée");
+    const subscription = await serviceWorkerRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(button.dataset.vapidKey)
+    });
+    await api("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(subscription.toJSON())
+    });
+    button.dataset.pushEnabled = "true";
+    button.textContent = "Désactiver les notifications";
+    status.textContent = "Vous recevrez les nouveaux messages même lorsque Letchat est fermé.";
+  } catch (error) {
+    status.textContent = "Impossible de modifier les notifications : " + error.message;
+  } finally {
+    button.disabled = false;
+  }
+};
+async function checkAge() {
+  try {
+    const status = await (await api("/api/age-status")).json();
+    $("#ageModal").classList.toggle("hidden", status.accepted);
+    return status.accepted;
+  } catch (e) {
+    showError(e.message);
+    return false;
+  }
+}
+$("#ageForm").onsubmit = async (event) => {
+  event.preventDefault();
+  const button = $("#ageForm button[type=submit]");
+  button.disabled = true;
+  $("#ageError").textContent = "";
+  try {
+    await api("/api/age-accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ over18: $("#ageAccepted").checked }),
+    });
+    $("#ageModal").classList.add("hidden");
+    await beginSession();
+  } catch (e) {
+    $("#ageError").textContent = e.message;
+  } finally {
+    button.disabled = false;
+  }
+};
+$("#ageLeave").onclick = logoutSession;
+async function load() {
+  try {
+    if (currentPrivate) {
+      const selected = currentPrivate,
+        rows = await (
+          await api(`/api/private/${encodeURIComponent(selected.id)}`)
+        ).json();
+      if (currentPrivate?.id === selected.id) render(rows);
+      if (currentPrivate?.id === selected.id && document.visibilityState === "visible") markPrivateRead(selected.id);
+      return;
+    }
+    const room = currentRoom,
+      rows = await (
+        await api(`/api/messages?room=${encodeURIComponent(room)}`)
+      ).json();
+    if (!currentPrivate && room === currentRoom) render(rows);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+function render(rows) {
+  expiryTimers.forEach(clearTimeout);
+  expiryTimers.clear();
+  const box = $("#messages");
+  box.classList.toggle("media-gallery", !currentPrivate && currentRoom === "amateurs");
+  updateRoomFeature();
+  if (currentPrivate) {
+    box.innerHTML = rows.length
+      ? ""
+      : `<div class="empty"><b>✉</b><h2>Discussion avec ${safe(currentPrivate.name)}</h2><p>Messages privés supprimés après 48 heures.</p></div>`;
+  } else {
+    const info = rooms[currentRoom];
+    box.innerHTML = rows.length
+      ? ""
+      : `<div class="empty"><b>${info.title.split(" ")[0]}</b><h2>${info.welcome}</h2><p>Envoyez le premier message.</p></div>`;
+  }
+  rows.forEach((m) => addMessage(m, true));
+  box.scrollTop = box.scrollHeight;
+}
+function safe(v) {
+  const d = document.createElement("div");
+  d.textContent = v;
+  return d.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function initials(n) {
+  return n
+    .split(/[\s@]/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((x) => x[0])
+    .join("")
+    .toUpperCase();
+}
+function messageKey(m) {
+  return `${m.private ? "p" : "m"}-${m.id}`;
+}
+function removeMessage(id, isPrivate = false) {
+  const key = `${isPrivate ? "p" : "m"}-${id}`;
+  document.querySelector(`[data-key="${key}"]`)?.remove();
+  const timer = expiryTimers.get(key);
+  if (timer) clearTimeout(timer);
+  expiryTimers.delete(key);
+}
+function scheduleExpiry(m) {
+  if (!m.expires_at) return;
+  const key = messageKey(m),
+    delay = new Date(m.expires_at).getTime() - Date.now();
+  if (delay <= 0) return removeMessage(m.id, m.private);
+  const old = expiryTimers.get(key);
+  if (old) clearTimeout(old);
+  expiryTimers.set(
+    key,
+    setTimeout(
+      () => removeMessage(m.id, m.private),
+      Math.min(delay, 2147483647),
+    ),
+  );
+}
+function reactionHtml(reactions = {}, mine = []) {
+  return Object.entries(reactions)
+    .filter(([, count]) => Number(count) > 0)
+    .map(
+      ([emoji, count]) =>
+        `<button class="reaction-chip ${mine.includes(emoji) ? "active" : ""}" data-reaction="${emoji}">${emoji} <span>${count}</span></button>`,
+    )
+    .join("");
+}
+function setReply(m) {
+  replyingTo = {
+    id: String(m.id),
+    private: Boolean(m.private),
+    author: m.user_id === user.uid ? "Vous" : m.author,
+    body: m.body || "Média",
+  };
+  $("#replyPreviewAuthor").textContent = `Répondre à ${replyingTo.author}`;
+  $("#replyPreviewText").textContent = replyingTo.body;
+  $("#replyPreview").classList.remove("hidden");
+  $("#input").focus();
+}
+function clearReply() {
+  replyingTo = null;
+  $("#replyPreview").classList.add("hidden");
+  $("#replyPreviewAuthor").textContent = "";
+  $("#replyPreviewText").textContent = "";
+}
+$("#cancelReply").onclick = clearReply;
+function updateMessageReactions(payload) {
+  const key = `${payload.private ? "p" : "m"}-${payload.id}`,
+    article = document.querySelector(`[data-key="${key}"]`);
+  if (!article) return;
+  const box = article.querySelector(".reaction-summary"),
+    mine = JSON.parse(article.dataset.myReactions || "[]");
+  if (payload.emoji) {
+    const index = mine.indexOf(payload.emoji);
+    if (payload.active && index < 0) mine.push(payload.emoji);
+    if (!payload.active && index >= 0) mine.splice(index, 1);
+    article.dataset.myReactions = JSON.stringify(mine);
+  }
+  box.innerHTML = reactionHtml(payload.reactions || {}, mine);
+  bindReactionChips(article);
+}
+function bindReactionChips(article) {
+  article
+    .querySelectorAll(".reaction-chip")
+    .forEach(
+      (button) =>
+        (button.onclick = () =>
+          toggleReaction(article, button.dataset.reaction)),
+    );
+}
+async function toggleReaction(article, emoji) {
+  try {
+    const kind = article.dataset.private === "true" ? "private" : "public",
+      id = article.dataset.messageId,
+      response = await api(`/api/messages/${kind}/${id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji }),
+      });
+    updateMessageReactions(await response.json());
+  } catch (e) {
+    showError(e.message);
+  }
+}
+async function deleteOwnMessage(m) {
+  if (!confirm("Supprimer définitivement ce message ?")) return;
+  try {
+    await api(`/api/messages/${m.private ? "private" : "public"}/${m.id}`, {
+      method: "DELETE",
+    });
+    removeMessage(m.id, m.private);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+function receiptText(deliveredAt, readAt) {
+  if (readAt) return `✓✓ Lu à ${new Date(readAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+  if (deliveredAt) return "✓✓ Reçu";
+  return "✓ Envoyé";
+}
+function updatePrivateReceipts(payload) {
+  (payload.messages || []).forEach(item => {
+    const status = document.querySelector(`[data-key="p-${item.id}"] .message-status`);
+    if (status) status.textContent = receiptText(item.delivered_at, item.read_at);
+  });
+}
+async function markPrivateDelivered(otherId) {
+  try { updatePrivateReceipts(await (await api(`/api/private/${encodeURIComponent(otherId)}/delivered`, { method: "PATCH" })).json()) } catch {}
+}
+async function markPrivateRead(otherId) {
+  try {
+    await api(`/api/private/${encodeURIComponent(otherId)}/read`, { method: "PATCH" });
+    await loadPrivateConversations();
+  } catch {}
+}
+function addMessage(m, force = false) {
+  if (blockedUsers.has(String(m.user_id)) && m.user_id !== user.uid) return;
+  if (m.private && !currentPrivate) return;
+  if (
+    m.private &&
+    !force &&
+    m.user_id !== currentPrivate.id &&
+    m.recipient_id !== currentPrivate.id
+  )
+    return;
+  if (!m.private && currentPrivate) return;
+  if (m.room && m.room !== currentRoom) return;
+  if (m.expires_at && new Date(m.expires_at).getTime() <= Date.now()) return;
+  const key = messageKey(m);
+  if (document.querySelector(`[data-key="${key}"]`)) return;
+  const empty = $("#messages .empty");
+  empty?.remove();
+  const a = document.createElement("article"),
+    mine = m.user_id === user.uid;
+  a.className = "message " + (mine ? "mine" : "");
+  a.dataset.key = key;
+  a.dataset.messageId = m.id;
+  a.dataset.private = Boolean(m.private);
+  a.dataset.myReactions = JSON.stringify(
+    Array.isArray(m.my_reactions) ? m.my_reactions : [],
+  );
+  const base = m.private ? "/api/private-media" : "/api/media",
+    viewOnceUnavailable = m.view_once && !mine && (m.opened_at || !m.has_media),
+    media = viewOnceUnavailable
+      ? `<div class="view-once-expired">◉ Média déjà ouvert</div>`
+      : m.view_once && !mine
+        ? `<button class="view-once-open" type="button" data-view-once-id="${m.id}" data-view-once-type="${safe(m.media_type || "")}"><b>①</b><span>Ouvrir ${m.media_type?.startsWith("video/") ? "la vidéo" : "la photo"}</span><small>Visible une seule fois</small></button>`
+      : m.has_media
+      ? m.media_type?.startsWith("image/")
+        ? `<img class="media" src="${base}/${m.id}?t=${encodeURIComponent(token)}">`
+        : m.media_type?.startsWith("audio/")
+          ? `<audio class="media audio-message" src="${base}/${m.id}?t=${encodeURIComponent(token)}" controls preload="metadata"></audio>`
+          : `<video class="media" src="${base}/${m.id}?t=${encodeURIComponent(token)}" controls></video>`
+      : "",
+    quote = m.reply_to_id
+      ? `<div class="message-quote"><strong>${safe(m.reply_author || "Message supprimé")}</strong><span>${safe(m.reply_body || "Message original indisponible")}</span></div>`
+      : "";
+  a.innerHTML = `<div class="avatar">${m.photo ? `<img src="${safe(m.photo)}" class="avatar">` : safe(initials(m.author))}</div><div class="message-content"><p class="meta"><strong>${mine ? "Vous" : safe(m.author)}</strong><time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time></p>${quote}${m.body ? `<p class="bubble">${safe(m.body)}</p>` : ""}${media}<div class="reaction-summary">${reactionHtml(m.reactions, m.my_reactions || [])}</div>${m.private && mine ? `<div class="message-status">${receiptText(m.delivered_at, m.read_at)}</div>` : ""}<div class="message-actions"><button class="reply-action" title="Répondre">↩ Répondre</button><button class="react-action" title="Réagir">☺</button>${mine ? '<button class="delete-action" title="Supprimer">Supprimer</button>' : '<button class="report-message-action" title="Signaler ce message">⚑ Signaler</button>'}<div class="reaction-picker hidden">${["👍", "❤️", "😂", "😮"].map((emoji) => `<button data-pick-reaction="${emoji}">${emoji}</button>`).join("")}</div></div></div>`;
+  a.querySelector(".reply-action").onclick = () => setReply(m);
+  a.querySelector(".react-action").onclick = () =>
+    a.querySelector(".reaction-picker").classList.toggle("hidden");
+  a.querySelector(".delete-action")?.addEventListener("click", () =>
+    deleteOwnMessage(m),
+  );
+  a.querySelector(".report-message-action")?.addEventListener("click", () =>
+    openReport({ id: m.user_id, name: m.author }, m),
+  );
+  a.querySelector(".view-once-open")?.addEventListener("click", openViewOnceMedia);
+  a.querySelectorAll("[data-pick-reaction]").forEach(
+    (button) =>
+      (button.onclick = () => {
+        toggleReaction(a, button.dataset.pickReaction);
+        a.querySelector(".reaction-picker").classList.add("hidden");
+      }),
+  );
+  bindReactionChips(a);
+  $("#messages").append(a);
+  scheduleExpiry(m);
+  requestAnimationFrame(
+    () => ($("#messages").scrollTop = $("#messages").scrollHeight),
+  );
+}
+async function openViewOnceMedia(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const response = await api(`/api/private-media/${encodeURIComponent(button.dataset.viewOnceId)}`);
+    const blob = await response.blob(), url = URL.createObjectURL(blob);
+    const element = button.dataset.viewOnceType.startsWith("video/")
+      ? document.createElement("video") : document.createElement("img");
+    element.className = "media view-once-media";
+    element.src = url;
+    if (element.tagName === "VIDEO") { element.controls = true; element.autoplay = true; element.playsInline = true; }
+    if (element.tagName === "VIDEO") element.onended = () => URL.revokeObjectURL(url);
+    else element.onload = () => URL.revokeObjectURL(url);
+    const wrapper = document.createElement("div");
+    wrapper.className = "view-once-opened";
+    wrapper.append(element);
+    const note = document.createElement("small");
+    note.textContent = "Ce média disparaîtra en quittant la conversation";
+    wrapper.append(note);
+    button.replaceWith(wrapper);
+  } catch (e) {
+    button.replaceWith(Object.assign(document.createElement("div"), { className: "view-once-expired", textContent: "◉ Média déjà ouvert" }));
+    showError(e.message);
+  }
+}
+async function send(media) {
+  const body = $("#input").value.trim();
+  if (!body && !media) return;
+  const button = $("#send");
+  button.disabled = true;
+  try {
+    const path = currentPrivate ? "/api/private" : "/api/messages",
+      replyToId =
+        replyingTo && replyingTo.private === Boolean(currentPrivate)
+          ? replyingTo.id
+          : null,
+      payload = currentPrivate
+        ? { body, recipientId: currentPrivate.id, replyToId, viewOnce: Boolean(media && viewOnceEnabled), ...media }
+        : { body, room: currentRoom, replyToId, ...media };
+    const m = await (
+      await api(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+    ).json();
+    addMessage(m, true);
+    loadPrivateConversations();
+    $("#input").value = "";
+    clearReply();
+    stopTyping();
+    viewOnceEnabled = false;
+    updateViewOnceButton();
+    $("#input").focus();
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+$("#send").onclick = () => send();
+function stopTyping(target = currentPrivate?.id) {
+  clearTimeout(typingTimer);
+  if (target) socket?.emit("private-typing", { target, active: false });
+  else socket?.emit("typing", false);
+}
+function announceTyping() {
+  clearTimeout(typingTimer);
+  if (currentPrivate) socket?.emit("private-typing", { target: currentPrivate.id, active: true });
+  else socket?.emit("typing", true);
+  const target = currentPrivate?.id;
+  typingTimer = setTimeout(() => stopTyping(target), 1000);
+}
+$("#input").addEventListener("input", announceTyping);
+$("#input").onkeydown = (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+};
+$("#emoji").onclick = () => ($("#input").value += " 😊");
+$("#attach").onclick = () => $("#file").click();
+$("#cameraBtn").onclick = () => $("#camera").click();
+function updateVoiceTimer() {
+  const seconds = Math.floor((Date.now() - voiceStartedAt) / 1000);
+  $("#voiceTimer").textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  if (seconds >= 120) stopVoiceRecording(true);
+}
+async function startVoiceRecording() {
+  if (voiceRecorder?.state === "recording") return;
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    return showError("L’enregistrement vocal n’est pas disponible sur ce navigateur");
+  }
+  try {
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    const supported = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus"].find(type => MediaRecorder.isTypeSupported(type));
+    voiceChunks = [];
+    voiceCancelled = false;
+    voiceRecorder = supported ? new MediaRecorder(voiceStream, { mimeType: supported }) : new MediaRecorder(voiceStream);
+    voiceRecorder.ondataavailable = event => { if (event.data.size) voiceChunks.push(event.data) };
+    voiceRecorder.onstop = async () => {
+      clearInterval(voiceInterval);
+      voiceInterval = null;
+      voiceStream?.getTracks().forEach(track => track.stop());
+      voiceStream = null;
+      $("#voiceRecording").classList.add("hidden");
+      $("#voiceBtn").classList.remove("recording");
+      if (voiceCancelled || !voiceChunks.length) return;
+      const blob = new Blob(voiceChunks, { type: voiceRecorder.mimeType || "audio/webm" });
+      if (blob.size > 8e6) return showError("Message vocal trop long (8 Mo maximum)");
+      const mediaBase64 = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = reject; reader.readAsDataURL(blob) });
+      await send({ mediaBase64, mediaType: (blob.type || "audio/webm").split(";")[0] });
+    };
+    voiceRecorder.start(250);
+    voiceStartedAt = Date.now();
+    $("#voiceTimer").textContent = "00:00";
+    $("#voiceRecording").classList.remove("hidden");
+    $("#voiceBtn").classList.add("recording");
+    voiceInterval = setInterval(updateVoiceTimer, 500);
+  } catch (error) {
+    voiceStream?.getTracks().forEach(track => track.stop());
+    voiceStream = null;
+    showError(error?.name === "NotAllowedError" ? "Autorisez le microphone pour envoyer un message vocal" : "Impossible d’ouvrir le microphone");
+  }
+}
+function stopVoiceRecording(sendRecording) {
+  if (!voiceRecorder || voiceRecorder.state !== "recording") return;
+  voiceCancelled = !sendRecording;
+  voiceRecorder.stop();
+}
+$("#voiceBtn").onclick = startVoiceRecording;
+$("#cancelVoice").onclick = () => stopVoiceRecording(false);
+$("#sendVoice").onclick = () => stopVoiceRecording(true);
+$("#file").onchange = $("#camera").onchange = async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  if (f.size > 8e6) return showError("8 Mo maximum");
+  const b64 = await new Promise((r) => {
+    const x = new FileReader();
+    x.onload = () => r(x.result.split(",")[1]);
+    x.readAsDataURL(f);
+  });
+  send({ mediaBase64: b64, mediaType: f.type });
+};
+function showError(t) {
+  $("#error").textContent = t;
+  $("#error").classList.remove("hidden");
+  setTimeout(() => $("#error").classList.add("hidden"), 4000);
+}
+function updateUnread() {
+  const total = [...unreadPrivate.values()].reduce(
+      (sum, count) => sum + count,
+      0,
+    ),
+    badge = $("#unreadBadge");
+  badge.textContent = total > 99 ? "99+" : String(total);
+  badge.classList.toggle("hidden", total === 0);
+}
+function privatePreview(row) {
+  if (row.last_body) return row.last_body;
+  if (String(row.last_media_type || "").startsWith("audio/")) return "🎙 Message vocal";
+  if (String(row.last_media_type || "").startsWith("image/")) return "📷 Photo";
+  if (String(row.last_media_type || "").startsWith("video/")) return "🎬 Vidéo";
+  return "Nouveau média";
+}
+function conversationTime(value) {
+  const date = new Date(value), now = new Date();
+  if (date.toDateString() === now.toDateString())
+    return date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+}
+async function loadPrivateConversations() {
+  try {
+    privateConversations = await (await api("/api/private-conversations")).json();
+    unreadPrivate = new Map(
+      privateConversations
+        .filter(row => Number(row.unread_count) > 0)
+        .map(row => [String(row.user_id), Number(row.unread_count)]),
+    );
+    updateUnread();
+    renderPrivateConversations();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+function renderPrivateConversations() {
+  const box = $("#conversationList"), total = $("#conversationTotal");
+  if (!box || !total) return;
+  const unreadTotal = privateConversations.reduce((sum, row) => sum + Number(row.unread_count || 0), 0);
+  total.textContent = unreadTotal > 99 ? "99+" : String(unreadTotal);
+  total.classList.toggle("hidden", unreadTotal === 0);
+  const displayed = privateConversations.filter(row => Boolean(row.archived) === showArchivedConversations);
+  $("#activeConversations")?.classList.toggle("active", !showArchivedConversations);
+  $("#archivedConversations")?.classList.toggle("active", showArchivedConversations);
+  box.innerHTML = displayed.length
+    ? displayed.map(row => {
+        const unread = Number(row.unread_count || 0), mine = row.last_sender_id === user.uid;
+        return `<div class="conversation-item ${unread ? "unread" : ""} ${currentPrivate?.id === String(row.user_id) ? "active" : ""}">
+          <button class="conversation-open" data-conversation-id="${safe(row.user_id)}" data-conversation-name="${safe(row.display_name)}">
+            <span class="conversation-avatar ${safe(`gender-${row.gender || "neutral"}`)}">${row.photo ? `<img src="${safe(row.photo)}" alt="">` : safe(initials(row.display_name))}</span>
+            <span class="conversation-content"><span class="conversation-line"><strong>${safe(row.display_name)}${row.muted ? " 🔕" : ""}</strong><time>${conversationTime(row.last_message_at)}</time></span><span class="conversation-line"><small>${mine ? "Vous : " : ""}${safe(privatePreview(row))}</small>${unread ? `<b>${unread > 99 ? "99+" : unread}</b>` : ""}</span></span>
+          </button>
+          <span class="conversation-actions"><button data-mute-conversation="${safe(row.user_id)}" title="${row.muted ? "Réactiver les notifications" : "Mettre en sourdine"}">${row.muted ? "🔔" : "🔕"}</button><button data-archive-conversation="${safe(row.user_id)}" title="${row.archived ? "Désarchiver" : "Archiver"}">${row.archived ? "↥" : "▣"}</button><button data-delete-conversation="${safe(row.user_id)}" data-delete-name="${safe(row.display_name)}" title="Supprimer de ma liste">×</button></span>
+        </div>`;
+      }).join("")
+    : `<p class="no-conversations">${showArchivedConversations ? "Aucune conversation archivée." : "Aucune conversation privée."}</p>`;
+  box.querySelectorAll("[data-conversation-id]").forEach(button => {
+    button.onclick = () => {
+      openPrivate(button.dataset.conversationId, button.dataset.conversationName);
+      $(".people").classList.remove("open");
+    };
+  });
+  box.querySelectorAll("[data-mute-conversation]").forEach(button => button.onclick = () => {
+    const row = privateConversations.find(item => String(item.user_id) === button.dataset.muteConversation);
+    updateConversationPreference(row.user_id, { muted: !row.muted });
+  });
+  box.querySelectorAll("[data-archive-conversation]").forEach(button => button.onclick = () => {
+    const row = privateConversations.find(item => String(item.user_id) === button.dataset.archiveConversation);
+    updateConversationPreference(row.user_id, { archived: !row.archived });
+  });
+  box.querySelectorAll("[data-delete-conversation]").forEach(button => button.onclick = () => {
+    deleteConversation(button.dataset.deleteConversation, button.dataset.deleteName);
+  });
+}
+async function updateConversationPreference(id, changes) {
+  try {
+    await api(`/api/private-conversations/${encodeURIComponent(id)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes),
+    });
+    await loadPrivateConversations();
+  } catch (e) { showError(e.message); }
+}
+async function deleteConversation(id, name) {
+  if (!confirm(`Retirer votre conversation avec ${name} de votre liste ?\n\nElle restera visible chez l’autre personne.`)) return;
+  try {
+    await api(`/api/private-conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (currentPrivate?.id === String(id)) {
+      stopTyping(String(id));
+      currentPrivate = null;
+      privateContactStatus = null;
+      socket?.emit("watch-private-status", "");
+      viewOnceEnabled = false;
+      updateViewOnceButton();
+      $("#blockBtn").classList.add("hidden");
+      $("#reportBtn").classList.add("hidden");
+      $(".chat header h1").textContent = rooms[currentRoom].title;
+      $("#roomPresence").classList.remove("hidden");
+      $("#privateTypingStatus").classList.add("hidden");
+      load();
+    }
+    await loadPrivateConversations();
+  } catch (e) { showError(e.message); }
+}
+$("#activeConversations").onclick = () => { showArchivedConversations = false; renderPrivateConversations(); };
+$("#archivedConversations").onclick = () => { showArchivedConversations = true; renderPrivateConversations(); };
+function openPrivate(id, name) {
+  if (id === user.uid)
+    return showError("Vous ne pouvez pas vous écrire à vous-même");
+  if (blockedUsers.has(String(id)))
+    return showError("Cet utilisateur est bloqué");
+  const previousPrivateId = currentPrivate?.id;
+  if (previousPrivateId && previousPrivateId !== String(id)) stopTyping(previousPrivateId);
+  clearReply();
+  unreadPrivate.delete(id);
+  updateUnread();
+  currentPrivate = { id, name };
+  privateContactStatus = null;
+  socket?.emit("watch-private-status", id);
+  updateViewOnceButton();
+  renderPrivateConversations();
+  $("#blockBtn").classList.remove("hidden");
+  $("#reportBtn").classList.remove("hidden");
+  $(".chat header h1").textContent = `✉ ${name}`;
+  $("#roomPresence").classList.add("hidden");
+  $("#privateTypingStatus").textContent = "Chargement du statut…";
+  $("#privateTypingStatus").classList.remove("hidden", "is-typing");
+  $("#typing").textContent = "";
+  load();
+}
+function showPrivateNotification(m) {
+  loadPrivateConversations();
+  if (m.user_id === user.uid || blockedUsers.has(String(m.user_id))) return;
+  const senderId = String(m.user_id),
+    senderName = m.author || "Nouveau contact";
+  const preference = privateConversations.find(row => String(row.user_id) === senderId);
+  markPrivateDelivered(senderId);
+  if (currentPrivate?.id === senderId) {
+    addMessage(m);
+    if (document.visibilityState === "visible") markPrivateRead(senderId);
+    return;
+  }
+  unreadPrivate.set(senderId, (unreadPrivate.get(senderId) || 0) + 1);
+  updateUnread();
+  if (preference?.muted) return;
+  const toast = $("#messageToast");
+  toast.textContent = `💬 ${senderName} : ${m.body || "Nouveau média"}`;
+  toast.classList.remove("hidden");
+  toast.onclick = () => {
+    toast.classList.add("hidden");
+    openPrivate(senderId, senderName);
+  };
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.add("hidden"), 6000);
+  if (
+    "Notification" in window &&
+    Notification.permission === "granted" &&
+    document.visibilityState !== "visible"
+  )
+    try {
+      const n = new Notification(`Message de ${senderName}`, {
+        body: m.body || "Vous a envoyé un média",
+        icon: m.photo || undefined,
+        tag: `private-${senderId}`,
+      });
+      n.onclick = () => {
+        window.focus();
+        openPrivate(senderId, senderName);
+        n.close();
+      };
+    } catch {}
+}
+function formatLastSeen(value) {
+  if (!value) return "Hors ligne";
+  const date = new Date(value), seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return "Vu à l’instant";
+  if (seconds < 3600) return `Vu il y a ${Math.floor(seconds / 60)} min`;
+  if (date.toDateString() === new Date().toDateString())
+    return `Vu aujourd’hui à ${date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+  return `Vu le ${date.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} à ${date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+}
+function privateStatusText(status) {
+  if (!status?.online) return formatLastSeen(status?.lastSeen);
+  if (status.availability === "busy") return "Occupé";
+  if (status.availability === "away") return "Absent";
+  return "En ligne";
+}
+function renderPrivateContactStatus() {
+  if (!currentPrivate) return;
+  const status = $("#privateTypingStatus");
+  status.textContent = privateStatusText(privateContactStatus);
+  status.classList.remove("is-typing");
+  status.classList.toggle("is-offline", !privateContactStatus?.online);
+  status.classList.toggle("is-busy", privateContactStatus?.online && privateContactStatus.availability === "busy");
+  status.classList.toggle("is-away", privateContactStatus?.online && privateContactStatus.availability === "away");
+}
+setInterval(() => {
+  if (currentPrivate && !$("#privateTypingStatus").classList.contains("is-typing")) renderPrivateContactStatus();
+}, 30000);
+async function requestNotifications() {
+  if ("Notification" in window && Notification.permission === "default")
+    try {
+      await Notification.requestPermission();
+    } catch {}
+}
+async function checkRules() {
+  try {
+    const status = await (await api("/api/rules-status")).json();
+    $("#rulesModal").classList.toggle("hidden", status.accepted);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+$("#rulesForm").onsubmit = async (event) => {
+  event.preventDefault();
+  const button = $("#rulesForm button[type=submit]");
+  button.disabled = true;
+  $("#rulesError").textContent = "";
+  try {
+    await api("/api/rules-accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accepted: $("#rulesAccepted").checked }),
+    });
+    $("#rulesModal").classList.add("hidden");
+    showError("Règles acceptées. Bienvenue sur Letchat !");
+  } catch (e) {
+    $("#rulesError").textContent = e.message;
+  } finally {
+    button.disabled = false;
+  }
+};
+async function loadNotifications() {
+  try {
+    notifications = await (await api("/api/notifications")).json();
+    updateNotifications();
+    renderNotifications();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+function updateNotifications() {
+  const count = notifications.filter((item) => !item.read_at).length,
+    badge = $("#notificationsBadge");
+  badge.textContent = count > 99 ? "99+" : String(count);
+  badge.classList.toggle("hidden", count === 0);
+}
+function notificationIcon(type) {
+  return (
+    {
+      friend_request: "👤",
+      friend_accepted: "✓",
+      private_message: "💬",
+      report_update: "🛡",
+    }[type] || "🔔"
+  );
+}
+function renderNotifications() {
+  const box = $("#notificationsList");
+  if (!box) return;
+  box.innerHTML = notifications.length
+    ? notifications
+        .map(
+          (item) =>
+            `<button class="notification-item ${item.read_at ? "" : "unread"}" data-notification-id="${item.id}" data-notification-type="${safe(item.type)}" data-actor-id="${safe(item.actor_id || "")}" data-actor-name="${safe(item.actor_name || "Utilisateur")}"><span class="notification-icon">${notificationIcon(item.type)}</span><span><strong>${safe(item.title)}</strong><small>${safe(item.body)}</small><time>${new Date(item.created_at).toLocaleString("fr-FR")}</time></span></button>`,
+        )
+        .join("")
+    : '<p class="notifications-empty">Aucune notification.</p>';
+  box
+    .querySelectorAll(".notification-item")
+    .forEach((button) => (button.onclick = () => openNotification(button)));
+}
+async function openNotification(button) {
+  const type = button.dataset.notificationType,
+    actorId = button.dataset.actorId,
+    actorName = button.dataset.actorName;
+  $("#notificationsModal").classList.add("hidden");
+  if (type === "private_message" && actorId) openPrivate(actorId, actorName);
+  else if (type === "friend_request" || type === "friend_accepted") {
+    $(".people").classList.add("open");
+    await loadFriends();
+  }
+}
+$("#notificationsBtn").onclick = async () => {
+  $("#notificationsModal").classList.remove("hidden");
+  renderNotifications();
+  try {
+    await api("/api/notifications/read", { method: "PATCH" });
+    notifications = notifications.map((item) => ({
+      ...item,
+      read_at: item.read_at || new Date().toISOString(),
+    }));
+    updateNotifications();
+    renderNotifications();
+  } catch (e) {
+    showError(e.message);
+  }
+};
+$("#closeNotifications").onclick = () =>
+  $("#notificationsModal").classList.add("hidden");
+function normalizeSearch(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+function performSearch() {
+  const query = normalizeSearch($("#searchInput").value),
+    results = $("#searchResults");
+  if (!query) {
+    results.innerHTML =
+      '<p class="search-empty">Commencez à écrire pour rechercher.</p>';
+    return;
+  }
+  const messages = [...document.querySelectorAll("#messages .message")]
+      .filter((article) => normalizeSearch(article.textContent).includes(query))
+      .slice(0, 30),
+    contacts = new Map();
+  lastPeople.forEach((person) =>
+    contacts.set(String(person.id), {
+      id: String(person.id),
+      name: person.name || "Utilisateur",
+      photo: person.photo || "",
+      detail: person.location?.city || "En ligne",
+    }),
+  );
+  friendRelations.forEach((row) =>
+    contacts.set(String(row.user_id), {
+      id: String(row.user_id),
+      name: row.display_name || "Utilisateur",
+      photo: row.photo || "",
+      detail: row.status === "accepted" ? "Ami" : "Contact",
+    }),
+  );
+  const contactMatches = [...contacts.values()]
+      .filter(
+        (contact) =>
+          contact.id !== user.uid &&
+          normalizeSearch(`${contact.name} ${contact.detail}`).includes(query),
+      )
+      .slice(0, 30),
+    messageHtml = messages
+      .map((article) => {
+        const author =
+            article.querySelector(".meta strong")?.textContent || "Message",
+          body =
+            article.querySelector(".bubble")?.textContent ||
+            article.querySelector(".message-quote span")?.textContent ||
+            "Média partagé";
+        return `<button class="search-result search-message-result" data-search-message="${safe(article.dataset.key)}"><span class="search-result-icon">💬</span><span><strong>${safe(author)}</strong><small>${safe(body.slice(0, 120))}</small></span></button>`;
+      })
+      .join(""),
+    contactHtml = contactMatches
+      .map(
+        (contact) =>
+          `<button class="search-result search-contact-result" data-search-contact="${safe(contact.id)}" data-search-name="${safe(contact.name)}">${contact.photo ? `<img src="${safe(contact.photo)}">` : '<span class="search-result-icon">👤</span>'}<span><strong>${safe(contact.name)}</strong><small>${safe(contact.detail)}</small></span></button>`,
+      )
+      .join("");
+  results.innerHTML = `<section><h3>Messages (${messages.length})</h3>${messageHtml || '<p class="search-empty">Aucun message trouvé.</p>'}</section><section><h3>Contacts (${contactMatches.length})</h3>${contactHtml || '<p class="search-empty">Aucun contact trouvé.</p>'}</section>`;
+  results.querySelectorAll("[data-search-message]").forEach(
+    (button) =>
+      (button.onclick = () => {
+        const article = document.querySelector(
+          `[data-key="${CSS.escape(button.dataset.searchMessage)}"]`,
+        );
+        $("#searchModal").classList.add("hidden");
+        if (article) {
+          article.scrollIntoView({ behavior: "smooth", block: "center" });
+          article.classList.add("search-highlight");
+          setTimeout(() => article.classList.remove("search-highlight"), 1800);
+        }
+      }),
+  );
+  results.querySelectorAll("[data-search-contact]").forEach(
+    (button) =>
+      (button.onclick = () => {
+        $("#searchModal").classList.add("hidden");
+        showPublicProfile(button.dataset.searchContact, button.dataset.searchName);
+      }),
+  );
+}
+$("#searchBtn").onclick = () => {
+  $("#searchModal").classList.remove("hidden");
+  $("#searchInput").value = "";
+  performSearch();
+  setTimeout(() => $("#searchInput").focus(), 50);
+};
+$("#closeSearch").onclick = () => $("#searchModal").classList.add("hidden");
+$("#searchInput").oninput = performSearch;
+$("#searchModal").onclick = (event) => {
+  if (event.target === $("#searchModal"))
+    $("#searchModal").classList.add("hidden");
+};
+async function loadFriends() {
+  try {
+    const rows = await (await api("/api/friends")).json();
+    friendRelations = new Map(rows.map((row) => [String(row.user_id), row]));
+    renderFriends();
+    if (lastPeople.length) renderPeople(lastPeople);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+function isOnline(id) {
+  return lastPeople.some((person) => String(person.id) === String(id));
+}
+function renderFriends() {
+  const requests = $("#friendRequests"),
+    friends = $("#friendsList");
+  if (!requests || !friends) return;
+  const rows = [...friendRelations.values()],
+    incoming = rows.filter(
+      (row) => row.status === "pending" && row.direction === "incoming",
+    ),
+    accepted = rows.filter((row) => row.status === "accepted");
+  requests.innerHTML = incoming.length
+    ? `<h3>Demandes reçues</h3>${incoming.map((row) => `<div class="friend-card"><span>${safe(row.display_name)}</span><div><button data-accept-friend="${row.id}">Accepter</button><button data-remove-friend="${row.id}">Refuser</button></div></div>`).join("")}`
+    : "";
+  friends.innerHTML = accepted.length
+    ? `<h3>Mes amis</h3>${accepted.map((row) => `<div class="friend-card"><button class="friend-open" data-friend-id="${safe(row.user_id)}" data-friend-name="${safe(row.display_name)}"><span class="online-dot ${isOnline(row.user_id) ? "online" : ""}"></span>${safe(row.display_name)}</button><button class="friend-remove" data-remove-friend="${row.id}" title="Supprimer cet ami">×</button></div>`).join("")}`
+    : '<p class="no-friends">Aucun ami pour le moment.</p>';
+  document
+    .querySelectorAll("[data-accept-friend]")
+    .forEach(
+      (button) =>
+        (button.onclick = () => acceptFriend(button.dataset.acceptFriend)),
+    );
+  document
+    .querySelectorAll("[data-remove-friend]")
+    .forEach(
+      (button) =>
+        (button.onclick = () => removeFriend(button.dataset.removeFriend)),
+    );
+  document.querySelectorAll(".friend-open").forEach(
+    (button) =>
+      (button.onclick = () => {
+        showPublicProfile(button.dataset.friendId, button.dataset.friendName);
+        $(".people").classList.remove("open");
+      }),
+  );
+}
+async function sendFriendRequest(id) {
+  try {
+    await api(`/api/friends/${encodeURIComponent(id)}`, { method: "POST" });
+    await loadFriends();
+    showError("Demande d’ami envoyée");
+  } catch (e) {
+    showError(e.message);
+  }
+}
+async function acceptFriend(id) {
+  try {
+    await api(`/api/friends/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "accept" }),
+    });
+    await loadFriends();
+    showError("Demande acceptée");
+  } catch (e) {
+    showError(e.message);
+  }
+}
+async function removeFriend(id) {
+  if (!confirm("Supprimer cette demande ou cet ami ?")) return;
+  try {
+    await api(`/api/friends/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await loadFriends();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+function renderPeople(list) {
+  lastPeople = list;
+  list = list.filter((person) => !blockedUsers.has(String(person.id)));
+  $("#onlineCount").textContent = list.length;
+  const groups = new Map();
+  list.forEach((person) => {
+    const key = person.location?.city || "Ville masquée";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(person);
+  });
+  $("#people").innerHTML = [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, "fr"))
+    .map(
+      ([place, people]) =>
+        `<section class="location-group"><h3>${safe(place)}</h3>${people
+          .map((p) => {
+            const gender = ["female", "male"].includes(p.gender)
+                ? p.gender
+                : "neutral",
+              relation = friendRelations.get(String(p.id));
+            let action = "";
+            if (p.id !== user.uid) {
+              if (!relation)
+                action = `<button class="friend-action" data-add-friend="${safe(p.id)}" title="Ajouter en ami">＋ Ami</button>`;
+              else if (relation.status === "accepted")
+                action = '<span class="friend-state">✓ Ami</span>';
+              else action = '<span class="friend-state">En attente</span>';
+            }
+            const statusLabel={available:"Disponible",busy:"Occupé",away:"Absent"}[p.availability]||"Disponible";
+            return `<div class="person-row gender-${gender}"><button class="person person-button" data-user-id="${safe(p.id)}" data-user-name="${safe(p.name)}"><img src="${p.photo || ""}"><div><strong>${safe(p.name)}${p.verified ? '<span class="verified-badge" title="Profil vérifié">✓</span>' : ""}</strong><small>${p.id===user.uid?"Vous":`${statusLabel}${p.bio?` · ${safe(p.bio)}`:""}`}</small></div></button>${action}</div>`;
+          })
+          .join("")}</section>`,
+    )
+    .join("");
+  document.querySelectorAll(".person-button").forEach(
+    (button) =>
+      (button.onclick = () => {
+        if(button.dataset.userId===user.uid) showProfile(); else showPublicProfile(button.dataset.userId, button.dataset.userName);
+        $(".people").classList.remove("open");
+      }),
+  );
+  document
+    .querySelectorAll("[data-add-friend]")
+    .forEach(
+      (button) =>
+        (button.onclick = () => sendFriendRequest(button.dataset.addFriend)),
+    );
+  renderFriends();
+  updateRoomFeature();
+}
+function connect() {
+  socket = io({ auth: { token }, transports: ["websocket", "polling"] });
+  socket.on("connect", () => {
+    socket.emit("join-room", currentRoom);
+    if (currentPrivate) socket.emit("watch-private-status", currentPrivate.id);
+    load();
+  });
+  socket.on("message", (m) => addMessage(m));
+  socket.on("room-activity", ({ room, userId } = {}) => {
+    if (!rooms[room] || userId === user.uid || (!currentPrivate && room === currentRoom)) return;
+    roomUnread.set(room, (roomUnread.get(room) || 0) + 1);
+    updateRoomBadges();
+  });
+  socket.on("private-message", showPrivateNotification);
+  socket.on("private-receipt", updatePrivateReceipts);
+  socket.on("private-typing", data => {
+    if (!currentPrivate || String(data.userId) !== String(currentPrivate.id)) return;
+    const status = $("#privateTypingStatus");
+    if (data.active) {
+      status.textContent = "écrit…";
+      status.classList.remove("is-offline", "is-busy", "is-away");
+    }
+    else renderPrivateContactStatus();
+    status.classList.toggle("is-typing", data.active);
+  });
+  socket.on("private-status", data => {
+    if (!currentPrivate || String(data.userId) !== String(currentPrivate.id)) return;
+    privateContactStatus = data;
+    if (!$("#privateTypingStatus").classList.contains("is-typing")) renderPrivateContactStatus();
+  });
+  socket.on("view-once-opened", payload => {
+    const article = document.querySelector(`[data-key="p-${CSS.escape(String(payload.id))}"]`);
+    if (article) {
+      article.querySelector(".view-once-open, .media")?.replaceWith(Object.assign(document.createElement("div"), { className: "view-once-expired", textContent: "✓ Média ouvert" }));
+    }
+  });
+  socket.on("message-reactions", updateMessageReactions);
+  socket.on("message-deleted", (payload) => {
+    removeMessage(payload.id, payload.private);
+    if (payload.private) loadPrivateConversations();
+  });
+  socket.on("friends-updated", loadFriends);
+  socket.on("notification", (notification) => {
+    notifications.unshift(notification);
+    updateNotifications();
+    renderNotifications();
+  });
+  socket.on("messages-expired", (ids) =>
+    ids.forEach((id) => removeMessage(id, false)),
+  );
+  socket.on("private-messages-expired", (ids) =>
+    (ids.forEach((id) => removeMessage(id, true)), loadPrivateConversations()),
+  );
+  socket.on("presence", renderPeople);
+  socket.on(
+    "typing",
+    (d) =>
+      !currentPrivate &&
+      ($("#typing").textContent = d.active ? `${d.name} écrit…` : ""),
+  );
+  socket.on("webrtc", handleSignal);
+  socket.on("webrtc-error", ({ error } = {}) =>
+    showError(error || "Appel vidéo refusé"),
+  );
+  socket.on("connect_error", () => setTimeout(load, 1000));
+}
+async function loadBlocks() {
+  try {
+    const rows = await (await api("/api/blocks")).json();
+    blockedUsers = new Map(rows.map((row) => [String(row.user_id), row]));
+    renderBlockedUsers();
+    if (lastPeople.length) renderPeople(lastPeople);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+function renderBlockedUsers() {
+  const box = $("#blockedUsers");
+  if (!box) return;
+  const rows = [...blockedUsers.values()];
+  box.innerHTML = rows.length
+    ? rows
+        .map(
+          (row) =>
+            `<div class="blocked-person"><span>${safe(row.display_name || "Utilisateur")}</span><button type="button" data-unblock="${safe(row.user_id)}">Débloquer</button></div>`,
+        )
+        .join("")
+    : `<p class="no-blocks">Aucun utilisateur bloqué.</p>`;
+  box.querySelectorAll("[data-unblock]").forEach(
+    (button) =>
+      (button.onclick = async () => {
+        try {
+          await api(
+            `/api/blocks/${encodeURIComponent(button.dataset.unblock)}`,
+            { method: "DELETE" },
+          );
+          blockedUsers.delete(button.dataset.unblock);
+          renderBlockedUsers();
+          renderPeople(lastPeople);
+          load();
+        } catch (e) {
+          showError(e.message);
+        }
+      }),
+  );
+}
+function openProfile(profile) {
+  $("#profileName").value =
+    profile?.display_name || user?.displayName || user?.email || "";
+  $("#profileCity").value = profile?.city || "";
+  $("#profileBio").value = profile?.bio || "";
+  $("#profileGender").value = profile?.gender || "neutral";
+  $("#profileAvailability").value = profile?.availability || "available";
+  $("#profilePrivateMessages").value = profile?.private_message_policy || "everyone";
+  pendingProfilePhoto = null;
+  $("#profilePhotoPreview").src = profile?.photo || user?.photoURL || "";
+  $("#profileVisible").checked = profile?.location_visible !== false;
+  $("#profileModal").classList.remove("hidden");
+}
+$("#chooseProfilePhoto").onclick=()=>$("#profilePhotoInput").click();
+$("#profilePhotoInput").onchange=async event=>{const file=event.target.files[0];if(!file)return;if(file.size>8e6)return showError("Photo trop volumineuse");try{pendingProfilePhoto=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const image=new Image();image.onerror=reject;image.onload=()=>{const size=512,canvas=document.createElement("canvas");canvas.width=size;canvas.height=size;const context=canvas.getContext("2d"),side=Math.min(image.width,image.height),sx=(image.width-side)/2,sy=(image.height-side)/2;context.drawImage(image,sx,sy,side,side,0,0,size,size);resolve(canvas.toDataURL("image/jpeg",.82))};image.src=reader.result};reader.readAsDataURL(file)});$("#profilePhotoPreview").src=pendingProfilePhoto}catch{showError("Impossible de préparer cette photo")}};
+const availabilityLabels={available:"Disponible",busy:"Occupé",away:"Absent"};
+async function showPublicProfile(id,fallbackName="Utilisateur"){if(id===user.uid)return showProfile();viewedProfile={id:String(id),name:fallbackName};$("#publicProfileError").textContent="";$("#publicProfileModal").classList.remove("hidden");try{const profile=await(await api(`/api/profile/${encodeURIComponent(id)}`)).json();viewedProfile={id:String(profile.user_id),name:profile.display_name};$("#publicProfilePhoto").src=profile.photo||"";$("#publicProfileName").innerHTML=`${safe(profile.display_name)}${profile.verified?'<span class="verified-badge" title="Profil vérifié">✓</span>':""}`;$("#publicProfileStatus").textContent=availabilityLabels[profile.availability]||"Disponible";$("#publicProfileBio").textContent=profile.bio||"Aucune description.";$("#publicProfileCity").textContent=profile.city||"Ville masquée";$("#publicProfileLastSeen").textContent=isOnline(profile.user_id)?"En ligne maintenant":profile.last_seen?new Date(profile.last_seen).toLocaleString("fr-FR"):"Non disponible";const relation=friendRelations.get(String(profile.user_id)),friendButton=$("#publicProfileFriend");friendButton.classList.toggle("hidden",Boolean(relation));friendButton.textContent=relation?.status==="accepted"?"Déjà ami":"Ajouter en ami"}catch(e){$("#publicProfileError").textContent=e.message}}
+$("#closePublicProfile").onclick=()=>$("#publicProfileModal").classList.add("hidden");
+$("#publicProfileMessage").onclick=()=>{if(!viewedProfile)return;$("#publicProfileModal").classList.add("hidden");openPrivate(viewedProfile.id,viewedProfile.name)};
+$("#publicProfileFriend").onclick
+  $("#publicProfileCall").onclick = async () => {
+  if (!viewedProfile) return;
+  const person = lastPeople.find(p => String(p.id) === String(viewedProfile.id));
+  if (!person?.socketId) {
+    $("#publicProfileError").textContent = "Ce membre n’est plus disponible pour un appel.";
+    return;
+  }
+  $("#publicProfileModal").classList.add("hidden");
+  await startDirectCall(person.socketId, viewedProfile.name);
+};
+
+$("#publicProfileMore").onclick = () => {
+  const menu = $("#publicProfileMoreMenu");
+  const isOpen = menu.classList.toggle("hidden") === false;
+  $("#publicProfileMore").setAttribute("aria-expanded", String(isOpen));
+};
+
+$("#publicProfileReport").onclick = () => {
+  if (!viewedProfile) return;
+  const target = { ...viewedProfile };
+  $("#publicProfileMoreMenu").classList.add("hidden");
+  $("#publicProfileModal").classList.add("hidden");
+  openReport(target);
+};
+
+$("#publicProfileBlock").onclick = async () => {
+  if (!viewedProfile) return;
+  const target = { ...viewedProfile };
+  if (!confirm(`Bloquer ${target.name} ? Cette personne ne pourra plus vous écrire.`)) return;
+  try {
+    await api(`/api/blocks/${encodeURIComponent(target.id)}`, { method: "POST" });
+    blockedUsers.set(String(target.id), {
+      user_id: String(target.id),
+      display_name: target.name
+    });
+    await loadFriends();
+    $("#publicProfileMoreMenu").classList.add("hidden");
+    $("#publicProfileModal").classList.add("hidden");
+    renderBlockedUsers();
+    renderPeople(lastPeople);
+  } catch (error) {
+    $("#publicProfileError").textContent = error.message;
+  }
+};
+
+$("#publicProfileFriend").onclick = async () => {
+  if (!viewedProfile) return;
+  await sendFriendRequest(viewedProfile.id);
+  $("#publicProfileFriend").classList.add("hidden");
+};
+async function loadProfile() {
+  try {
+    const profile = await (await api("/api/profile")).json();
+    if (!profile) openProfile(null);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+async function showProfile() {
+  openProfile(null);
+  renderBlockedUsers();
+  try {
+    openProfile(await (await api("/api/profile")).json());
+  } catch (e) {
+    $("#profileError").textContent = e.message;
+  }
+}
+$("#profileBtn").onclick = showProfile;
+$("#mobileProfileBtn").onclick = showProfile;
+$("#closeProfile").onclick = () => $("#profileModal").classList.add("hidden");
+$("#profileForm").onsubmit = async (event) => {
+  event.preventDefault();
+  $("#profileError").textContent = "";
+  try {
+    const profile = await (
+      await api("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          displayName: $("#profileName").value,
+          city: $("#profileCity").value,
+          bio: $("#profileBio").value,
+          gender: $("#profileGender").value,
+          availability: $("#profileAvailability").value,
+          privateMessagePolicy: $("#profilePrivateMessages").value,
+          photoData: pendingProfilePhoto,
+          locationVisible: $("#profileVisible").checked,
+        }),
+      })
+    ).json();
+    $("#meName").textContent = profile.display_name;
+    $("#mePhoto").src = profile.photo || "";
+    $("#profileModal").classList.add("hidden");
+  } catch (e) {
+    $("#profileError").textContent = e.message;
+  }
+};
+async function loadContactEmail() {
+  try {
+    const data = await (await fetch("/api/public-config")).json(),
+      link = $("#contactEmail");
+    if (data.contactEmail) {
+      link.textContent = data.contactEmail;
+      link.href = `mailto:${data.contactEmail}`;
+    } else {
+      link.textContent = "Adresse à configurer dans Render";
+      link.removeAttribute("href");
+    }
+  } catch {}
+}
+async function loadSubscription() {
+  try {
+    const data = await (await api("/api/subscription")).json(),
+      label = data.plan === "premium_plus" ? "Premium+" : "Premium";
+    $("#premiumState").textContent = data.premium
+      ? `${label} actif — sans publicité`
+      : "Compte gratuit — avec publicité";
+    $("#premiumChoices").classList.toggle("hidden", data.premium);
+    $("#managePremium").classList.toggle("hidden", !data.canManage);
+    $("#premiumBadge").classList.toggle("hidden", !data.premium);
+    $("#adBanner").classList.toggle("hidden", data.premium);
+    $("#callBtn").classList.remove("hidden");
+    $("#callBtn").disabled = false;
+  } catch (e) {
+    showError(e.message);
+  }
+}
+async function startPremium(plan, button) {
+  button.disabled = true;
+  $("#profileError").textContent = "";
+  try {
+    const data = await (
+      await api("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      })
+    ).json();
+    location.href = data.url;
+  } catch (e) {
+    $("#profileError").textContent = e.message;
+    button.disabled = false;
+  }
+}
+$("#subscribePremium").onclick = () =>
+  startPremium("premium", $("#subscribePremium"));
+$("#subscribePremiumPlus").onclick = () =>
+  startPremium("premium_plus", $("#subscribePremiumPlus"));
+$("#managePremium").onclick = async () => {
+  const button = $("#managePremium");
+  button.disabled = true;
+  try {
+    const data = await (
+      await api("/api/stripe/portal", { method: "POST" })
+    ).json();
+    location.href = data.url;
+  } catch (e) {
+    $("#profileError").textContent = e.message;
+    button.disabled = false;
+  }
+};
+$("#exportAccount").onclick = async () => {
+  const button = $("#exportAccount");
+  button.disabled = true;
+  try {
+    const response = await api("/api/account-export"),
+      blob = await response.blob(),
+      url = URL.createObjectURL(blob),
+      link = document.createElement("a");
+    link.href = url;
+    link.download = `letchat-donnees-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showError("Vos données ont été téléchargées");
+  } catch (e) {
+    $("#profileError").textContent = e.message;
+  } finally {
+    button.disabled = false;
+  }
+};
+$("#deleteAccount").onclick = async () => {
+  if (
+    !confirm(
+      "Cette action supprimera définitivement votre profil, vos messages et vos relations Letchat. Continuer ?",
+    )
+  )
+    return;
+  const confirmation = prompt("Pour confirmer, écrivez exactement : SUPPRIMER");
+  if (confirmation !== "SUPPRIMER") return showError("Suppression annulée");
+  const button = $("#deleteAccount");
+  button.disabled = true;
+  try {
+    await api("/api/account", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmation }),
+    });
+    socket?.disconnect();
+    if (localSessionToken) {
+      localStorage.removeItem("letchatLocalToken");
+      sessionStorage.removeItem("letchatGuestToken");
+      localSessionToken = "";
+    } else {
+      try {
+        await deleteUser(user);
+      } catch {
+        await signOut(auth);
+      }
+    }
+    alert("Votre compte et vos données Letchat ont été supprimés.");
+    location.reload();
+  } catch (e) {
+    $("#profileError").textContent = e.message;
+    button.disabled = false;
+  }
+};
+const reportReasons = {
+  harassment: "Harcèlement ou menace",
+  spam: "Spam ou publicité",
+  inappropriate: "Contenu inapproprié",
+  fake: "Faux profil",
+  other: "Autre raison",
+};
+async function checkAdmin() {
+  try {
+    const data = await (await api("/api/admin/me")).json();
+    $("#adminBtn").classList.toggle("hidden", !data.admin);
+  } catch {
+    $("#adminBtn").classList.add("hidden");
+  }
+}
+async function loadAdminReports() {
+  const list = $("#reportList");
+  list.innerHTML = '<p class="admin-loading">Chargement…</p>';
+  $("#adminError").textContent = "";
+  try {
+    if ($("#adminStatus").value === "journal") {
+      const rows = await (await api("/api/admin/moderation-log")).json();
+      const actionLabels = {
+        report_resolved: "Signalement traité",
+        report_dismissed: "Signalement rejeté",
+        report_reopened: "Signalement rouvert",
+        message_deleted: "Message supprimé",
+        user_suspended: "Compte suspendu",
+        user_unsuspended: "Compte réactivé",
+        profile_verified: "Profil vérifié",
+        profile_unverified: "Vérification retirée",
+      };
+      list.innerHTML = rows.length
+        ? rows.map((entry) =>
+            `<article class="report-item moderation-log-item"><div class="report-head"><strong>${safe(actionLabels[entry.action] || entry.action)}</strong><time>${new Date(entry.created_at).toLocaleString("fr-FR")}</time></div><p><b>Administrateur :</b> ${safe(entry.admin_name)}</p>${entry.target_user_id ? `<p><b>Utilisateur concerné :</b> ${safe(entry.target_name || "Utilisateur")}</p>` : ""}${entry.report_id ? `<p><b>Signalement :</b> n°${safe(entry.report_id)}</p>` : ""}${entry.details ? `<p class="report-details">${safe(entry.details)}</p>` : ""}</article>`
+          ).join("")
+        : '<p class="admin-empty">Aucune action de modération enregistrée.</p>';
+      return;
+    }
+    if ($("#adminStatus").value === "profiles") {
+      list.innerHTML = '<div class="admin-profile-search"><input id="adminProfileSearch" maxlength="100" placeholder="Rechercher un nom, un e-mail ou une ville"><button id="adminProfileSearchButton" type="button">Rechercher</button></div><div id="adminProfilesResults"><p class="admin-loading">Chargement…</p></div>';
+      const loadProfiles = async () => {
+        const results = $("#adminProfilesResults"), query = $("#adminProfileSearch").value.trim();
+        results.innerHTML = '<p class="admin-loading">Chargement…</p>';
+        const profiles = await (await api(`/api/admin/profiles?q=${encodeURIComponent(query)}`)).json();
+        results.innerHTML = profiles.length ? profiles.map((profile) => `<article class="report-item admin-profile-item" data-user-id="${safe(profile.user_id)}"><div><strong>${safe(profile.display_name)}${profile.verified?'<span class="verified-badge">✓</span>':""}</strong><small>${safe(profile.email || "")}${profile.city?` · ${safe(profile.city)}`:""}</small></div><button type="button" data-verified="${profile.verified ? "false" : "true"}" class="${profile.verified ? "danger" : ""}">${profile.verified ? "Retirer la vérification" : "Vérifier le profil"}</button></article>`).join("") : '<p class="admin-empty">Aucun profil trouvé.</p>';
+        results.querySelectorAll("[data-verified]").forEach((button) => button.onclick = async () => {
+          button.disabled = true;
+          try {
+            await api(`/api/admin/profiles/${encodeURIComponent(button.closest(".admin-profile-item").dataset.userId)}/verification`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ verified: button.dataset.verified === "true" }) });
+            await loadProfiles();
+          } catch (error) { $("#adminError").textContent = error.message; button.disabled = false; }
+        });
+      };
+      $("#adminProfileSearchButton").onclick = loadProfiles;
+      $("#adminProfileSearch").onkeydown = (event) => { if (event.key === "Enter") { event.preventDefault(); loadProfiles(); } };
+      await loadProfiles();
+      return;
+    }
+    if ($("#adminStatus").value === "stats") {
+      const stats = await (await api("/api/admin/stats")).json();
+      const cards = [
+        ["Utilisateurs inscrits", stats.users],
+        ["En ligne maintenant", stats.online],
+        ["Messages sur 24 h", stats.messages24h],
+        ["Signalements à traiter", stats.pendingReports],
+        ["Suspensions actives", stats.activeSuspensions],
+        ["Abonnements Premium", stats.premium],
+      ];
+      list.innerHTML = `<div class="admin-stats">${cards.map(([label, value]) => `<article><strong>${safe(value)}</strong><span>${safe(label)}</span></article>`).join("")}</div><p class="admin-stats-note">Données actualisées au ${new Date().toLocaleString("fr-FR")}.</p>`;
+      return;
+    }
+    const rows = await (
+      await api(
+        `/api/admin/reports?status=${encodeURIComponent($("#adminStatus").value)}`,
+      )
+    ).json();
+    list.innerHTML = rows.length
+      ? rows
+          .map(
+            (report) =>
+              `<article class="report-item" data-report-id="${report.id}" data-user-id="${safe(report.reported_id)}"><div class="report-head"><strong>${safe(report.reported_name)}</strong><time>${new Date(report.created_at).toLocaleString("fr-FR")}</time></div><p><b>Motif :</b> ${safe(reportReasons[report.reason] || report.reason)}</p><p><b>Signalé par :</b> ${safe(report.reporter_name)}</p>${report.evidence_body ? `<blockquote class="report-evidence"><b>Message signalé :</b><br>${safe(report.evidence_body)}</blockquote>` : ""}${report.details ? `<p class="report-details">${safe(report.details)}</p>` : ""}<p class="suspension-state">${report.suspended ? "Compte actuellement suspendu" : "Compte actif"}</p><div class="admin-actions">${$("#adminStatus").value === "pending" ? '<button data-action="resolved">Traité</button><button data-action="dismissed">Rejeter</button>' : ""}${report.message_id ? '<button data-action="delete-message" class="danger">Supprimer le message</button>' : ""}<button data-action="24h">Suspendre 24 h</button><button data-action="7d">Suspendre 7 jours</button><button data-action="permanent" class="danger">Suspendre définitivement</button>${report.suspended ? '<button data-action="unsuspend">Réactiver</button>' : ""}</div></article>`,
+          )
+          .join("")
+      : '<p class="admin-empty">Aucun signalement dans cette catégorie.</p>';
+    list
+      .querySelectorAll("[data-action]")
+      .forEach((button) => (button.onclick = () => adminAction(button)));
+  } catch (e) {
+    list.innerHTML = "";
+    $("#adminError").textContent = e.message;
+  }
+}
+async function adminAction(button) {
+  const card = button.closest(".report-item"),
+    action = button.dataset.action,
+    reportId = card.dataset.reportId,
+    userId = card.dataset.userId;
+  button.disabled = true;
+  try {
+    if (["resolved", "dismissed"].includes(action)) {
+      await api(`/api/admin/reports/${encodeURIComponent(reportId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: action }),
+      });
+    } else if (action === "delete-message") {
+      if (!confirm("Supprimer définitivement le message signalé ?")) return;
+      await api(`/api/admin/reports/${encodeURIComponent(reportId)}/message`, { method: "DELETE" });
+    } else if (action === "unsuspend") {
+      await api(`/api/admin/suspensions/${encodeURIComponent(userId)}`, {
+        method: "DELETE",
+      });
+    } else {
+      if (!confirm(`Confirmer la suspension (${action}) ?`)) return;
+      await api(`/api/admin/suspensions/${encodeURIComponent(userId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          duration: action,
+          reason: "Signalement traité par la modération",
+        }),
+      });
+    }
+    await loadAdminReports();
+  } catch (e) {
+    $("#adminError").textContent = e.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+$("#adminBtn").onclick = () => {
+  $("#adminModal").classList.remove("hidden");
+  loadAdminReports();
+};
+$("#closeAdmin").onclick = () => $("#adminModal").classList.add("hidden");
+$("#refreshReports").onclick = loadAdminReports;
+$("#adminStatus").onchange = loadAdminReports;
+function openReport(target, message = null) {
+  reportContext = { target, message };
+  $("#reportTarget").textContent =
+    message
+      ? `Vous signalez un message de ${target.name}. Son contenu sera joint comme preuve.`
+      : `Vous signalez ${target.name}. Le signalement sera transmis à la modération.`;
+  $("#reportReason").value = "";
+  $("#reportDetails").value = "";
+  $("#reportError").textContent = "";
+  $("#reportModal").classList.remove("hidden");
+}
+$("#reportBtn").onclick = () => {
+  if (currentPrivate) openReport(currentPrivate);
+};
+$("#closeReport").onclick = () => $("#reportModal").classList.add("hidden");
+$("#reportForm").onsubmit = async (event) => {
+  event.preventDefault();
+  if (!reportContext?.target) return;
+  const button = $(".report-submit");
+  button.disabled = true;
+  $("#reportError").textContent = "";
+  try {
+    await api("/api/reports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        reportedId: reportContext.target.id,
+        messageKind: reportContext.message ? (reportContext.message.private ? "private" : "public") : null,
+        messageId: reportContext.message?.id || null,
+        reason: $("#reportReason").value,
+        details: $("#reportDetails").value,
+      }),
+    });
+    $("#reportModal").classList.add("hidden");
+    showError("Signalement envoyé à la modération");
+  } catch (e) {
+    $("#reportError").textContent = e.message;
+  } finally {
+    button.disabled = false;
+  }
+};
+$("#blockBtn").onclick = async () => {
+  if (!currentPrivate) return;
+  const target = { ...currentPrivate };
+  if (
+    !confirm(
+      `Bloquer ${target.name} ? Cette personne ne pourra plus vous écrire.`,
+    )
+  )
+    return;
+  try {
+    await api(`/api/blocks/${encodeURIComponent(target.id)}`, {
+      method: "POST",
+    });
+    blockedUsers.set(String(target.id), {
+      user_id: String(target.id),
+      display_name: target.name,
+    });
+    await loadFriends();
+    currentPrivate = null;
+    privateContactStatus = null;
+    socket?.emit("watch-private-status", "");
+    stopTyping(target.id);
+    viewOnceEnabled = false;
+    updateViewOnceButton();
+    $("#blockBtn").classList.add("hidden");
+    $("#reportBtn").classList.add("hidden");
+    $(".chat header h1").textContent = rooms[currentRoom].title;
+    $("#roomPresence").classList.remove("hidden");
+    $("#privateTypingStatus").classList.add("hidden");
+    renderPeople(lastPeople);
+    load();
+    showError(`${target.name} a été bloqué`);
+  } catch (e) {
+    showError(e.message);
+  }
+};
+const roomLinks = [...document.querySelectorAll(".room")];
+function updateRoomBadges() {
+  roomLinks.forEach((link) => {
+    const count = roomUnread.get(link.dataset.room) || 0;
+    let badge = link.querySelector(".room-unread");
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "room-unread hidden";
+      link.append(badge);
+    }
+    badge.textContent = count > 99 ? "99+" : String(count);
+    badge.classList.toggle("hidden", count === 0);
+  });
+}
+function updateRoomFeature() {
+  const panel = $("#roomFeature");
+  if (!panel) return;
+  if (currentPrivate || !["amateurs", "webcam"].includes(currentRoom)) {
+    panel.classList.add("hidden");
+    panel.innerHTML = "";
+    return;
+  }
+  panel.classList.remove("hidden");
+  if (currentRoom === "amateurs") {
+    panel.innerHTML = `<div class="room-feature-title"><b>▣ Galerie des membres</b><span>Ajoutez une photo ou une vidéo avec le bouton de pièce jointe.</span></div>`;
+    return;
+  }
+  const seen = new Set();
+  const available = lastPeople.filter((person) => {
+    if (person.id === user.uid || person.availability !== "available" || seen.has(person.id)) return false;
+    seen.add(person.id);
+    return true;
+  });
+  panel.innerHTML = `<div class="room-feature-title"><b>▣ Membres disponibles en Webcam</b><span>${available.length ? `${available.length} membre${available.length > 1 ? "s" : ""} disponible${available.length > 1 ? "s" : ""}` : "Aucun autre membre disponible pour le moment"}</span></div>${available.length ? `<div class="webcam-members">${available.map((person) => `<article><span class="webcam-avatar">${person.photo ? `<img src="${safe(person.photo)}" alt="">` : safe(initials(person.name))}</span><strong>${safe(person.name)}</strong><button type="button" data-webcam-message="${safe(person.id)}" data-webcam-name="${safe(person.name)}">Écrire</button><button type="button" data-webcam-call="${safe(person.socketId || "")}" data-webcam-name="${safe(person.name)}" ${person.socketId ? "" : "disabled"}>Appeler</button></article>`).join("")}</div>` : ""}`;
+  panel.querySelectorAll("[data-webcam-message]").forEach((button) => button.onclick = () => openPrivate(button.dataset.webcamMessage, button.dataset.webcamName));
+  panel.querySelectorAll("[data-webcam-call]").forEach((button) => button.onclick = () => startDirectCall(button.dataset.webcamCall, button.dataset.webcamName));
+}
+function selectRoom(link, id) {
+  clearReply();
+  const previousPrivateId = currentPrivate?.id;
+  if (previousPrivateId) stopTyping(previousPrivateId);
+  currentPrivate = null;
+  privateContactStatus = null;
+  socket?.emit("watch-private-status", "");
+  viewOnceEnabled = false;
+  updateViewOnceButton();
+  $("#blockBtn").classList.add("hidden");
+  $("#reportBtn").classList.add("hidden");
+  if (currentRoom !== id) {
+    currentRoom = id;
+    lastPeople = [];
+    socket?.emit("join-room", id);
+  }
+  roomUnread.delete(id);
+  updateRoomBadges();
+  roomLinks.forEach((item) => item.classList.remove("active"));
+  link.classList.add("active");
+  $(".side").classList.remove("open");
+  $(".chat header h1").textContent = rooms[id].title;
+  $("#roomPresence").classList.remove("hidden");
+  $("#privateTypingStatus").classList.add("hidden");
+  $("#typing").textContent = "";
+  updateRoomFeature();
+  load();
+}
+function updateViewOnceButton() {
+  const button = $("#viewOnceBtn");
+  button.classList.toggle("hidden", !currentPrivate);
+  button.classList.toggle("active", viewOnceEnabled && Boolean(currentPrivate));
+  button.title = viewOnceEnabled ? "Visible une seule fois activé" : "Photo ou vidéo visible une seule fois";
+}
+$("#viewOnceBtn").onclick = () => {
+  viewOnceEnabled = !viewOnceEnabled;
+  updateViewOnceButton();
+};
+roomLinks.forEach((link) => {
+  const id = link.dataset.room;
+  if (!id || !rooms[id]) return;
+  link.onclick = () => {
+    if (id === "entraide" && localStorage.getItem("letchatAdultRoomAccepted") !== "yes") {
+      pendingAdultSelection = { link, id };
+      $(".side").classList.remove("open");
+      $("#adultRoomWarning").classList.remove("hidden");
+      return;
+    }
+    selectRoom(link, id);
+  };
+});
+$("#leaveAdultRoom").onclick = () => { pendingAdultSelection = null; $("#adultRoomWarning").classList.add("hidden"); };
+$("#enterAdultRoom").onclick = () => {
+  localStorage.setItem("letchatAdultRoomAccepted", "yes");
+  $("#adultRoomWarning").classList.add("hidden");
+  if (pendingAdultSelection) selectRoom(pendingAdultSelection.link, pendingAdultSelection.id);
+  pendingAdultSelection = null;
+};
+document.querySelector(".new").onclick = () => $("#input").focus();
+$("#roomsBtn").onclick = () => $(".side").classList.add("open");
+$("#closeSide").onclick = () => $(".side").classList.remove("open");
+$("#peopleBtn").onclick = () => {
+  $(".people").classList.add("open");
+  requestNotifications();
+};
+$("#closePeople").onclick = () => $(".people").classList.remove("open");
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") { load(); if (currentPrivate) markPrivateRead(currentPrivate.id) }
+});
+window.addEventListener("focus", () => { load(); if (currentPrivate) markPrivateRead(currentPrivate.id) });
+async function prepareIce() {
+  if (iceServers.length) return iceServers;
+  if (!icePromise)
+    icePromise = api("/api/turn-credentials")
+      .then((r) => r.json())
+      .then((list) => {
+        if (!Array.isArray(list) || !list.length)
+          throw new Error("TURN indisponible");
+        iceServers = list;
+        return list;
+      })
+      .catch((error) => {
+        icePromise = null;
+        console.warn("TURN indisponible, utilisation du relais direct/STUN :", error);
+        iceServers = fallbackIceServers;
+        return iceServers;
+      });
+  return icePromise;
+}
+function peer(id, participantName = "Participant") {
+  if (peers.has(id)) return peers.get(id);
+  const pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 10 });
+  stream?.getTracks().forEach((t) => pc.addTrack(t, stream));
+  pc.onicecandidate = (e) =>
+    e.candidate &&
+    socket.emit("webrtc", {
+      target: id,
+      data: { type: "ice", candidate: e.candidate },
+    });
+  pc.ontrack = (e) => addRemote(id, e.streams[0], participantName);
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === "connected") {
+      $("#error").classList.add("hidden");
+      setCallStatus("Connecté");
+      setCameraStatus();
+      startCallTimer();
+    }
+    if (pc.connectionState === "connecting") setCallStatus("Connexion en cours…");
+    if (pc.connectionState === "disconnected") setCallStatus("Reconnexion…");
+    if (["failed", "closed"].includes(pc.connectionState)) {
+      document.getElementById(`v-${id}`)?.remove();
+      peers.delete(id);
+      if (pc.connectionState === "failed")
+        showError("Connexion vidéo interrompue");
+      if (pc.connectionState === "failed") setCallStatus("Connexion interrompue");
+    }
+  };
+  peers.set(id, pc);
+  return pc;
+}
+function mediaErrorMessage(error) {
+  const messages = {
+    NotAllowedError: "Accès caméra/micro refusé par le navigateur",
+    NotFoundError: "Aucune caméra ou aucun microphone détecté",
+    NotReadableError:
+      "La caméra ne fournit pas d’image. Fermez les autres applications vidéo puis réessayez",
+    OverconstrainedError: "Caméra incompatible avec les réglages demandés",
+    SecurityError: "Accès caméra/micro bloqué pour ce site",
+    AbortError: "Ouverture de la caméra interrompue",
+  };
+  return (
+    messages[error?.name] ||
+    `Caméra/micro indisponible (${error?.name || "erreur inconnue"})`
+  );
+}
+function setCameraStatus(message = "") {
+  const status = $("#cameraStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("hidden", !message);
+}
+function setCallStatus(message = "") {
+  const status = $("#callConnectionStatus");
+  if (status) status.textContent = message;
+}
+function startCallTimer() {
+  if (callTimer) return;
+  callStartedAt = Date.now();
+  callTimer = setInterval(() => {
+    const seconds = Math.floor((Date.now() - callStartedAt) / 1000);
+    $("#callDuration").textContent = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  }, 1000);
+}
+function stopCallTimer() {
+  clearInterval(callTimer);
+  callTimer = null;
+  callStartedAt = 0;
+  if ($("#callDuration")) $("#callDuration").textContent = "00:00";
+}
+function ringPulse() {
+  try {
+    ringtoneContext ||= new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ringtoneContext.createOscillator(), gain = ringtoneContext.createGain();
+    oscillator.frequency.value = 740;
+    gain.gain.setValueAtTime(0.0001, ringtoneContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, ringtoneContext.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ringtoneContext.currentTime + 0.28);
+    oscillator.connect(gain).connect(ringtoneContext.destination);
+    oscillator.start();
+    oscillator.stop(ringtoneContext.currentTime + 0.3);
+  } catch {}
+}
+function startRingtone() {
+  stopRingtone();
+  ringPulse();
+  ringtoneTimer = setInterval(ringPulse, 1200);
+}
+function stopRingtone() {
+  clearInterval(ringtoneTimer);
+  ringtoneTimer = null;
+  navigator.vibrate?.(0);
+}
+function updateMediaControls() {
+  const audioEnabled = Boolean(stream?.getAudioTracks().some(t => t.enabled && t.readyState === "live"));
+  const videoEnabled = Boolean(stream?.getVideoTracks().some(t => t.enabled && t.readyState === "live"));
+  $("#mic").classList.toggle("control-off", !audioEnabled);
+  $("#cam").classList.toggle("control-off", !videoEnabled);
+  $("#mic").setAttribute("aria-pressed", String(audioEnabled));
+  $("#cam").setAttribute("aria-pressed", String(videoEnabled));
+  $("#mic span").textContent = audioEnabled ? "Micro" : "Micro coupé";
+  $("#cam span").textContent = videoEnabled ? "Caméra" : "Caméra coupée";
+}
+async function openCamera() {
+  let lastError;
+  const attempts = [
+    { video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: true, audio: false },
+  ];
+  for (const constraints of attempts) {
+    try {
+      const cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const track = cameraStream.getVideoTracks()[0];
+      if (track) return track;
+    } catch (error) {
+      lastError = error;
+      console.error("Caméra :", error.name, error.message);
+    }
+  }
+  throw lastError || new DOMException("Caméra indisponible", "NotFoundError");
+}
+async function startMedia() {
+  if (mediaStartPromise) return mediaStartPromise;
+  mediaStartPromise = startMediaOnce();
+  try {
+    return await mediaStartPromise;
+  } finally {
+    mediaStartPromise = null;
+  }
+}
+async function startMediaOnce() {
+  const active =
+    stream && stream.getTracks().some((track) => track.readyState === "live");
+  if (active) {
+    $("#localVideo").srcObject = stream;
+    $("#call").classList.remove("hidden");
+    inVideoCall = true;
+    updateMediaControls();
+    return true;
+  }
+  stream?.getTracks().forEach((track) => track.stop());
+  stream = null;
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showError("Ce navigateur ne permet pas l’accès à la caméra");
+    return false;
+  }
+  stream = new MediaStream();
+  let cameraError;
+  try {
+    stream.addTrack(await openCamera());
+    setCameraStatus();
+  } catch (error) {
+    cameraError = error;
+    setCameraStatus(`${mediaErrorMessage(error)}. Cliquez sur « Caméra » pour réessayer.`);
+  }
+  try {
+    const audioStream = await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: { echoCancellation: true, noiseSuppression: true },
+    });
+    audioStream.getAudioTracks().forEach((track) => stream.addTrack(track));
+  } catch (error) {
+    console.error("Microphone :", error.name, error.message);
+  }
+  if (!stream.getTracks().length) {
+    showError(mediaErrorMessage(cameraError));
+    return false;
+  }
+  $("#localVideo").srcObject = stream;
+  $("#localVideo").muted = true;
+  const localVideo = $("#localVideo");
+  await localVideo.play().catch((error) => console.warn("Lecture vidéo locale :", error));
+  const videoTrack = stream.getVideoTracks()[0];
+  if (videoTrack) {
+    const settings = videoTrack.getSettings?.() || {};
+    setCameraStatus(videoTrack.muted
+      ? "La caméra est ouverte mais ne fournit pas encore d’image"
+      : "");
+    videoTrack.onunmute = () => setCameraStatus();
+    videoTrack.onended = () => setCameraStatus("La caméra a été déconnectée. Cliquez sur « Caméra » pour réessayer.");
+    console.info("Caméra active", { readyState: videoTrack.readyState, muted: videoTrack.muted, width: settings.width, height: settings.height });
+  }
+  $("#call").classList.remove("hidden");
+  inVideoCall = true;
+  updateMediaControls();
+  await prepareIce();
+  return true;
+}
+async function flushIce(id, pc) {
+  const list = pendingIce.get(id) || [];
+  pendingIce.delete(id);
+  for (const candidate of list)
+    try {
+      await pc.addIceCandidate(candidate);
+    } catch {}
+}
+async function handleSignal({ from, user: remoteUser, data }) {
+  if (!from || !data?.type) return;
+  if (data.type === "invite") {
+    if (inVideoCall) {
+      socket.emit("webrtc", { target: from, data: { type: "decline", reason: "busy" } });
+      return;
+    }
+    pendingIncomingCall = { from, user: remoteUser };
+    $("#incomingCallerName").textContent = remoteUser?.name || "Un utilisateur";
+    $("#incomingCall").classList.remove("hidden");
+    startRingtone();
+    clearTimeout(incomingCallTimer);
+    incomingCallTimer = setTimeout(() => declineIncomingCall("timeout"), 30000);
+    navigator.vibrate?.([250, 150, 250]);
+    return;
+  }
+  if (data.type === "decline") {
+    showError(data.reason === "busy" ? "La personne est déjà en appel" : "Appel refusé ou sans réponse");
+    hang();
+    return;
+  }
+  if (data.type === "leave") {
+    if (pendingIncomingCall?.from === from) closeIncomingCall();
+    const old = peers.get(from);
+    old?.close();
+    peers.delete(from);
+    pendingIce.delete(from);
+    document.getElementById(`v-${from}`)?.remove();
+    return;
+  }
+  if (data.type === "ice" && !peers.has(from)) {
+    const list = pendingIce.get(from) || [];
+    list.push(data.candidate);
+    pendingIce.set(from, list);
+    return;
+  }
+  if (data.type === "join" && !inVideoCall) {
+    showError("Un utilisateur a lancé un appel. Cliquez sur « Appeler » pour le rejoindre.");
+    return;
+  }
+  if (data.type === "offer" && !inVideoCall) return;
+  if ((data.type === "join" || data.type === "offer") && !(await startMedia()))
+    return;
+  const pc = peer(from, remoteUser?.name || "Participant");
+  try {
+    if (data.type === "join") {
+      const o = await pc.createOffer();
+      await pc.setLocalDescription(o);
+      socket.emit("webrtc", { target: from, data: { type: "offer", sdp: o } });
+    } else if (data.type === "offer") {
+      await pc.setRemoteDescription(data.sdp);
+      await flushIce(from, pc);
+      const a = await pc.createAnswer();
+      await pc.setLocalDescription(a);
+      socket.emit("webrtc", { target: from, data: { type: "answer", sdp: a } });
+    } else if (data.type === "answer") {
+      await pc.setRemoteDescription(data.sdp);
+      await flushIce(from, pc);
+    } else if (data.type === "ice") {
+      if (pc.remoteDescription) await pc.addIceCandidate(data.candidate);
+      else {
+        const list = pendingIce.get(from) || [];
+        list.push(data.candidate);
+        pendingIce.set(from, list);
+      }
+    }
+  } catch (error) {
+    console.error("Négociation WebRTC :", error);
+    showError("La connexion vidéo a échoué. Quittez l’appel puis réessayez.");
+  }
+}
+function addRemote(id, s, participantName = "Participant") {
+  let d = document.getElementById(`v-${id}`);
+  if (!d) {
+    d = document.createElement("div");
+    d.id = `v-${id}`;
+    d.className = "video";
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.playsInline = true;
+    const label = document.createElement("span");
+    label.textContent = participantName;
+    d.append(video, label);
+    $("#videoGrid").append(d);
+  }
+  const remoteVideo = d.querySelector("video");
+  remoteVideo.srcObject = s;
+  remoteVideo.play().catch((error) => console.warn("Lecture vidéo distante :", error));
+}
+async function startDirectCall(socketId, participantName) {
+  if (!socketId) return showError("Ce membre n’est plus disponible");
+  if (await startMedia()) {
+    setCameraStatus(`Appel de ${participantName}…`);
+    setCallStatus("Sonnerie…");
+    socket.emit("webrtc", { target: socketId, data: { type: "invite" } });
+  }
+}
+$("#callBtn").onclick = async () => {
+  if (await startMedia()) {
+    setCameraStatus("Appel en cours… En attente d’un participant.");
+    setCallStatus("Sonnerie…");
+    socket.emit("webrtc", { target: null, data: { type: "invite" } });
+  }
+};
+function closeIncomingCall() {
+  stopRingtone();
+  clearTimeout(incomingCallTimer);
+  incomingCallTimer = null;
+  pendingIncomingCall = null;
+  $("#incomingCall").classList.add("hidden");
+}
+function declineIncomingCall(reason = "declined") {
+  const call = pendingIncomingCall;
+  closeIncomingCall();
+  if (call) socket.emit("webrtc", { target: call.from, data: { type: "decline", reason } });
+}
+$("#acceptIncomingCall").onclick = async () => {
+  const call = pendingIncomingCall;
+  if (!call) return;
+  clearTimeout(incomingCallTimer);
+  $("#acceptIncomingCall").disabled = true;
+  try {
+    if (!await startMedia()) return;
+    closeIncomingCall();
+    setCameraStatus();
+    setCallStatus("Connexion en cours…");
+    socket.emit("webrtc", { target: call.from, data: { type: "join" } });
+  } finally {
+    $("#acceptIncomingCall").disabled = false;
+  }
+};
+$("#declineIncomingCall").onclick = () => declineIncomingCall();
+function hang() {
+  socket.emit("webrtc", { target: null, data: { type: "leave" } });
+  stream?.getTracks().forEach((t) => t.stop());
+  stream = null;
+  mediaStartPromise = null;
+  inVideoCall = false;
+  stopCallTimer();
+  setCallStatus("Appel terminé");
+  peers.forEach((p) => p.close());
+  peers.clear();
+  pendingIce.clear();
+  document
+    .querySelectorAll("#videoGrid .video:not(:first-child)")
+    .forEach((x) => x.remove());
+  $("#call").classList.add("hidden");
+  closeIncomingCall();
+}
+$("#hangup").onclick = $("#closeCall").onclick = hang;
+$("#mic").onclick = () => {
+  stream?.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
+  updateMediaControls();
+};
+$("#cam").onclick = async () => {
+  const track = stream?.getVideoTracks()[0];
+  if (track) {
+    track.enabled = !track.enabled;
+    setCameraStatus(track.enabled ? "" : "Caméra désactivée");
+    updateMediaControls();
+    return;
+  }
+  try {
+    const newTrack = await openCamera();
+    stream ||= new MediaStream();
+    stream.addTrack(newTrack);
+    $("#localVideo").srcObject = stream;
+    await $("#localVideo").play().catch(() => {});
+    for (const [id, pc] of peers) {
+      pc.addTrack(newTrack, stream);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("webrtc", { target: id, data: { type: "offer", sdp: offer } });
+    }
+    setCameraStatus();
+    updateMediaControls();
+  } catch (error) {
+    setCameraStatus(`${mediaErrorMessage(error)}. Vérifiez l’autorisation caméra du navigateur.`);
+  }
+};
+$("#fullscreenCall").onclick = async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await $("#call").requestFullscreen();
+  } catch { showError("Le plein écran n’est pas disponible sur cet appareil"); }
+};
+$("#screen").onclick = async () => {
+  try {
+    const s = await navigator.mediaDevices.getDisplayMedia({ video: true }),
+      track = s.getVideoTracks()[0];
+    peers.forEach((p) =>
+      p
+        .getSenders()
+        .find((x) => x.track?.kind === "video")
+        ?.replaceTrack(track),
+    );
+    track.onended = () => {
+      const cam = stream?.getVideoTracks()[0];
+      cam &&
+        peers.forEach((p) =>
+          p
+            .getSenders()
+            .find((x) => x.track?.kind === "video")
+            ?.replaceTrack(cam),
+        );
+    };
+  } catch {}
+};
