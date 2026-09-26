@@ -65,6 +65,8 @@ await pool.query(`
   ADD COLUMN IF NOT EXISTS room TEXT NOT NULL DEFAULT 'cafe';
   ALTER TABLE letchat_messages
   ADD COLUMN IF NOT EXISTS reply_to_id BIGINT;
+  ALTER TABLE letchat_messages
+  ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE;
   CREATE INDEX IF NOT EXISTS idx_letchat_messages_created
   ON letchat_messages(created_at);
   CREATE INDEX IF NOT EXISTS idx_letchat_messages_expires
@@ -1586,7 +1588,7 @@ app.get("/api/messages", auth, requireAdult, async (req, res, next) => {
   try {
     const room = getRoom(req.query.room);
     const { rows } = await pool.query(`
-      SELECT m.id, m.user_id, m.author, m.room, m.photo, m.body, m.media_type,
+      SELECT m.id, m.user_id, m.author, m.room, m.photo, m.body, m.media_type, m.pinned,
              m.created_at, m.expires_at, m.reply_to_id,
              parent.author AS reply_author, parent.body AS reply_body,
              (m.media_data IS NOT NULL) AS has_media,
@@ -1632,6 +1634,23 @@ app.get("/api/media/:id", auth, requireAdult, async (req, res, next) => {
   }
 });
 
+app.patch("/api/messages/:id/pin", auth, adminAuth, async (req, res, next) => {
+  try {
+    const pinned = req.body.pinned === true;
+    const { rows } = await pool.query(
+      `UPDATE letchat_messages SET pinned=$1
+       WHERE id=$2 AND room='cafe' AND expires_at > NOW()
+       RETURNING id, pinned`,
+      [pinned, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Message introuvable" });
+    io.to("cafe").emit("message-pinned", rows[0]);
+    res.json(rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/messages", auth, requireAdult, requireRules,
   rateLimitAction("public-message-burst", 8, 10 * 1000),
   rateLimitAction("public-messages", 30, 60 * 1000), async (req, res, next) => {
@@ -1666,7 +1685,7 @@ app.post("/api/messages", auth, requireAdult, requireRules,
       `INSERT INTO letchat_messages
        (user_id, author, room, photo, body, media_data, media_type, reply_to_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, user_id, author, room, photo, body, media_type, created_at, expires_at, reply_to_id,
+       RETURNING id, user_id, author, room, photo, body, media_type, pinned, created_at, expires_at, reply_to_id,
                  (media_data IS NOT NULL) AS has_media`,
       [req.user.id, req.user.name, room, req.user.photo, body, media, mediaType || null, reply?.id || null]
     );
