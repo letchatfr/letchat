@@ -18,7 +18,7 @@
 
   <title>Letchat</title>
 
-  <link rel="stylesheet" href="style.css?v=cafe-moderne-v1" />
+  <link rel="stylesheet" href="style.css?v=messages-appels-v2" />
   <link rel="stylesheet" href="v3-modern.css?v=notifications-mobile-v1" />
 
   <!-- Google AdSense -->
@@ -27,8 +27,7 @@
     src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3317597986908171"
     crossorigin="anonymous">
   </script>
-</head><script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3317597986908171"
-     crossorigin="anonymous"></script>
+</head>
 
 <body>
     <section id="login" class="login">
@@ -679,6 +678,15 @@
         </div>
       </div>
     </section>
+    <section id="contactPickerModal" class="contact-picker-modal hidden" role="dialog" aria-modal="true" aria-labelledby="contactPickerTitle">
+      <div class="contact-picker-panel">
+        <header>
+          <div><h2 id="contactPickerTitle">Choisir un contact</h2><p id="contactPickerSubtitle">Commencez une nouvelle conversation.</p></div>
+          <button type="button" id="closeContactPicker" aria-label="Fermer">×</button>
+        </header>
+        <div id="contactPickerList" class="contact-picker-list"></div>
+      </div>
+    </section>
     <section id="adminModal" class="admin-modal hidden">
       <div class="admin-panel">
         <header>
@@ -760,6 +768,6 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-cafe-v2.js?v=1"></script>
+    <script type="module" src="app-v4-cafe-v2.js?v=messages-appels-v2"></script>
   </body>
 </html>

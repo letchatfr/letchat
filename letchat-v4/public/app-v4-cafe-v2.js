@@ -71,6 +71,8 @@ let user,
   ringtoneContext = null,
   callTimer = null,
   callStartedAt = 0,
+  privateHomeOpen = false,
+  contactPickerMode = "message",
   sessionStarted = false;
 const fallbackIceServers = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
@@ -373,6 +375,10 @@ $("#ageForm").onsubmit = async (event) => {
 $("#ageLeave").onclick = logoutSession;
 async function load() {
   try {
+    if (privateHomeOpen) {
+      renderPrivateMessagesHome();
+      return;
+    }
     if (currentPrivate) {
       const selected = currentPrivate,
         rows = await (
@@ -848,6 +854,7 @@ async function loadPrivateConversations() {
     );
     updateUnread();
     renderPrivateConversations();
+    if (privateHomeOpen) renderPrivateMessagesHome();
   } catch (e) {
     showError(e.message);
   }
@@ -930,6 +937,8 @@ function openPrivate(id, name) {
   const previousPrivateId = currentPrivate?.id;
   if (previousPrivateId && previousPrivateId !== String(id)) stopTyping(previousPrivateId);
   clearReply();
+  privateHomeOpen = false;
+  $(".chat").classList.remove("private-home");
   unreadPrivate.delete(id);
   updateUnread();
   currentPrivate = { id, name };
@@ -1338,6 +1347,7 @@ function renderPeople(list) {
     );
   renderFriends();
   updateRoomFeature();
+  if (privateHomeOpen) renderPrivateMessagesHome();
 }
 function connect() {
   socket = io({ auth: { token }, transports: ["websocket", "polling"] });
@@ -2004,6 +2014,8 @@ function renderMeetingProfiles(panel) {
 }
 function selectRoom(link, id) {
   clearReply();
+  privateHomeOpen = false;
+  $(".chat").classList.remove("private-home");
   const previousPrivateId = currentPrivate?.id;
   if (previousPrivateId) stopTyping(previousPrivateId);
   currentPrivate = null;
@@ -2060,16 +2072,71 @@ $("#enterAdultRoom").onclick = () => {
   if (pendingAdultSelection) selectRoom(pendingAdultSelection.link, pendingAdultSelection.id);
   pendingAdultSelection = null;
 };
-document.querySelector(".new").onclick = () => $("#input").focus();
+function contactCandidates(mode = "message") {
+  const people = lastPeople.filter(person => String(person.id) !== String(user.uid) && !blockedUsers.has(String(person.id)));
+  if (mode === "call") return people.filter(person => person.socketId);
+  const known = new Map(people.map(person => [String(person.id), person]));
+  privateConversations.forEach(row => {
+    if (!known.has(String(row.user_id)) && !blockedUsers.has(String(row.user_id))) {
+      known.set(String(row.user_id), { id: row.user_id, name: row.display_name, photo: row.photo, gender: row.gender || "neutral", availability: "offline" });
+    }
+  });
+  return [...known.values()];
+}
+function openContactPicker(mode = "message") {
+  contactPickerMode = mode;
+  const isCall = mode === "call";
+  $("#contactPickerTitle").textContent = isCall ? "Qui souhaitez-vous appeler ?" : "Nouveau message privé";
+  $("#contactPickerSubtitle").textContent = isCall ? "Choisissez un membre actuellement en ligne." : "Choisissez un utilisateur pour commencer une conversation.";
+  const candidates = contactCandidates(mode);
+  $("#contactPickerList").innerHTML = candidates.length
+    ? candidates.map(person => `<button type="button" class="contact-picker-item" data-contact-id="${safe(person.id)}" data-contact-name="${safe(person.name)}" data-contact-socket="${safe(person.socketId || "")}"><span class="contact-picker-avatar gender-${safe(person.gender || "neutral")}">${person.photo ? `<img src="${safe(person.photo)}" alt="">` : safe(initials(person.name))}</span><span><strong>${safe(person.name)}</strong><small>${person.socketId ? "En ligne" : "Hors ligne"}</small></span><b>${isCall ? "📞" : "💬"}</b></button>`).join("")
+    : `<div class="contact-picker-empty"><b>${isCall ? "Aucun membre disponible" : "Aucun contact disponible"}</b><span>${isCall ? "Revenez lorsque d’autres utilisateurs seront en ligne." : "Les utilisateurs en ligne apparaîtront ici."}</span></div>`;
+  $("#contactPickerList").querySelectorAll("[data-contact-id]").forEach(button => {
+    button.onclick = async () => {
+      $("#contactPickerModal").classList.add("hidden");
+      if (contactPickerMode === "call") await startDirectCall(button.dataset.contactSocket, button.dataset.contactName);
+      else openPrivate(button.dataset.contactId, button.dataset.contactName);
+    };
+  });
+  $("#contactPickerModal").classList.remove("hidden");
+}
+function renderPrivateMessagesHome() {
+  if (!privateHomeOpen) return;
+  const available = contactCandidates("message"), recent = privateConversations.filter(row => !row.archived).slice(0, 8);
+  $("#roomFeature").classList.add("hidden");
+  $("#messages").classList.remove("media-gallery");
+  $("#messages").innerHTML = `<div class="private-home-page"><div class="private-home-heading"><div><span>💬</span><div><h2>Messages privés</h2><p>Retrouvez vos conversations ou contactez un membre.</p></div></div><button type="button" id="newPrivateConversationCenter">＋ Nouveau message</button></div><section><h3>Conversations récentes</h3>${recent.length ? `<div class="private-home-grid">${recent.map(row => `<button type="button" data-home-private="${safe(row.user_id)}" data-home-name="${safe(row.display_name)}"><span class="contact-picker-avatar gender-${safe(row.gender || "neutral")}">${row.photo ? `<img src="${safe(row.photo)}" alt="">` : safe(initials(row.display_name))}</span><span><strong>${safe(row.display_name)}</strong><small>${safe(privatePreview(row))}</small></span>${Number(row.unread_count || 0) ? `<b>${Number(row.unread_count)}</b>` : ""}</button>`).join("")}</div>` : '<p class="private-home-empty">Aucune conversation pour le moment.</p>'}</section><section><h3>Membres disponibles</h3>${available.length ? `<div class="private-home-grid">${available.map(person => `<button type="button" data-home-private="${safe(person.id)}" data-home-name="${safe(person.name)}"><span class="contact-picker-avatar gender-${safe(person.gender || "neutral")}">${person.photo ? `<img src="${safe(person.photo)}" alt="">` : safe(initials(person.name))}</span><span><strong>${safe(person.name)}</strong><small>${person.socketId ? "En ligne" : "Hors ligne"}</small></span></button>`).join("")}</div>` : '<p class="private-home-empty">Aucun autre membre disponible.</p>'}</section></div>`;
+  $("#newPrivateConversationCenter").onclick = () => openContactPicker("message");
+  $("#messages").querySelectorAll("[data-home-private]").forEach(button => button.onclick = () => openPrivate(button.dataset.homePrivate, button.dataset.homeName));
+}
+async function showPrivateMessagesHome() {
+  clearReply();
+  const previousPrivateId = currentPrivate?.id;
+  if (previousPrivateId) stopTyping(previousPrivateId);
+  currentPrivate = null;
+  privateContactStatus = null;
+  privateHomeOpen = true;
+  socket?.emit("watch-private-status", "");
+  $(".chat").classList.add("private-home");
+  $("#blockBtn").classList.add("hidden");
+  $("#reportBtn").classList.add("hidden");
+  $(".chat header h1").textContent = "◌ Messages";
+  $("#roomPresence").classList.add("hidden");
+  $("#privateTypingStatus").classList.add("hidden");
+  $("#typing").textContent = "";
+  $(".side").classList.remove("open");
+  roomLinks.forEach(item => item.classList.remove("active"));
+  await loadPrivateConversations();
+  renderPrivateMessagesHome();
+}
+document.querySelector(".new").onclick = () => openContactPicker("message");
 $("#privateMessagesLink").onclick = async (event) => {
   event.preventDefault();
-  $(".side").classList.remove("open");
-  await loadPrivateConversations();
-  const peoplePanel = $(".people");
-  peoplePanel.classList.add("open");
-  peoplePanel.scrollTo({ top: 0, behavior: "smooth" });
-  $("#activeConversations")?.focus();
+  await showPrivateMessagesHome();
 };
+$("#closeContactPicker").onclick = () => $("#contactPickerModal").classList.add("hidden");
+$("#contactPickerModal").onclick = event => { if (event.target === $("#contactPickerModal")) $("#contactPickerModal").classList.add("hidden"); };
 $("#roomsBtn").onclick = () => $(".side").classList.add("open");
 $("#closeSide").onclick = () => $(".side").classList.remove("open");
 $("#peopleBtn").onclick = () => {
@@ -2394,11 +2461,7 @@ async function startDirectCall(socketId, participantName) {
   }
 }
 $("#callBtn").onclick = async () => {
-  if (await startMedia()) {
-    setCameraStatus("Appel en cours… En attente d’un participant.");
-    setCallStatus("Sonnerie…");
-    socket.emit("webrtc", { target: null, data: { type: "invite" } });
-  }
+  openContactPicker("call");
 };
 function closeIncomingCall() {
   stopRingtone();
