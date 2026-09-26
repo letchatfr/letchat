@@ -33,6 +33,8 @@ let user,
   peers = new Map(),
   pendingIce = new Map(),
   typingTimer,
+  typingActive = false,
+  typingTarget = null,
   toastTimer,
   expiryTimers = new Map(),
   unreadPrivate = new Map(),
@@ -731,17 +733,27 @@ async function send(media) {
 $("#send").onclick = () => send();
 function stopTyping(target = currentPrivate?.id) {
   clearTimeout(typingTimer);
-  if (target) socket?.emit("private-typing", { target, active: false });
+  const activeTarget = target || typingTarget;
+  if (activeTarget) socket?.emit("private-typing", { target: activeTarget, active: false });
   else socket?.emit("typing", false);
+  typingActive = false;
+  typingTarget = null;
 }
 function announceTyping() {
   clearTimeout(typingTimer);
-  if (currentPrivate) socket?.emit("private-typing", { target: currentPrivate.id, active: true });
-  else socket?.emit("typing", true);
   const target = currentPrivate?.id;
-  typingTimer = setTimeout(() => stopTyping(target), 1000);
+  if (!$("#input").value.trim()) return stopTyping(target);
+  if (!typingActive || String(typingTarget || "") !== String(target || "")) {
+    if (typingActive) stopTyping(typingTarget);
+    if (target) socket?.emit("private-typing", { target, active: true });
+    else socket?.emit("typing", true);
+    typingActive = true;
+    typingTarget = target || null;
+  }
+  typingTimer = setTimeout(() => stopTyping(target), 2500);
 }
 $("#input").addEventListener("input", announceTyping);
+$("#input").addEventListener("blur", () => { if (typingActive) stopTyping(typingTarget); });
 $("#input").onkeydown = (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
