@@ -1,3 +1,4 @@
+import { rooms as roomCatalog } from "./public/room-catalog.js";
 import express from "express";
 import helmet from "helmet";
 import http from "node:http";
@@ -1515,7 +1516,7 @@ app.delete("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, n
   }
 });
 
-const allowedRooms = new Set(["messages", "amateurs", "webcam", "cafe", "creatifs", "entraide"]);
+const allowedRooms = new Set(Object.keys(roomCatalog));
 const getRoom = value => allowedRooms.has(String(value)) ? String(value) : "cafe";
 
 let meteredTurnCredential = null;

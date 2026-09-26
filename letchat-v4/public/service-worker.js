@@ -1,5 +1,5 @@
-const CACHE = "letchat-shell-v16-interface-finitions";
-const SHELL = ["/", "/index.html", "/style.css", "/v3-modern.css", "/v3-theme.js", "/app.js", "/manifest.webmanifest", "/icon.svg"];
+const CACHE = "letchat-shell-v17-community";
+const SHELL = ["/", "/index.html", "/style.css?v=typing-v3", "/v3-modern.css?v=notifications-mobile-v1", "/v3-theme.js?v=interface-finitions-v31", "/v2-community.css?v=1", "/v2-community.js?v=1", "/room-catalog.js?v=v2-categories-1", "/app-v4-cafe-v2.js?v=v2-categories-1", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
