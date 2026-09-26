@@ -18,7 +18,7 @@
 
   <title>Letchat</title>
 
-  <link rel="stylesheet" href="style.css?v=profil-actions-v1" />
+  <link rel="stylesheet" href="style.css?v=galerie-amateurs-v1" />
   <link rel="stylesheet" href="v3-modern.css?v=notifications-mobile-v1" />
 
   <!-- Google AdSense -->
@@ -327,7 +327,7 @@
         <button class="new">＋ Nouveau message</button>
         <button id="mobileThemeBtn" class="mobile-theme-button" type="button" aria-label="Activer le mode sombre" aria-pressed="false">☾ Mode sombre</button>
         <nav>
-          <a id="privateMessagesLink" href="#private-messages" style="text-decoration:none">◌ Messages <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a><a class="room" data-room="amateurs">◇ Vidéos / Photo amateurs</a><a class="room" data-room="webcam">♡ Webcam</a>
+          <a id="privateMessagesLink" href="#private-messages" style="text-decoration:none">◌ Messages <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a><a class="room" data-room="amateurs">◇ Vidéos / Photos amateurs</a><a class="room" data-room="webcam">♡ Webcam</a>
         </nav>
         <h3>ESPACES</h3>
         <a class="room active" data-room="cafe">☀ Le Café</a><a class="room" data-room="creatifs">✦ Rencontres</a
@@ -454,6 +454,10 @@
         <div id="people"></div>
       </aside>
     </main>
+    <section id="mediaLightbox" class="media-lightbox hidden" role="dialog" aria-modal="true" aria-label="Aperçu du média">
+      <button id="closeMediaLightbox" class="media-lightbox-close" type="button" aria-label="Fermer">×</button>
+      <div id="mediaLightboxContent" class="media-lightbox-content"></div>
+    </section>
     <button id="messageToast" class="message-toast hidden"></button>
     <section id="profileModal" class="profile-modal hidden">
       <form id="profileForm" class="profile-card">
@@ -745,6 +749,6 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-messages-prives.js?v=1"></script>
+    <script type="module" src="app-v4-galerie.js?v=1"></script>
   </body>
 </html>

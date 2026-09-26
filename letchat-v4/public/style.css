@@ -65,6 +65,61 @@
   .profile-card { width: 100%; max-height: 92dvh; overflow-y: auto; border-radius: 20px 20px 0 0; padding: 26px 20px max(22px, env(safe-area-inset-bottom)); }
 }
 
+/* Galerie Vidéos / Photos amateurs */
+.room-feature-title #publishGalleryMedia {
+  border: 0;
+  border-radius: 10px;
+  background: var(--coral);
+  color: #fff;
+  padding: 9px 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gallery-media-open { cursor: zoom-in; }
+.media-lightbox {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 30px;
+  background: #111d;
+}
+.media-lightbox-content {
+  width: min(1100px, 94vw);
+  height: min(820px, 86vh);
+  display: grid;
+  place-items: center;
+}
+.media-lightbox-content img,
+.media-lightbox-content video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+}
+.media-lightbox-close {
+  position: fixed;
+  z-index: 201;
+  right: 20px;
+  top: 18px;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  color: #222;
+  font-size: 30px;
+  cursor: pointer;
+}
+@media (max-width: 650px) {
+  .messages.media-gallery { grid-template-columns: 1fr; gap: 10px; padding: 10px; }
+  .media-gallery .message { padding: 10px; }
+  .media-gallery .media { max-height: 62dvh; }
+  .media-lightbox { padding: 12px; }
+  .media-lightbox-close { right: 10px; top: 10px; }
+}
+
 .premium-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .premium-choices button { display: grid; gap: 3px; padding: 10px; }
 .premium-choices button span { font-size: 11px; font-weight: 600; opacity: .85; }
