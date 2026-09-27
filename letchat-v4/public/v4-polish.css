@@ -117,7 +117,8 @@ button:disabled { cursor: wait; opacity: .6; }
 
 /* Annuaire global des membres connectés. */
 .online-members-badge { margin-left: auto; min-width: 24px; padding: 3px 7px; border-radius: 12px; text-align: center; background: color-mix(in srgb, var(--v3-success) 15%, var(--v3-surface)); color: var(--v3-text); font-size: 11px; font-weight: 800; }
-.side #onlineMembersLink { font-size: 13px; gap: 6px; }
+.side #onlineMembersLink { font-size: 13px; gap: 6px; text-decoration: none; }
+.side #onlineMembersLink:hover, .side #onlineMembersLink:focus, .side #onlineMembersLink:active { text-decoration: none; }
 .online-members-shortcut { width: 100%; padding: 10px; border: 1px solid var(--v3-border); border-radius: 10px; color: var(--v3-accent); background: var(--v3-surface); text-align: left; font-size: 12px; cursor: pointer; }
 .online-members-card { width: min(860px, 100%); padding: 30px; }
 .online-members-eyebrow { display: block; padding-right: 30px; margin-bottom: 9px; font-size: 10px; font-weight: 800; letter-spacing: .1em; color: var(--v3-primary); }
