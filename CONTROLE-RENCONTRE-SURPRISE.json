@@ -1,0 +1,18 @@
+{
+  "letchat-v4/lib/surprise.js": "6f38f3dba4111dd01e1ea5c99d09b00486149b9d203ba2c80729cbc8d9fef098",
+  "letchat-v4/package.json": "6eccdb849d64bf877bc79f1102ddd2e5dfd1418dfcbb05c55128fb7f55881166",
+  "letchat-v4/public/app-v4-cafe-v2.js": "fce669ebd93e40c061e12a20eb294d891b9d76734a656614d22b527086affad8",
+  "letchat-v4/public/assets/app-v4-cafe-v2.07697df6ab50.js": "07697df6ab50dc2107f60d6863fa89590a4232fdf0e530edd013db2be0f4afc0",
+  "letchat-v4/public/assets/surprise.6083d28eb42f.css": "6083d28eb42fd2b917be4fbc315c71dc89ff474edaa8c15ccf5d65d44248023f",
+  "letchat-v4/public/assets/surprise.741a6989f474.js": "741a6989f474d4fc1edfc056503923e3112ddaabe857d62f7b7a424c915d733b",
+  "letchat-v4/public/index.html": "bdcc2e7ea20d11a8f45fa9a6cf6c73d1cd83ab38010fde00903663344f8dee5c",
+  "letchat-v4/public/service-worker.js": "5aadd970a91daecd0955d86d2cbf2af52fdba8440452cdc3a0aa19db0d9ec2bc",
+  "letchat-v4/public/surprise.css": "6083d28eb42fd2b917be4fbc315c71dc89ff474edaa8c15ccf5d65d44248023f",
+  "letchat-v4/public/surprise.js": "741a6989f474d4fc1edfc056503923e3112ddaabe857d62f7b7a424c915d733b",
+  "letchat-v4/scripts/check.mjs": "d27592a04b9d439ee115e9d6297deed86eaa3ae73547fbdf04ee04816d7d53a1",
+  "letchat-v4/server.js": "501fd77ff3401833cfcb2a7662440bc1a2552e2ee571111d5bc5c54fc0a0afe6",
+  "letchat-v4/templates/index.html": "6ae9a404d6295be48b0b4b625db8d2eb2ab386ba3d175fe983c219791d168c56",
+  "letchat-v4/test/client.test.mjs": "9211c54c786a6ec899ac41aeaf15abd6fba94f3ac903d3440b0416e4c081da42",
+  "letchat-v4/test/surprise-browser.mjs": "13d7bdfcfd4ed8eff19cf8049ab9d1a262dc74910e1ce8f9f4f6364b8920bd24",
+  "letchat-v4/test/surprise-integration.mjs": "5044227b1ad32f54e7f692a6bf479ee1de741f48dc75a0fa2c7a56df0430b1ce"
+}
