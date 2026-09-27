@@ -146,3 +146,11 @@ button:disabled { cursor: wait; opacity: .6; }
   .online-members-grid { grid-template-columns: minmax(0, 1fr); }
   .online-members-search input { font-size: 16px; }
 }
+
+/* Membres en ligne regroupés selon le choix enregistré dans leur profil. */
+.online-members-category { grid-column: 1 / -1; min-width: 0; }
+.online-members-group-title { display: flex; align-items: center; gap: 9px; margin: 5px 0 12px; font-size: 15px; color: var(--v3-text); }
+.online-members-group-title span { display: inline-grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: var(--v3-surface-strong); color: var(--v3-text-soft); font-size: 12px; }
+.online-members-group-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.online-members-category + .online-members-category { margin-top: 8px; }
+@media(max-width:600px) { .online-members-group-grid { grid-template-columns: minmax(0, 1fr); } }

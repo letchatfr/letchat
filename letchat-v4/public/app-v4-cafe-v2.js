@@ -2740,7 +2740,7 @@ function renderOnlineMembers() {
     id: document.activeElement.dataset.onlineProfile || document.activeElement.dataset.onlineMessage,
     type: document.activeElement.hasAttribute("data-online-profile") ? "data-online-profile" : "data-online-message",
   } : null;
-  grid.innerHTML = shown.length ? shown.map(person => {
+  const cards = people => people.map(person => {
     const mine = String(person.id) === String(user?.uid);
     const label = {available: "Disponible", busy: "Occupé", away: "Absent"}[person.availability] || "Connecté";
     return `<article class="online-member-card">
@@ -2750,6 +2750,16 @@ function renderOnlineMembers() {
       <p class="online-member-bio">${safe(person.bio || "Ce membre n’a pas encore ajouté de description.")}</p>
       <div class="online-member-actions"><button type="button" data-online-profile="${safe(person.id)}">${mine ? "Mon profil" : "Voir le profil"}</button>${mine ? "" : `<button type="button" class="online-member-message" data-online-message="${safe(person.id)}">Écrire en privé</button>`}</div>
     </article>`;
+  }).join("");
+  const groups = [
+    { id: "female", title: "Femmes" },
+    { id: "male", title: "Hommes" },
+    { id: "neutral", title: "Autre / non précisé" },
+  ];
+  grid.innerHTML = shown.length ? groups.map(group => {
+    const people = shown.filter(person => (["female", "male"].includes(person.gender) ? person.gender : "neutral") === group.id);
+    if (!people.length) return "";
+    return `<section class="online-members-category" aria-labelledby="onlineGroup-${group.id}"><h3 id="onlineGroup-${group.id}" class="online-members-group-title">${group.title}<span>${people.length}</span></h3><div class="online-members-group-grid">${cards(people)}</div></section>`;
   }).join("") : '<p class="online-members-empty" role="status">Aucun membre ne correspond à votre recherche.</p>';
   grid.querySelectorAll("[data-online-profile]").forEach(button => button.onclick = () => {
     const person = members.find(member => String(member.id) === button.dataset.onlineProfile);
