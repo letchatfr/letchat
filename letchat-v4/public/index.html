@@ -17,7 +17,7 @@
   <link rel="icon" type="image/svg+xml" href="/icon.svg?v=3" />
 <link rel="alternate icon" type="image/x-icon" href="/favicon.ico?v=3" />
 
-  <title>Letchat</title>
+  <title>Letchat — Discutez simplement</title>
 
   <link rel="stylesheet" href="style.css?v=typing-v3" />
   <link rel="stylesheet" href="v3-modern.css?v=notifications-mobile-v1" />
@@ -29,6 +29,7 @@
     crossorigin="anonymous">
   </script>
     <link rel="stylesheet" href="v2-community.css?v=1">
+  <link rel="stylesheet" href="v4-polish.css?v=20260927">
 </head>
 
 <body>
@@ -329,7 +330,7 @@
         <button class="new">＋ Nouveau message</button>
         <button id="mobileThemeBtn" class="mobile-theme-button" type="button" aria-label="Activer le mode sombre" aria-pressed="false">☾ Mode sombre</button>
         <nav aria-label="Messagerie"><a id="privateMessagesLink" href="#private-messages" style="text-decoration:none">◌ Messages privés <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a></nav>
-        <div class="v2-explore-heading"><h2>Explorer les salons</h2><span>V2</span></div>
+        <div class="v2-explore-heading"><h2>Explorer les salons</h2><span>COMMUNAUTÉ</span></div>
         <label class="v2-room-search"><span class="v2-sr-only">Rechercher un salon</span><input id="roomSearch" type="search" placeholder="Rechercher un salon…" autocomplete="off"></label>
         <button id="favoriteRoomsOnly" class="v2-favorites-filter" type="button" aria-pressed="false">☆ Mes favoris</button>
         <div id="roomDirectory" class="v2-room-directory">
@@ -417,8 +418,9 @@
             <p>Les nouveaux messages apparaissent ici en temps réel.</p>
           </div>
         </div>
+        <button id="jumpLatest" class="jump-latest hidden" type="button">↓ Derniers messages</button>
         <div id="typing" class="typing"></div>
-        <div id="error" class="error hidden"></div>
+        <div id="error" class="error hidden" role="status"></div>
         <footer>
           <input
             id="file"
@@ -447,17 +449,19 @@
               ×
             </button>
           </div>
+          <div id="emojiPicker" class="emoji-picker hidden" role="group" aria-label="Choisir un emoji"></div>
           <div class="composer">
             <button id="attach">⌕</button><button id="cameraBtn">▣</button
             ><button id="voiceBtn" type="button" title="Message vocal">🎙</button
             ><textarea
               id="input"
+              maxlength="4000" aria-label="Votre message"
               placeholder="Écrivez votre message…"
             ></textarea
             ><button id="viewOnceBtn" class="hidden" type="button" title="Photo ou vidéo visible une seule fois">①</button
             ><button id="emoji">☺</button><button id="send">➤</button>
           </div>
-          <small>Entrée pour envoyer · Médias jusqu’à 8 Mo</small>
+          <div class="composer-help"><span id="connectionStatus" role="status" data-state="waiting">Connexion…</span><span>Entrée : envoyer · Maj + Entrée : nouvelle ligne</span><span id="messageCount">0 / 4 000</span></div>
         </footer>
       </section>
       <aside class="people">
@@ -466,6 +470,7 @@
           <div class="conversation-heading">
             <h2>Conversations</h2><span id="conversationTotal" class="conversation-total hidden">0</span>
           </div>
+          <label class="contact-search"><span class="v2-sr-only">Rechercher une conversation</span><input id="conversationSearch" type="search" placeholder="Rechercher une conversation…"></label>
           <div class="conversation-tabs">
             <button id="activeConversations" class="active" type="button">Actives</button>
             <button id="archivedConversations" type="button">Archivées</button>
@@ -476,6 +481,8 @@
         </section>
         <hr />
         <h2>Amis et contacts</h2>
+        <h2 class="friends-heading">Amis<span id="friendRequestCount"></span></h2>
+        <label class="contact-search"><span class="v2-sr-only">Rechercher un ami</span><input id="friendSearch" type="search" placeholder="Rechercher un ami…"></label>
         <div id="friendRequests"></div>
         <div id="friendsList"></div>
         <hr />
@@ -491,7 +498,7 @@
       <div id="mediaLightboxContent" class="media-lightbox-content"></div>
     </section>
     <button id="messageToast" class="message-toast hidden"></button>
-    <section id="profileModal" class="profile-modal hidden">
+    <section id="profileModal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-label="Mon profil public">
       <form id="profileForm" class="profile-card">
         <button type="button" id="closeProfile" class="profile-close">×</button>
         <h2>Mon profil public</h2>
@@ -800,7 +807,8 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-cafe-v2.js?v=v2-categories-1"></script>
+    <script type="module" src="app-v4-cafe-v2.js?v=20260927"></script>
       <script src="v2-community.js?v=1" defer></script>
-  </body>
+    <script src="v4-interface.js?v=20260927" defer></script>
+</body>
 </html>

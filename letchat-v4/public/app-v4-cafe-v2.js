@@ -77,6 +77,27 @@ let user,
   privateHomeOpen = false,
   contactPickerMode = "message",
   sessionStarted = false;
+// Brouillons éphémères : supprimés à la déconnexion et au rechargement.
+const conversationDrafts = new Map();
+let sendingMessage = false, renderedConversation = "", loadVersion = 0;
+function conversationKey() {
+  return privateHomeOpen ? "home" : currentPrivate ? `private:${currentPrivate.id}` : `room:${currentRoom}`;
+}
+function saveDraft() {
+  if (privateHomeOpen) return;
+  const value = $("#input").value;
+  if (value) conversationDrafts.set(conversationKey(), value);
+  else conversationDrafts.delete(conversationKey());
+}
+function restoreDraft() {
+  $("#input").value = privateHomeOpen ? "" : conversationDrafts.get(conversationKey()) || "";
+  $("#input").dispatchEvent(new Event("input"));
+  $("#jumpLatest")?.classList.add("hidden");
+}
+function connectionStatus(label, state) {
+  const indicator = $("#connectionStatus");
+  if (indicator) { indicator.textContent = label; indicator.dataset.state = state; }
+}
 const fallbackIceServers = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
 ];
@@ -113,6 +134,8 @@ $("#googleLogin").onclick = async () => {
   }
 };
 function logoutSession() {
+  conversationDrafts.clear();
+  $("#input").value = "";
   if (localSessionToken) {
     localStorage.removeItem("letchatLocalToken");
     sessionStorage.removeItem("letchatGuestToken");
@@ -152,6 +175,8 @@ const localRestorePromise = restoreLocalSession();
 onAuthStateChanged(auth, async (u) => {
   if (await localRestorePromise) return;
   if (!u) {
+    conversationDrafts.clear();
+    $("#input").value = "";
     user = null;
     token = null;
     sessionStarted = false;
@@ -370,6 +395,12 @@ $("#ageForm").onsubmit = async (event) => {
 };
 $("#ageLeave").onclick = logoutSession;
 async function load() {
+  if (!user) return;
+  const version = ++loadVersion;
+  if (!privateHomeOpen && renderedConversation !== conversationKey()) {
+    $("#messages").innerHTML = '<div class="empty" role="status"><h2>Chargement des messages…</h2></div>';
+    $("#roomFeature").classList.add("hidden");
+  }
   try {
     if (privateHomeOpen) {
       renderPrivateMessagesHome();
@@ -380,7 +411,7 @@ async function load() {
         rows = await (
           await api(`/api/private/${encodeURIComponent(selected.id)}`)
         ).json();
-      if (currentPrivate?.id === selected.id) render(rows);
+      if (version === loadVersion && !privateHomeOpen && currentPrivate?.id === selected.id) render(rows);
       if (currentPrivate?.id === selected.id && document.visibilityState === "visible") markPrivateRead(selected.id);
       return;
     }
@@ -388,7 +419,7 @@ async function load() {
       rows = await (
         await api(`/api/messages?room=${encodeURIComponent(room)}`)
       ).json();
-    if (!currentPrivate && room === currentRoom) render(rows);
+    if (version === loadVersion && !privateHomeOpen && !currentPrivate && room === currentRoom) render(rows);
   } catch (e) {
     showError(e.message);
   }
@@ -397,6 +428,9 @@ function render(rows) {
   expiryTimers.forEach(clearTimeout);
   expiryTimers.clear();
   const box = $("#messages");
+  const key = conversationKey(), previousTop = box.scrollTop;
+  const preservePosition = renderedConversation === key && box.scrollHeight - box.scrollTop - box.clientHeight > 100;
+  renderedConversation = key;
   if (!currentPrivate) lastPublicMessages = rows;
   box.classList.toggle("media-gallery", !currentPrivate && currentRoom === "amateurs");
   updateRoomFeature();
@@ -410,8 +444,8 @@ function render(rows) {
       ? ""
       : `<div class="empty"><b>${info.title.split(" ")[0]}</b><h2>${info.welcome}</h2><p>Envoyez le premier message.</p></div>`;
   }
-  rows.forEach((m) => addMessage(m, true));
-  box.scrollTop = box.scrollHeight;
+  rows.forEach((m) => addMessage(m, true, false));
+  box.scrollTop = preservePosition ? previousTop : box.scrollHeight;
 }
 function safe(v) {
   const d = document.createElement("div");
@@ -561,7 +595,8 @@ async function markPrivateRead(otherId) {
     await loadPrivateConversations();
   } catch {}
 }
-function addMessage(m, force = false) {
+function addMessage(m, force = false, followScroll = true) {
+  if (privateHomeOpen) return;
   if (blockedUsers.has(String(m.user_id)) && m.user_id !== user.uid) return;
   if (m.private && !currentPrivate) return;
   if (
@@ -576,6 +611,8 @@ function addMessage(m, force = false) {
   if (m.expires_at && new Date(m.expires_at).getTime() <= Date.now()) return;
   const key = messageKey(m);
   if (document.querySelector(`[data-key="${key}"]`)) return;
+  const messageBox = $("#messages");
+  const nearBottom = messageBox.scrollHeight - messageBox.scrollTop - messageBox.clientHeight < 100;
   const empty = $("#messages .empty");
   empty?.remove();
   const a = document.createElement("article"),
@@ -644,9 +681,12 @@ function addMessage(m, force = false) {
   bindReactionChips(a);
   $("#messages").append(a);
   scheduleExpiry(m);
-  requestAnimationFrame(
-    () => ($("#messages").scrollTop = $("#messages").scrollHeight),
-  );
+  if (followScroll && (force || mine || nearBottom)) {
+    const context = conversationKey();
+    requestAnimationFrame(() => {
+      if (context === conversationKey()) messageBox.scrollTop = messageBox.scrollHeight;
+    });
+  } else if (followScroll) $("#jumpLatest")?.classList.remove("hidden");
 }
 async function openViewOnceMedia(event) {
   const button = event.currentTarget;
@@ -711,38 +751,45 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("#mediaLightbox").classList.contains("hidden")) closeGalleryMedia();
 });
 async function send(media) {
-  const body = $("#input").value.trim();
+  if (sendingMessage || privateHomeOpen) return;
+  const input = $("#input"), raw = input.value, body = raw.trim();
   if (!body && !media) return;
+  if (body.length > 4000) return showError("Votre message dépasse 4 000 caractères.");
+  const context = conversationKey(), selectedPrivate = currentPrivate, selectedRoom = currentRoom;
+  const selectedReply = replyingTo, once = viewOnceEnabled;
   const button = $("#send");
+  sendingMessage = true;
   button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  saveDraft();
   try {
-    const path = currentPrivate ? "/api/private" : "/api/messages",
-      replyToId =
-        replyingTo && replyingTo.private === Boolean(currentPrivate)
-          ? replyingTo.id
-          : null,
-      payload = currentPrivate
-        ? { body, recipientId: currentPrivate.id, replyToId, viewOnce: Boolean(media && viewOnceEnabled), ...media }
-        : { body, room: currentRoom, replyToId, ...media };
-    const m = await (
-      await api(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
-    ).json();
-    addMessage(m, true);
+    const path = selectedPrivate ? "/api/private" : "/api/messages";
+    const replyToId = selectedReply && selectedReply.private === Boolean(selectedPrivate) ? selectedReply.id : null;
+    const payload = selectedPrivate
+      ? { ...media, body, recipientId: selectedPrivate.id, replyToId, viewOnce: Boolean(media && once) }
+      : { ...media, body, room: selectedRoom, replyToId };
+    const m = await (await api(path, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    })).json();
+    if (conversationDrafts.get(context) === raw) conversationDrafts.delete(context);
+    if (context === conversationKey()) {
+      addMessage(m, true);
+      // Ne pas effacer un nouveau message saisi pendant l’envoi.
+      if (input.value === raw) input.value = "";
+      saveDraft();
+      input.dispatchEvent(new Event("input"));
+      if (replyingTo === selectedReply) clearReply();
+      if (!input.value) stopTyping();
+      if (media) { viewOnceEnabled = false; updateViewOnceButton(); }
+      input.focus();
+    }
     loadPrivateConversations();
-    $("#input").value = "";
-    clearReply();
-    stopTyping();
-    viewOnceEnabled = false;
-    updateViewOnceButton();
-    $("#input").focus();
   } catch (e) {
     showError(e.message);
   } finally {
+    sendingMessage = false;
     button.disabled = false;
+    button.removeAttribute("aria-busy");
   }
 }
 $("#send").onclick = () => send();
@@ -768,14 +815,15 @@ function announceTyping() {
   typingTimer = setTimeout(() => stopTyping(target), 2500);
 }
 $("#input").addEventListener("input", announceTyping);
+$("#input").addEventListener("input", saveDraft);
 $("#input").addEventListener("blur", () => { if (typingActive) stopTyping(typingTarget); });
 $("#input").onkeydown = (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     send();
   }
 };
-$("#emoji").onclick = () => ($("#input").value += " 😊");
+// Le sélecteur d’emojis est initialisé dans v4-interface.js.
 $("#attach").onclick = () => $("#file").click();
 $("#cameraBtn").onclick = () => $("#camera").click();
 function updateVoiceTimer() {
@@ -829,15 +877,22 @@ $("#voiceBtn").onclick = startVoiceRecording;
 $("#cancelVoice").onclick = () => stopVoiceRecording(false);
 $("#sendVoice").onclick = () => stopVoiceRecording(true);
 $("#file").onchange = $("#camera").onchange = async (e) => {
-  const f = e.target.files[0];
+  const f = e.target.files[0], context = conversationKey();
+  e.target.value = "";
   if (!f) return;
+  if (sendingMessage) return showError("Un envoi est déjà en cours. Réessayez ensuite.");
   if (f.size > 8e6) return showError("8 Mo maximum");
-  const b64 = await new Promise((r) => {
-    const x = new FileReader();
-    x.onload = () => r(x.result.split(",")[1]);
-    x.readAsDataURL(f);
-  });
-  send({ mediaBase64: b64, mediaType: f.type });
+  if (!/^(image|video|audio)\//.test(f.type)) return showError("Choisissez une photo, une vidéo ou un fichier audio.");
+  try {
+    const b64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.onerror = () => reject(new Error("Impossible de lire ce fichier."));
+      reader.readAsDataURL(f);
+    });
+    if (context !== conversationKey()) return showError("La conversation a changé. Sélectionnez à nouveau votre fichier.");
+    await send({ mediaBase64: b64, mediaType: f.type });
+  } catch (error) { showError(error.message); }
 };
 function showError(t) {
   $("#error").textContent = t;
@@ -892,7 +947,8 @@ function renderPrivateConversations() {
   const unreadTotal = privateConversations.reduce((sum, row) => sum + Number(row.unread_count || 0), 0);
   total.textContent = unreadTotal > 99 ? "99+" : String(unreadTotal);
   total.classList.toggle("hidden", unreadTotal === 0);
-  const displayed = privateConversations.filter(row => Boolean(row.archived) === showArchivedConversations);
+  const query = normalizeSearch($("#conversationSearch")?.value);
+  const displayed = privateConversations.filter(row => Boolean(row.archived) === showArchivedConversations && normalizeSearch(row.display_name).includes(query));
   $("#activeConversations")?.classList.toggle("active", !showArchivedConversations);
   $("#archivedConversations")?.classList.toggle("active", showArchivedConversations);
   box.innerHTML = displayed.length
@@ -906,7 +962,7 @@ function renderPrivateConversations() {
           <span class="conversation-actions"><button data-mute-conversation="${safe(row.user_id)}" title="${row.muted ? "Réactiver les notifications" : "Mettre en sourdine"}">${row.muted ? "🔔" : "🔕"}</button><button data-archive-conversation="${safe(row.user_id)}" title="${row.archived ? "Désarchiver" : "Archiver"}">${row.archived ? "↥" : "▣"}</button><button data-delete-conversation="${safe(row.user_id)}" data-delete-name="${safe(row.display_name)}" title="Supprimer de ma liste">×</button></span>
         </div>`;
       }).join("")
-    : `<p class="no-conversations">${showArchivedConversations ? "Aucune conversation archivée." : "Aucune conversation privée."}</p>`;
+    : `<p class="no-conversations">${query ? "Aucune conversation trouvée." : showArchivedConversations ? "Aucune conversation archivée." : "Aucune conversation privée."}</p>`;
   box.querySelectorAll("[data-conversation-id]").forEach(button => {
     button.onclick = () => {
       openPrivate(button.dataset.conversationId, button.dataset.conversationName);
@@ -938,29 +994,22 @@ async function deleteConversation(id, name) {
   try {
     await api(`/api/private-conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (currentPrivate?.id === String(id)) {
-      stopTyping(String(id));
-      currentPrivate = null;
-      privateContactStatus = null;
-      socket?.emit("watch-private-status", "");
-      viewOnceEnabled = false;
-      updateViewOnceButton();
-      $("#blockBtn").classList.add("hidden");
-      $("#reportBtn").classList.add("hidden");
-      $(".chat header h1").textContent = rooms[currentRoom].title;
-      $("#roomPresence").classList.remove("hidden");
-      $("#privateTypingStatus").classList.add("hidden");
-      load();
+      selectRoom(roomLinks.find(link => link.dataset.room === currentRoom), currentRoom);
     }
+    conversationDrafts.delete(`private:${id}`);
     await loadPrivateConversations();
   } catch (e) { showError(e.message); }
 }
 $("#activeConversations").onclick = () => { showArchivedConversations = false; renderPrivateConversations(); };
 $("#archivedConversations").onclick = () => { showArchivedConversations = true; renderPrivateConversations(); };
 function openPrivate(id, name) {
+  id = String(id);
   if (id === user.uid)
     return showError("Vous ne pouvez pas vous écrire à vous-même");
   if (blockedUsers.has(String(id)))
     return showError("Cet utilisateur est bloqué");
+  saveDraft();
+  if (typingActive) stopTyping();
   const previousPrivateId = currentPrivate?.id;
   if (previousPrivateId && previousPrivateId !== String(id)) stopTyping(previousPrivateId);
   clearReply();
@@ -969,6 +1018,9 @@ function openPrivate(id, name) {
   unreadPrivate.delete(id);
   updateUnread();
   currentPrivate = { id, name };
+  restoreDraft();
+  $("#privateMessagesLink").classList.add("active");
+  roomLinks.forEach(item => { item.classList.remove("active"); item.setAttribute("aria-current", "false"); });
   privateContactStatus = null;
   socket?.emit("watch-private-status", id);
   updateViewOnceButton();
@@ -1251,6 +1303,7 @@ async function loadFriends() {
     const rows = await (await api("/api/friends")).json();
     friendRelations = new Map(rows.map((row) => [String(row.user_id), row]));
     renderFriends();
+    if (viewedProfile && !$("#publicProfileModal").classList.contains("hidden")) updateProfileFriendButton();
     if (lastPeople.length) renderPeople(lastPeople);
   } catch (e) {
     showError(e.message);
@@ -1267,13 +1320,17 @@ function renderFriends() {
     incoming = rows.filter(
       (row) => row.status === "pending" && row.direction === "incoming",
     ),
-    accepted = rows.filter((row) => row.status === "accepted");
+    accepted = rows.filter((row) => row.status === "accepted" && normalizeSearch(row.display_name).includes(normalizeSearch($("#friendSearch")?.value)))
+      .sort((a, b) => Number(isOnline(b.user_id)) - Number(isOnline(a.user_id)) || a.display_name.localeCompare(b.display_name, "fr"));
+  const outgoing = rows.filter(row => row.status === "pending" && row.direction === "outgoing");
+  $("#friendRequestCount").textContent = incoming.length ? ` · ${incoming.length} demande${incoming.length > 1 ? "s" : ""}` : "";
   requests.innerHTML = incoming.length
     ? `<h3>Demandes reçues</h3>${incoming.map((row) => `<div class="friend-card"><span>${safe(row.display_name)}</span><div><button data-accept-friend="${row.id}">Accepter</button><button data-remove-friend="${row.id}">Refuser</button></div></div>`).join("")}`
     : "";
+  if (outgoing.length) requests.innerHTML += `<details class="outgoing-requests"><summary>Demandes envoyées (${outgoing.length})</summary>${outgoing.map(row => `<div class="friend-card"><span>${safe(row.display_name)}</span><button type="button" data-remove-friend="${safe(row.id)}">Annuler</button></div>`).join("")}</details>`;
   friends.innerHTML = accepted.length
     ? `<h3>Mes amis</h3>${accepted.map((row) => `<div class="friend-card"><button class="friend-open" data-friend-id="${safe(row.user_id)}" data-friend-name="${safe(row.display_name)}"><span class="online-dot ${isOnline(row.user_id) ? "online" : ""}"></span>${safe(row.display_name)}</button><button class="friend-remove" data-remove-friend="${row.id}" title="Supprimer cet ami">×</button></div>`).join("")}`
-    : '<p class="no-friends">Aucun ami pour le moment.</p>';
+    : '<p class="no-friends">Aucun ami à afficher. Retrouvez les membres avec la recherche.</p>';
   document
     .querySelectorAll("[data-accept-friend]")
     .forEach(
@@ -1354,7 +1411,7 @@ function renderPeople(list) {
               else action = '<span class="friend-state">En attente</span>';
             }
             const statusLabel={available:"Disponible",busy:"Occupé",away:"Absent"}[p.availability]||"Disponible";
-            return `<div class="person-row gender-${gender}"><button class="person person-button" data-user-id="${safe(p.id)}" data-user-name="${safe(p.name)}"><img src="${p.photo || ""}"><div><strong>${safe(p.name)}${p.verified ? '<span class="verified-badge" title="Profil vérifié">✓</span>' : ""}</strong><small>${p.id===user.uid?"Vous":`${statusLabel}${p.bio?` · ${safe(p.bio)}`:""}`}</small></div></button>${action}</div>`;
+            return `<div class="person-row gender-${gender}"><button class="person person-button" data-user-id="${safe(p.id)}" data-user-name="${safe(p.name)}"><span class="member-avatar">${p.photo ? `<img src="${safe(p.photo)}" alt="">` : safe(initials(p.name))}</span><div><strong>${safe(p.name)}${p.verified ? '<span class="verified-badge" title="Profil vérifié">✓</span>' : ""}</strong><small>${p.id===user.uid?"Vous":`${statusLabel}${p.bio?` · ${safe(p.bio)}`:""}`}</small></div></button>${action}</div>`;
           })
           .join("")}</section>`,
     )
@@ -1378,7 +1435,10 @@ function renderPeople(list) {
 }
 function connect() {
   socket = io({ auth: { token }, transports: ["websocket", "polling"] });
+  connectionStatus("Connexion…", "waiting");
+  socket.on("disconnect", () => connectionStatus("Reconnexion…", "waiting"));
   socket.on("connect", () => {
+    connectionStatus("En direct", "online");
     socket.emit("join-room", currentRoom);
     if (currentPrivate) socket.emit("watch-private-status", currentPrivate.id);
     load();
@@ -1441,7 +1501,7 @@ function connect() {
   socket.on("webrtc-error", ({ error } = {}) =>
     showError(error || "Appel vidéo refusé"),
   );
-  socket.on("connect_error", () => setTimeout(load, 1000));
+  socket.on("connect_error", () => { connectionStatus("Connexion interrompue", "offline"); });
 }
 async function loadBlocks() {
   try {
@@ -1499,10 +1559,52 @@ function openProfile(profile) {
 $("#chooseProfilePhoto").onclick=()=>$("#profilePhotoInput").click();
 $("#profilePhotoInput").onchange=async event=>{const file=event.target.files[0];if(!file)return;if(file.size>8e6)return showError("Photo trop volumineuse");try{pendingProfilePhoto=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const image=new Image();image.onerror=reject;image.onload=()=>{const size=512,canvas=document.createElement("canvas");canvas.width=size;canvas.height=size;const context=canvas.getContext("2d"),side=Math.min(image.width,image.height),sx=(image.width-side)/2,sy=(image.height-side)/2;context.drawImage(image,sx,sy,side,side,0,0,size,size);resolve(canvas.toDataURL("image/jpeg",.82))};image.src=reader.result};reader.readAsDataURL(file)});$("#profilePhotoPreview").src=pendingProfilePhoto}catch{showError("Impossible de préparer cette photo")}};
 const availabilityLabels={available:"Disponible",busy:"Occupé",away:"Absent"};
-async function showPublicProfile(id,fallbackName="Utilisateur"){if(id===user.uid)return showProfile();viewedProfile={id:String(id),name:fallbackName};$("#publicProfileError").textContent="";$("#publicProfileModal").classList.remove("hidden");try{const profile=await(await api(`/api/profile/${encodeURIComponent(id)}`)).json();viewedProfile={id:String(profile.user_id),name:profile.display_name};$("#publicProfilePhoto").src=profile.photo||"";$("#publicProfileName").innerHTML=`${safe(profile.display_name)}${profile.verified?'<span class="verified-badge" title="Profil vérifié">✓</span>':""}`;$("#publicProfileStatus").textContent=availabilityLabels[profile.availability]||"Disponible";$("#publicProfileBio").textContent=profile.bio||"Aucune description.";$("#publicProfileCity").textContent=profile.city||"Ville masquée";$("#publicProfileLastSeen").textContent=isOnline(profile.user_id)?"En ligne maintenant":profile.last_seen?new Date(profile.last_seen).toLocaleString("fr-FR"):"Non disponible";const relation=friendRelations.get(String(profile.user_id)),friendButton=$("#publicProfileFriend");friendButton.classList.toggle("hidden",Boolean(relation));friendButton.textContent=relation?.status==="accepted"?"Déjà ami":"Ajouter en ami"}catch(e){$("#publicProfileError").textContent=e.message}}
+async function showPublicProfile(id, fallbackName = "Utilisateur") {
+  if (String(id) === String(user.uid)) return showProfile();
+  const request = { id: String(id), name: fallbackName };
+  viewedProfile = request;
+  $("#publicProfileError").textContent = "";
+  $("#publicProfileName").textContent = fallbackName;
+  $("#publicProfilePhoto").removeAttribute("src");
+  $("#publicProfilePhoto").hidden = true;
+  $("#publicProfileStatus").textContent = "Chargement…";
+  ["#publicProfileBio", "#publicProfileCity", "#publicProfileLastSeen"].forEach(selector => $(selector).textContent = "");
+  ["#publicProfileMessage", "#publicProfileFriend", "#publicProfileCall", "#publicProfileMore"].forEach(selector => $(selector).disabled = true);
+  $("#publicProfileMoreMenu").classList.add("hidden");
+  $("#publicProfileMore").setAttribute("aria-expanded", "false");
+  $("#publicProfileModal").classList.remove("hidden");
+  try {
+    const profile = await (await api(`/api/profile/${encodeURIComponent(id)}`)).json();
+    if (viewedProfile !== request) return;
+    viewedProfile.name = profile.display_name;
+    $("#publicProfilePhoto").hidden = !profile.photo;
+    if (profile.photo) $("#publicProfilePhoto").src = profile.photo;
+    $("#publicProfileName").innerHTML = `${safe(profile.display_name)}${profile.verified ? '<span class="verified-badge" title="Profil vérifié">✓</span>' : ""}`;
+    $("#publicProfileStatus").textContent = availabilityLabels[profile.availability] || "Disponible";
+    $("#publicProfileBio").textContent = profile.bio || "Ce membre n’a pas encore ajouté de description.";
+    $("#publicProfileCity").textContent = profile.city || "Ville masquée";
+    $("#publicProfileLastSeen").textContent = isOnline(profile.user_id) ? "En ligne maintenant" : profile.last_seen ? new Date(profile.last_seen).toLocaleString("fr-FR") : "Non disponible";
+    ["#publicProfileMessage", "#publicProfileCall", "#publicProfileMore"].forEach(selector => $(selector).disabled = false);
+    updateProfileFriendButton();
+  } catch (e) {
+    if (viewedProfile === request) { $("#publicProfileStatus").textContent = "Profil indisponible"; $("#publicProfileError").textContent = e.message; }
+  }
+}
+function updateProfileFriendButton() {
+  const button = $("#publicProfileFriend"), relation = friendRelations.get(viewedProfile?.id);
+  button.classList.remove("hidden");
+  button.disabled = Boolean(relation);
+  button.textContent = relation?.status === "accepted" ? "✓ Déjà amis" : relation?.direction === "incoming" ? "Demande reçue · voir Contacts" : relation ? "Demande envoyée" : "＋ Ajouter en ami";
+}
 $("#closePublicProfile").onclick=()=>$("#publicProfileModal").classList.add("hidden");
 $("#publicProfileMessage").onclick=()=>{if(!viewedProfile)return;$("#publicProfileModal").classList.add("hidden");openPrivate(viewedProfile.id,viewedProfile.name)};
-$("#publicProfileFriend").onclick
+$("#publicProfileFriend").onclick = async () => {
+  if (!viewedProfile) return;
+  const request = viewedProfile;
+  $("#publicProfileFriend").disabled = true;
+  await sendFriendRequest(request.id);
+  if (viewedProfile === request) updateProfileFriendButton();
+};
   $("#publicProfileCall").onclick = async () => {
   if (!viewedProfile) return;
   const person = lastPeople.find(p => String(p.id) === String(viewedProfile.id));
@@ -2040,6 +2142,8 @@ function renderMeetingProfiles(panel) {
   draw();
 }
 function selectRoom(link, id) {
+  saveDraft();
+  if (typingActive) stopTyping();
   clearReply();
   privateHomeOpen = false;
   $(".chat").classList.remove("private-home");
@@ -2057,6 +2161,8 @@ function selectRoom(link, id) {
     lastPeople = [];
     socket?.emit("join-room", id);
   }
+  restoreDraft();
+  $("#privateMessagesLink").classList.remove("active");
   roomUnread.delete(id);
   updateRoomBadges();
   roomLinks.forEach((item) => item.classList.remove("active"));
@@ -2140,12 +2246,16 @@ function renderPrivateMessagesHome() {
   $("#messages").querySelectorAll("[data-home-private]").forEach(button => button.onclick = () => openPrivate(button.dataset.homePrivate, button.dataset.homeName));
 }
 async function showPrivateMessagesHome() {
+  saveDraft();
+  if (typingActive) stopTyping();
   clearReply();
   const previousPrivateId = currentPrivate?.id;
   if (previousPrivateId) stopTyping(previousPrivateId);
   currentPrivate = null;
   privateContactStatus = null;
   privateHomeOpen = true;
+  restoreDraft();
+  $("#privateMessagesLink").classList.add("active");
   socket?.emit("watch-private-status", "");
   $(".chat").classList.add("private-home");
   $("#blockBtn").classList.add("hidden");
@@ -2596,3 +2706,6 @@ $("#screen").onclick = async () => {
     };
   } catch {}
 };
+
+$("#conversationSearch")?.addEventListener("input", renderPrivateConversations);
+$("#friendSearch")?.addEventListener("input", renderFriends);

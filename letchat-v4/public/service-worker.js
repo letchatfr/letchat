@@ -1,5 +1,5 @@
-const CACHE = "letchat-shell-v18-favicon";
-const SHELL = ["/", "/index.html", "/style.css?v=typing-v3", "/v3-modern.css?v=notifications-mobile-v1", "/v3-theme.js?v=interface-finitions-v31", "/v2-community.css?v=1", "/v2-community.js?v=1", "/room-catalog.js?v=v2-categories-1", "/app-v4-cafe-v2.js?v=v2-categories-1", "/manifest.webmanifest", ""/icon.svg?v=3"];
+const CACHE = "letchat-shell-v19-interface";
+const SHELL = ["/", "/index.html", "/style.css?v=typing-v3", "/v3-modern.css?v=notifications-mobile-v1", "/v3-theme.js?v=interface-finitions-v31", "/v2-community.css?v=1", "/v2-community.js?v=1", "/room-catalog.js?v=v2-categories-1", "/app-v4-cafe-v2.js?v=20260927", "/v4-polish.css?v=20260927", "/v4-interface.js?v=20260927", "/manifest.webmanifest", "/icon.svg?v=3"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -7,26 +7,29 @@ self.addEventListener("install", event => {
 
 self.addEventListener("activate", event => {
   event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+    caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("letchat-shell-") && key !== CACHE).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET" || new URL(event.request.url).origin !== location.origin) return;
+  const url = new URL(event.request.url);
+  if (event.request.method !== "GET" || url.origin !== location.origin) return;
+  // Ne jamais mettre en cache les API, médias privés ou URL avec jeton.
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/socket.io") || url.searchParams.has("t")) return;
   if (event.request.mode === "navigate") {
     event.respondWith(fetch(event.request).catch(() => caches.match("/index.html")));
     return;
   }
-  event.respondWith(
-    fetch(event.request).then(response => {
-      if (response.ok && !event.request.url.includes("/api/") && !event.request.url.includes("socket.io")) {
-        const copy = response.clone();
-        caches.open(CACHE).then(cache => cache.put(event.request, copy));
-      }
-      return response;
-    }).catch(() => caches.match(event.request))
-  );
+  const allowed = SHELL.some(path => new URL(path, location.origin).href === url.href);
+  if (!allowed) return;
+  event.respondWith(fetch(event.request).then(response => {
+    if (response.ok) {
+      const copy = response.clone();
+      event.waitUntil(caches.open(CACHE).then(cache => cache.put(event.request, copy)));
+    }
+    return response;
+  }).catch(() => caches.match(event.request)));
 });
 
 self.addEventListener("push", event => {
