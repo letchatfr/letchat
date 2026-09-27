@@ -69,7 +69,7 @@
 
   // Fenêtres : focus initial, fermeture avec Échap et retour au bouton d’origine.
   const closers = {
-    profileModal: 'closeProfile', publicProfileModal: 'closePublicProfile', searchModal: 'closeSearch',
+    onlineMembersModal: 'closeOnlineMembers', profileModal: 'closeProfile', publicProfileModal: 'closePublicProfile', searchModal: 'closeSearch',
     notificationsModal: 'closeNotifications', contactPickerModal: 'closeContactPicker', mediaLightbox: 'closeMediaLightbox',
   };
   const visibleModals = new Map();

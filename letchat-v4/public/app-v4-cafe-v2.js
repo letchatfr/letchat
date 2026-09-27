@@ -46,6 +46,7 @@ let user,
   privateContactStatus = null,
   notifications = [],
   lastPeople = [],
+  allOnlineMembers = null,
   lastPublicMessages = [],
   isAdmin = false,
   roomUnread = new Map(),
@@ -177,6 +178,9 @@ onAuthStateChanged(auth, async (u) => {
   if (!u) {
     conversationDrafts.clear();
     $("#input").value = "";
+    allOnlineMembers = null;
+    $("#onlineMembersModal").classList.add("hidden");
+    renderOnlineMembers();
     user = null;
     token = null;
     sessionStarted = false;
@@ -1436,7 +1440,7 @@ function renderPeople(list) {
 function connect() {
   socket = io({ auth: { token }, transports: ["websocket", "polling"] });
   connectionStatus("Connexion…", "waiting");
-  socket.on("disconnect", () => connectionStatus("Reconnexion…", "waiting"));
+  socket.on("disconnect", () => { connectionStatus("Reconnexion…", "waiting"); allOnlineMembers = null; renderOnlineMembers(); });
   socket.on("connect", () => {
     connectionStatus("En direct", "online");
     socket.emit("join-room", currentRoom);
@@ -1491,6 +1495,10 @@ function connect() {
     (ids.forEach((id) => removeMessage(id, true)), loadPrivateConversations()),
   );
   socket.on("presence", renderPeople);
+  socket.on("online-members", members => {
+    allOnlineMembers = Array.isArray(members) ? members : [];
+    renderOnlineMembers();
+  });
   socket.on(
     "typing",
     (d) =>
@@ -1508,6 +1516,7 @@ async function loadBlocks() {
     const rows = await (await api("/api/blocks")).json();
     blockedUsers = new Map(rows.map((row) => [String(row.user_id), row]));
     renderBlockedUsers();
+    renderOnlineMembers();
     if (lastPeople.length) renderPeople(lastPeople);
   } catch (e) {
     showError(e.message);
@@ -2709,3 +2718,69 @@ $("#screen").onclick = async () => {
 
 $("#conversationSearch")?.addEventListener("input", renderPrivateConversations);
 $("#friendSearch")?.addEventListener("input", renderFriends);
+
+// Annuaire de présence global : aucun changement du salon ou du brouillon.
+function renderOnlineMembers() {
+  const badge = $("#onlineMembersBadge"), count = $("#onlineMembersCount"), grid = $("#onlineMembersGrid");
+  if (!badge || !grid) return;
+  const known = allOnlineMembers !== null;
+  const members = (allOnlineMembers || []).filter(person => !blockedUsers.has(String(person.id)));
+  badge.textContent = known ? String(members.length) : "…";
+  count.textContent = known ? `${members.length} membre${members.length > 1 ? "s" : ""} en ligne · tous les salons, vous compris` : "En attente de la connexion en direct…";
+  if ($("#onlineMembersModal").classList.contains("hidden")) return;
+  if (!known) {
+    grid.innerHTML = '<p class="online-members-empty" role="status">La liste se chargera dès que la connexion au tchat sera établie.</p>';
+    return;
+  }
+  const query = normalizeSearch($("#onlineMembersSearch").value);
+  const shown = members.filter(person => normalizeSearch(`${person.name} ${person.city || ""}`).includes(query))
+    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  // Preserve keyboard focus when a live update redraws the directory.
+  const focused = grid.contains(document.activeElement) ? {
+    id: document.activeElement.dataset.onlineProfile || document.activeElement.dataset.onlineMessage,
+    type: document.activeElement.hasAttribute("data-online-profile") ? "data-online-profile" : "data-online-message",
+  } : null;
+  grid.innerHTML = shown.length ? shown.map(person => {
+    const mine = String(person.id) === String(user?.uid);
+    const label = {available: "Disponible", busy: "Occupé", away: "Absent"}[person.availability] || "Connecté";
+    return `<article class="online-member-card">
+      <div class="online-member-heading"><span class="online-member-avatar">${person.photo ? `<img src="${safe(person.photo)}" alt="">` : safe(initials(person.name))}</span>
+      <div><h3>${safe(person.name)}${mine ? ' <small>(vous)</small>' : ""}${person.verified ? '<span class="verified-badge" title="Profil vérifié">✓</span>' : ""}</h3><span class="online-member-status">● ${label}</span></div></div>
+      <p class="online-member-city">${safe(person.city || "Ville masquée")}</p>
+      <p class="online-member-bio">${safe(person.bio || "Ce membre n’a pas encore ajouté de description.")}</p>
+      <div class="online-member-actions"><button type="button" data-online-profile="${safe(person.id)}">${mine ? "Mon profil" : "Voir le profil"}</button>${mine ? "" : `<button type="button" class="online-member-message" data-online-message="${safe(person.id)}">Écrire en privé</button>`}</div>
+    </article>`;
+  }).join("") : '<p class="online-members-empty" role="status">Aucun membre ne correspond à votre recherche.</p>';
+  grid.querySelectorAll("[data-online-profile]").forEach(button => button.onclick = () => {
+    const person = members.find(member => String(member.id) === button.dataset.onlineProfile);
+    if (!person) return;
+    $("#onlineMembersModal").classList.add("hidden");
+    showPublicProfile(String(person.id), person.name);
+  });
+  grid.querySelectorAll("[data-online-message]").forEach(button => button.onclick = () => {
+    const person = members.find(member => String(member.id) === button.dataset.onlineMessage);
+    if (!person) return;
+    $("#onlineMembersModal").classList.add("hidden");
+    openPrivate(String(person.id), person.name);
+  });
+  if (focused?.id) {
+    const replacement = [...grid.querySelectorAll(`[${focused.type}]`)].find(button => button.getAttribute(focused.type) === focused.id);
+    (replacement || $("#onlineMembersSearch")).focus();
+  }
+}
+function openOnlineMembers(event) {
+  event?.preventDefault();
+  $(".side").classList.remove("open");
+  $(".people").classList.remove("open");
+  $("#onlineMembersSearch").value = "";
+  $("#onlineMembersModal").classList.remove("hidden");
+  renderOnlineMembers();
+  $("#onlineMembersSearch").focus();
+}
+$("#onlineMembersLink").onclick = openOnlineMembers;
+$("#onlineMembersShortcut").onclick = openOnlineMembers;
+$("#closeOnlineMembers").onclick = () => $("#onlineMembersModal").classList.add("hidden");
+$("#onlineMembersModal").addEventListener("click", event => {
+  if (event.target === $("#onlineMembersModal")) $("#closeOnlineMembers").click();
+});
+$("#onlineMembersSearch").addEventListener("input", renderOnlineMembers);

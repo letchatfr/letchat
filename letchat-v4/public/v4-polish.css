@@ -114,3 +114,34 @@ button:disabled { cursor: wait; opacity: .6; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }
+
+/* Annuaire global des membres connectés. */
+.online-members-badge { margin-left: auto; min-width: 24px; padding: 3px 7px; border-radius: 12px; text-align: center; background: color-mix(in srgb, var(--v3-success) 15%, var(--v3-surface)); color: var(--v3-text); font-size: 11px; font-weight: 800; }
+.side #onlineMembersLink { font-size: 13px; gap: 6px; }
+.online-members-shortcut { width: 100%; padding: 10px; border: 1px solid var(--v3-border); border-radius: 10px; color: var(--v3-accent); background: var(--v3-surface); text-align: left; font-size: 12px; cursor: pointer; }
+.online-members-card { width: min(860px, 100%); padding: 30px; }
+.online-members-eyebrow { display: block; padding-right: 30px; margin-bottom: 9px; font-size: 10px; font-weight: 800; letter-spacing: .1em; color: var(--v3-primary); }
+.online-members-card h2 { padding-right: 30px; }
+.online-members-card > p { margin-bottom: 18px; }
+.online-members-card .online-members-search { margin: 0 0 20px; }
+.online-members-search input { width: 100%; min-width: 0; min-height: 46px; padding: 12px 14px; border: 1px solid var(--v3-border); border-radius: 12px; background: var(--v3-surface-soft); color: var(--v3-text); font-size: 14px; }
+.online-members-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.online-member-card { display: flex; flex-direction: column; min-width: 0; padding: 17px; border: 1px solid var(--v3-border); border-radius: 16px; background: var(--v3-surface-soft); }
+.online-member-heading { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.online-member-heading > div { min-width: 0; }
+.online-member-heading h3 { margin: 0 0 4px; font-size: 15px; overflow-wrap: anywhere; }
+.online-member-heading h3 small { font-size: 11px; color: var(--v3-text-soft); font-weight: 400; }
+.online-member-avatar { display: grid; place-items: center; width: 46px; height: 46px; flex: 0 0 46px; border-radius: 15px; overflow: hidden; background: var(--v3-surface-strong); color: var(--v3-accent); font-weight: 800; }
+.online-member-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.online-member-status { font-size: 11px; color: var(--v3-success); }
+.online-member-city { margin: 14px 0 5px; font-size: 12px; color: var(--v3-text-soft); overflow-wrap: anywhere; }
+.online-member-bio { flex: 1; margin: 0 0 16px; font-size: 13px; line-height: 1.5; color: var(--v3-text); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.online-member-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.online-member-actions button { flex: 1; min-height: 40px; padding: 8px 10px; border: 1px solid var(--v3-border); border-radius: 10px; font-size: 12px; color: var(--v3-text); background: var(--v3-surface); }
+.online-member-actions .online-member-message { background: #d7513d; border-color: #d7513d; color: white; }
+.online-members-empty { grid-column: 1 / -1; padding: 28px 10px; color: var(--v3-text-soft); text-align: center; }
+@media(max-width:600px) {
+  .online-members-card { padding: 26px 16px 20px; max-height: 92dvh; }
+  .online-members-grid { grid-template-columns: minmax(0, 1fr); }
+  .online-members-search input { font-size: 16px; }
+}

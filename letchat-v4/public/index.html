@@ -29,7 +29,7 @@
     crossorigin="anonymous">
   </script>
     <link rel="stylesheet" href="v2-community.css?v=1">
-  <link rel="stylesheet" href="v4-polish.css?v=20260927">
+  <link rel="stylesheet" href="v4-polish.css?v=20260927-online">
 </head>
 
 <body>
@@ -330,6 +330,7 @@
         <button class="new">＋ Nouveau message</button>
         <button id="mobileThemeBtn" class="mobile-theme-button" type="button" aria-label="Activer le mode sombre" aria-pressed="false">☾ Mode sombre</button>
         <nav aria-label="Messagerie"><a id="privateMessagesLink" href="#private-messages" style="text-decoration:none">◌ Messages privés <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a></nav>
+        <nav aria-label="Communauté"><a id="onlineMembersLink" href="#membres-en-ligne">👥 Membres en ligne <span id="onlineMembersBadge" class="online-members-badge">…</span></a></nav>
         <div class="v2-explore-heading"><h2>Explorer les salons</h2><span>COMMUNAUTÉ</span></div>
         <label class="v2-room-search"><span class="v2-sr-only">Rechercher un salon</span><input id="roomSearch" type="search" placeholder="Rechercher un salon…" autocomplete="off"></label>
         <button id="favoriteRoomsOnly" class="v2-favorites-filter" type="button" aria-pressed="false">☆ Mes favoris</button>
@@ -486,13 +487,23 @@
         <div id="friendRequests"></div>
         <div id="friendsList"></div>
         <hr />
-        <h2>Utilisateurs en ligne</h2>
+        <h2>Dans ce salon</h2><button id="onlineMembersShortcut" type="button" class="online-members-shortcut">Voir tous les membres en ligne →</button>
         <p class="people-help">
           Touchez un utilisateur pour lui écrire ou l’ajouter.
         </p>
         <div id="people"></div>
       </aside>
     </main>
+    <section id="onlineMembersModal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-labelledby="onlineMembersTitle">
+      <div class="profile-card online-members-card">
+        <button id="closeOnlineMembers" class="profile-close" type="button" aria-label="Fermer les membres en ligne">×</button>
+        <span class="online-members-eyebrow">LA COMMUNAUTÉ EN DIRECT</span>
+        <h2 id="onlineMembersTitle">Membres en ligne</h2>
+        <p id="onlineMembersCount" role="status">En attente de la connexion en direct…</p>
+        <label class="online-members-search"><span class="v2-sr-only">Rechercher un membre en ligne</span><input id="onlineMembersSearch" type="search" placeholder="Rechercher un pseudonyme ou une ville…" autocomplete="off"></label>
+        <div id="onlineMembersGrid" class="online-members-grid"></div>
+      </div>
+    </section>
     <section id="mediaLightbox" class="media-lightbox hidden" role="dialog" aria-modal="true" aria-label="Aperçu du média">
       <button id="closeMediaLightbox" class="media-lightbox-close" type="button" aria-label="Fermer">×</button>
       <div id="mediaLightboxContent" class="media-lightbox-content"></div>
@@ -807,8 +818,8 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-cafe-v2.js?v=20260927"></script>
+    <script type="module" src="app-v4-cafe-v2.js?v=20260927-online"></script>
       <script src="v2-community.js?v=1" defer></script>
-    <script src="v4-interface.js?v=20260927" defer></script>
+    <script src="v4-interface.js?v=20260927-online" defer></script>
 </body>
 </html>
