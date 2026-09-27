@@ -1,5 +1,5 @@
-const CACHE = "letchat-shell-v25-salons-simples";
-const SHELL = ["/", "/index.html", "/style.css?v=20260927-premium-xxx", "/v3-modern.css?v=notifications-mobile-v1", "/v3-theme.js?v=interface-finitions-v31", "/v2-community.css?v=20260927-salons-simples", "/room-catalog.js?v=20260927-premium-xxx", "/app-v4-cafe-v2.js?v=20260927-salons-simples", "/v4-polish.css?v=20260927-salons-simples", "/v4-interface.js?v=20260927-premium-refonte", "/manifest.webmanifest", "/icon.svg?v=3"];
+const CACHE = "letchat-shell-v26-sans-bandeau-vide";
+const SHELL = ["/", "/index.html", "/style.css?v=20260927-premium-xxx", "/v3-modern.css?v=notifications-mobile-v1", "/v3-theme.js?v=interface-finitions-v31", "/v2-community.css?v=20260927-salons-simples", "/room-catalog.js?v=20260927-premium-xxx", "/app-v4-cafe-v2.js?v=20260927-sans-bandeau-vide", "/v4-polish.css?v=20260927-salons-simples", "/v4-interface.js?v=20260927-premium-refonte", "/manifest.webmanifest", "/icon.svg?v=3"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));

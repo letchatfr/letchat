@@ -1767,7 +1767,6 @@ async function loadSubscription() {
     $("#premiumChoices").classList.toggle("hidden", data.premium || data.canManage);
     $("#managePremium").classList.toggle("hidden", !data.canManage);
     $("#premiumBadge").classList.toggle("hidden", !data.premium);
-    $("#adBanner").classList.toggle("hidden", data.premium);
     if (!data.premium) loadFreeAccountAds();
     $("#callBtn").classList.remove("hidden");
     $("#callBtn").disabled = false;
@@ -1806,9 +1805,6 @@ function loadFreeAccountAds() {
   script.async = true;
   script.crossOrigin = "anonymous";
   script.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3317597986908171";
-  script.onload = () => {
-    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (error) { console.warn("Publicité :", error); }
-  };
   document.head.append(script);
 }
 async function startPremium(plan, button) {
