@@ -1,0 +1,39 @@
+{
+  "name": "letchat-v4-google",
+  "version": "4.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node scripts/check.mjs",
+    "build": "node scripts/build-assets.mjs",
+    "prestart": "npm run build",
+    "test": "node --test test/*.test.mjs",
+    "test:integration": "node test/integration.mjs",
+    "test:social": "node test/social-integration.mjs",
+    "test:premium": "node test/social-integration.mjs --premium-room",
+    "test:albums": "node test/social-integration.mjs --albums",
+    "test:premium-benefits": "node test/social-integration.mjs --premium-benefits",
+    "test:surprise": "node test/surprise-integration.mjs"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "file-type": "21.3.4",
+    "helmet": "^8.1.0",
+    "jose": "^6.1.0",
+    "pg": "^8.16.0",
+    "sharp": "0.35.4",
+    "socket.io": "^4.8.1",
+    "stripe": "^22.6.2",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "jsdom": "30.1.1",
+    "socket.io-client": "4.8.4"
+  }
+}
