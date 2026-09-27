@@ -2882,14 +2882,18 @@ $('#myReportsModal').addEventListener('click', event => {
   if (event.target === $('#myReportsModal')) $('#closeMyReports').click();
 });
 let activePoll = null;
+let extrasRoom = null;
 async function refreshRoomExtras() {
   const room = currentRoom;
   if (privateHomeOpen || currentPrivate || !user) { $('#roomExtras').classList.add('hidden'); return; }
   $('#roomExtras').classList.remove('hidden');
-  $('#roomPoll').replaceChildren();
-  $('#createPoll').classList.add('hidden');
-  $('#pollCreator').reset(); $('#pollCreator').classList.add('hidden');
-  activePoll = null;
+  if (extrasRoom !== room) {
+    extrasRoom = room;
+    $('#roomPoll').replaceChildren();
+    $('#createPoll').classList.add('hidden');
+    $('#pollCreator').reset(); $('#pollCreator').classList.add('hidden');
+    activePoll = null;
+  }
   try {
     const data = await (await api(`/api/rooms/${encodeURIComponent(room)}/slow-mode`)).json();
     if (room === currentRoom && !privateHomeOpen && !currentPrivate) renderSlowMode(data.seconds);
@@ -2919,8 +2923,9 @@ async function refreshPoll() {
     if (room !== currentRoom || privateHomeOpen || currentPrivate) return;
     activePoll = poll;
     const box = $('#roomPoll');
-    $('#createPoll').classList.toggle('hidden', Boolean(poll));
+    $('#createPoll').classList.toggle('hidden', Boolean(poll) || !$('#pollCreator').classList.contains('hidden'));
     if (!poll) { box.replaceChildren(); return; }
+    $('#pollCreator').classList.add('hidden');
     const counts = new Map((poll.counts || []).map(item => [item.choice, item.count]));
     box.innerHTML = `<div class="poll-heading"><strong>📊 ${safe(poll.question)}</strong><small>${poll.votes} vote(s) · se termine sous 24 h</small></div><div class="poll-options">${poll.options.map((option,index) => `<button type="button" data-poll-choice="${index}" class="${poll.my_choice === index ? 'selected' : ''}"><span>${safe(option)}</span><b>${counts.get(index) || 0}</b></button>`).join('')}</div>${poll.author_id === user.uid || isAdmin ? '<button type="button" id="closePoll" class="poll-close">Terminer le sondage</button>' : ''}`;
     box.querySelectorAll('[data-poll-choice]').forEach(button => button.onclick = async () => {
