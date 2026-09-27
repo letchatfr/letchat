@@ -29,7 +29,7 @@
     crossorigin="anonymous">
   </script>
     <link rel="stylesheet" href="v2-community.css?v=1">
-  <link rel="stylesheet" href="v4-polish.css?v=20260927-salons-simples">
+  <link rel="stylesheet" href="v4-polish.css?v=20260927-five-features">
 </head>
 
 <body>
@@ -377,7 +377,7 @@
                 >0</span
               ></button
             ><button id="adminBtn" class="hidden admin-button">
-              Administration</button
+              Administration <span id="adminPendingBadge" class="admin-pending-badge hidden" aria-live="polite"></span></button
             ><button id="reportBtn" class="hidden report-button">
               Signaler</button
             ><button id="blockBtn" class="hidden danger-button">Bloquer</button
@@ -401,6 +401,11 @@
   (adsbygoogle = window.adsbygoogle || []).push({});
 </script>
         <section id="roomFeature" class="room-feature hidden"></section>
+        <section id="roomExtras" class="room-extras hidden" aria-label="Fonctions du salon">
+          <div class="room-extras-line"><span id="slowModeInfo" role="status"></span><label id="slowModeEditor" class="hidden">Mode lent <select id="slowModeSelect" aria-label="Mode lent pour ce salon"><option value="0">Désactivé</option><option value="10">10 secondes</option><option value="30">30 secondes</option><option value="60">60 secondes</option></select></label><button id="createPoll" type="button">＋ Sondage</button></div>
+          <form id="pollCreator" class="poll-creator hidden"><label>Question<input id="pollQuestion" maxlength="160" required placeholder="Votre question"></label><div class="poll-creator-options"><input id="pollOption1" maxlength="80" required placeholder="Réponse 1"><input id="pollOption2" maxlength="80" required placeholder="Réponse 2"><input id="pollOption3" maxlength="80" placeholder="Réponse 3 (facultatif)"><input id="pollOption4" maxlength="80" placeholder="Réponse 4 (facultatif)"></div><div><button id="submitPoll" type="submit">Publier</button><button id="cancelPoll" type="button">Annuler</button></div></form>
+          <div id="roomPoll" role="region" aria-label="Sondage du salon"></div>
+        </section>
         <div id="messages" class="messages">
           <div class="empty">
             <b>☀</b>
@@ -589,7 +594,9 @@
           <p id="appFeatureStatus">Installation et notifications disponibles sur les appareils compatibles.</p>
           <button id="installApp" type="button" class="account-export hidden">Installer Letchat</button>
           <button id="enablePush" type="button" class="account-export">Activer les notifications</button>
+          <fieldset class="notification-preferences"><legend>Quelles alertes recevoir ?</legend><label><input id="notifyPrivate" type="checkbox" checked> Messages privés</label><label><input id="notifyFriends" type="checkbox" checked> Demandes et réponses d’amis</label><label><input id="notifyReports" type="checkbox" checked> Suivi de mes signalements</label><button id="saveNotificationPreferences" type="button">Enregistrer mes préférences</button><small id="notificationPreferencesStatus" role="status"></small></fieldset>
         </section>
+        <section class="account-data"><h3>Mes signalements</h3><button id="myReportsButton" type="button" class="account-export">Voir le suivi de mes signalements</button></section>
         <section class="account-data">
           <h3>Mes données et mon compte</h3>
           <p>Contact officiel : <a id="contactEmail">Chargement…</a></p>
@@ -624,6 +631,7 @@
         <div id="publicProfileError" class="profile-error"></div>
       </div>
     </section>
+    <section id="myReportsModal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-labelledby="myReportsTitle"><div class="profile-card my-reports-card"><button id="closeMyReports" type="button" class="profile-close" aria-label="Fermer">×</button><h2 id="myReportsTitle">Mes signalements</h2><p>Le statut de vos 50 signalements les plus récents.</p><div id="myReportsList" class="my-reports-list"></div></div></section>
     <section id="reportModal" class="profile-modal hidden">
       <form id="reportForm" class="profile-card report-card">
         <button type="button" id="closeReport" class="profile-close">×</button>
@@ -816,7 +824,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-cafe-v2.js?v=20260927-reopen-reports"></script>
-    <script src="v4-interface.js?v=20260927-admin-salons" defer></script>
+    <script type="module" src="app-v4-cafe-v2.js?v=20260927-five-features"></script>
+    <script src="v4-interface.js?v=20260927-five-features" defer></script>
 </body>
 </html>

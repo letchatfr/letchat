@@ -373,3 +373,42 @@ html[data-theme="dark"] .voice-recording button:not(#sendVoice) {
   .admin-panel { overflow-y: auto; }
   .admin-panel .report-list { flex-shrink: 0; overflow-y: visible; }
 }
+
+/* Salons : mode lent et sondage dans l’espace de discussion. */
+.room-extras { flex: 0 0 auto; max-height: min(34dvh, 250px); overflow-y: auto; padding: 7px 20px 10px; border-bottom: 1px solid var(--v3-border); background: var(--v3-surface); color: var(--v3-text); }
+.room-extras-line { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; min-height: 35px; }
+.room-extras-line #slowModeInfo { flex: 1 1 190px; color: var(--v3-text-soft); font-size: 12px; }
+.room-extras button, .room-extras select { min-height: 36px; padding: 6px 10px; border: 1px solid var(--v3-border); border-radius: 9px; background: var(--v3-surface-soft); color: var(--v3-text); cursor: pointer; }
+.room-extras-line label { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+#roomPoll:empty { display: none; }
+#roomPoll { margin-top: 7px; padding: 10px; border: 1px solid var(--v3-border); border-radius: 12px; background: var(--v3-surface-soft); }
+.poll-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px; margin-bottom: 8px; }
+.poll-heading strong { font-size: 14px; overflow-wrap: anywhere; }
+.poll-heading small { color: var(--v3-text-soft); }
+.poll-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.poll-options button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: min(180px, 100%); max-width: 100%; flex: 1 1 180px; text-align: left; overflow-wrap: anywhere; }
+.poll-options button.selected { border-color: var(--v3-primary); background: var(--v3-surface-strong); font-weight: bold; }
+.room-extras .poll-close { margin-top: 9px; font-size: 11px; }
+.poll-creator { padding: 9px 0; }
+.poll-creator label { display: grid; gap: 5px; font-size: 12px; }
+.poll-creator input { min-width: 0; width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--v3-border); border-radius: 9px; background: var(--v3-surface-soft); color: var(--v3-text); }
+.poll-creator-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 7px 0; }
+.poll-creator > div:last-child { display: flex; gap: 7px; }
+.notification-preferences { display: grid; gap: 9px; margin-top: 14px; padding: 12px; border: 1px solid var(--v3-border); border-radius: 12px; }
+.notification-preferences legend { font-weight: 700; }
+.profile-card .notification-preferences label { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; font-weight: 400; }
+.notification-preferences button { min-height: 40px; padding: 8px 10px; border: 1px solid var(--v3-border); border-radius: 9px; background: var(--v3-surface-strong); color: var(--v3-text); }
+.notification-preferences small { color: var(--v3-text-soft); }
+.admin-pending-badge { min-width: 19px; padding: 2px 5px; border-radius: 10px; background: #d64536; color: white; font-size: 11px; }
+.my-reports-card { max-height: 86dvh; overflow-y: auto; }
+.my-reports-list { display: grid; gap: 8px; }
+.my-report-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 9px; padding: 10px; border: 1px solid var(--v3-border); border-radius: 10px; background: var(--v3-surface-soft); overflow-wrap: anywhere; }
+.my-report-row small { grid-column: 1 / -1; color: var(--v3-text-soft); }
+@media (max-width: 650px) {
+ .room-extras { max-height: min(30dvh, 190px); padding: 5px 10px; }
+ .room-extras-line { gap: 5px; }
+ .room-extras-line #slowModeInfo { flex-basis: 100%; }
+ .room-extras select, .room-extras button { min-height: 40px; }
+ .poll-creator-options { grid-template-columns: 1fr; }
+ .poll-options button { flex-basis: 100%; }
+}

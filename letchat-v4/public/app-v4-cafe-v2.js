@@ -45,6 +45,7 @@ let user,
   showArchivedConversations = false,
   privateContactStatus = null,
   notifications = [],
+  notificationPreferences = {private_messages:true, friends:true, reports:true},
   lastPeople = [],
   allOnlineMembers = null,
   lastPublicMessages = [],
@@ -257,6 +258,7 @@ async function beginSession() {
     await loadPrivateConversations();
     await loadNotifications();
     await checkAdmin();
+    await loadNotificationPreferences();
     await loadSubscription();
     connect();
     load();
@@ -407,10 +409,12 @@ async function load() {
   }
   try {
     if (privateHomeOpen) {
+      $("#roomExtras").classList.add("hidden");
       renderPrivateMessagesHome();
       return;
     }
     if (currentPrivate) {
+      $("#roomExtras").classList.add("hidden");
       const selected = currentPrivate,
         rows = await (
           await api(`/api/private/${encodeURIComponent(selected.id)}`)
@@ -424,6 +428,7 @@ async function load() {
         await api(`/api/messages?room=${encodeURIComponent(room)}`)
       ).json();
     if (version === loadVersion && !privateHomeOpen && !currentPrivate && room === currentRoom) render(rows);
+    if (version === loadVersion) refreshRoomExtras();
   } catch (e) {
     showError(e.message);
   }
@@ -1052,7 +1057,7 @@ function showPrivateNotification(m) {
   }
   unreadPrivate.set(senderId, (unreadPrivate.get(senderId) || 0) + 1);
   updateUnread();
-  if (preference?.muted) return;
+  if (preference?.muted || !notificationPreferences.private_messages) return;
   const toast = $("#messageToast");
   toast.textContent = `💬 ${senderName} : ${m.body || "Nouveau média"}`;
   toast.classList.remove("hidden");
@@ -1448,6 +1453,13 @@ function connect() {
     load();
   });
   socket.on("message", (m) => addMessage(m));
+  socket.on("room-slow-mode", ({room,seconds}) => {
+    if (room === currentRoom && !currentPrivate && !privateHomeOpen) renderSlowMode(seconds);
+  });
+  socket.on("poll-updated", ({room}) => {
+    if (room === currentRoom && !currentPrivate && !privateHomeOpen) refreshPoll();
+  });
+  socket.on("report-count-changed", () => { if (isAdmin) refreshPendingReportsCount(); });
   socket.on("message-pinned", () => { if (!currentPrivate && currentRoom === "cafe") load(); });
   socket.on("room-activity", ({ room, userId } = {}) => {
     if (!rooms[room] || userId === user.uid || (!currentPrivate && room === currentRoom)) return;
@@ -1844,6 +1856,7 @@ async function checkAdmin() {
     const data = await (await api("/api/admin/me")).json();
     isAdmin = Boolean(data.admin);
     $("#adminBtn").classList.toggle("hidden", !data.admin);
+    if (isAdmin) refreshPendingReportsCount();
   } catch {
     isAdmin = false;
     $("#adminBtn").classList.add("hidden");
@@ -1959,6 +1972,7 @@ async function adminAction(button) {
       });
     }
     await loadAdminReports();
+    refreshPendingReportsCount();
   } catch (e) {
     $("#adminError").textContent = e.message;
   } finally {
@@ -2181,6 +2195,7 @@ function selectRoom(link, id) {
   $(".chat header h1").textContent = rooms[id].title;
   $("#roomPresence").classList.remove("hidden");
   $("#privateTypingStatus").classList.add("hidden");
+  refreshRoomExtras();
   $("#typing").textContent = "";
   updateRoomFeature();
   load();
@@ -2809,3 +2824,139 @@ $("#homeLink").addEventListener("click", () => {
   heading.setAttribute("tabindex", "-1");
   heading.focus({ preventScroll: true });
 });
+
+
+// Administration, préférences personnelles et sondages par salon.
+async function refreshPendingReportsCount() {
+  if (!isAdmin) return;
+  try {
+    const data = await (await api('/api/admin/pending-count')).json();
+    const badge = $('#adminPendingBadge');
+    badge.textContent = data.count > 99 ? '99+' : String(data.count);
+    badge.classList.toggle('hidden', !data.count);
+    $('#adminBtn').setAttribute('aria-label', data.count ? `Administration : ${data.count} signalement(s) à traiter` : 'Administration');
+  } catch { /* La modération reste disponible même si le compteur échoue. */ }
+}
+setInterval(() => {
+  if (isAdmin && document.visibilityState === 'visible') refreshPendingReportsCount();
+}, 60000);
+async function loadNotificationPreferences() {
+  try {
+    const values = await (await api('/api/notification-preferences')).json();
+    notificationPreferences = values;
+    for (const [key,id] of Object.entries({private_messages:'notifyPrivate',friends:'notifyFriends',reports:'notifyReports'})) {
+      $("#"+id).checked = values[key] !== false;
+    }
+  } catch (error) { $('#notificationPreferencesStatus').textContent = error.message; }
+}
+$('#saveNotificationPreferences').onclick = async () => {
+  const button = $('#saveNotificationPreferences'); button.disabled = true;
+  const status = $('#notificationPreferencesStatus'); status.textContent = '';
+  try {
+    notificationPreferences = await (await api('/api/notification-preferences', {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        private_messages:$('#notifyPrivate').checked,
+        friends:$('#notifyFriends').checked,
+        reports:$('#notifyReports').checked
+      })
+    })).json();
+    status.textContent = 'Préférences enregistrées.';
+  } catch (error) { status.textContent = error.message; }
+  finally { button.disabled = false; }
+};
+const reasonLabels = {harassment:'Harcèlement',spam:'Spam ou publicité',inappropriate:'Contenu inapproprié',fake:'Faux profil',other:'Autre raison'};
+$('#myReportsButton').onclick = async () => {
+  $('#myReportsModal').classList.remove('hidden');
+  const list = $('#myReportsList'); list.textContent = 'Chargement…';
+  try {
+    const reports = await (await api('/api/my-reports')).json();
+    list.innerHTML = reports.length ? reports.map(report => {
+      const status = {pending:'À traiter',resolved:'Traité',dismissed:'Rejeté'}[report.status] || 'En cours';
+      return `<article class="my-report-row"><strong>${safe(reasonLabels[report.reason] || report.reason)}</strong><span>${safe(status)}</span><small>${new Date(report.created_at).toLocaleDateString('fr-FR')}</small></article>`;
+    }).join('') : '<p>Aucun signalement envoyé.</p>';
+  } catch (error) { list.textContent = error.message; }
+};
+$('#closeMyReports').onclick = () => $('#myReportsModal').classList.add('hidden');
+$('#myReportsModal').addEventListener('click', event => {
+  if (event.target === $('#myReportsModal')) $('#closeMyReports').click();
+});
+let activePoll = null;
+async function refreshRoomExtras() {
+  const room = currentRoom;
+  if (privateHomeOpen || currentPrivate || !user) { $('#roomExtras').classList.add('hidden'); return; }
+  $('#roomExtras').classList.remove('hidden');
+  $('#roomPoll').replaceChildren();
+  $('#createPoll').classList.add('hidden');
+  $('#pollCreator').reset(); $('#pollCreator').classList.add('hidden');
+  activePoll = null;
+  try {
+    const data = await (await api(`/api/rooms/${encodeURIComponent(room)}/slow-mode`)).json();
+    if (room === currentRoom && !privateHomeOpen && !currentPrivate) renderSlowMode(data.seconds);
+  } catch (error) { $('#slowModeInfo').textContent = error.message; }
+  refreshPoll();
+}
+function renderSlowMode(seconds) {
+  $('#slowModeInfo').textContent = seconds ? `Mode lent : ${seconds} secondes entre deux messages` : '';
+  $('#slowModeEditor').classList.toggle('hidden', !isAdmin);
+  $('#slowModeSelect').value = String(seconds);
+}
+$('#slowModeSelect').onchange = async () => {
+  const select = $('#slowModeSelect'); select.disabled = true;
+  const room = currentRoom;
+  try {
+    const data = await (await api(`/api/rooms/${encodeURIComponent(room)}/slow-mode`, {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({seconds:Number(select.value)})
+    })).json();
+    if (room === currentRoom) renderSlowMode(data.seconds);
+  } catch (error) { showError(error.message); if (room === currentRoom) refreshRoomExtras(); }
+  finally { select.disabled = false; }
+};
+async function refreshPoll() {
+  const room = currentRoom;
+  try {
+    const poll = await (await api(`/api/polls?room=${encodeURIComponent(room)}`)).json();
+    if (room !== currentRoom || privateHomeOpen || currentPrivate) return;
+    activePoll = poll;
+    const box = $('#roomPoll');
+    $('#createPoll').classList.toggle('hidden', Boolean(poll));
+    if (!poll) { box.replaceChildren(); return; }
+    const counts = new Map((poll.counts || []).map(item => [item.choice, item.count]));
+    box.innerHTML = `<div class="poll-heading"><strong>📊 ${safe(poll.question)}</strong><small>${poll.votes} vote(s) · se termine sous 24 h</small></div><div class="poll-options">${poll.options.map((option,index) => `<button type="button" data-poll-choice="${index}" class="${poll.my_choice === index ? 'selected' : ''}"><span>${safe(option)}</span><b>${counts.get(index) || 0}</b></button>`).join('')}</div>${poll.author_id === user.uid || isAdmin ? '<button type="button" id="closePoll" class="poll-close">Terminer le sondage</button>' : ''}`;
+    box.querySelectorAll('[data-poll-choice]').forEach(button => button.onclick = async () => {
+      button.disabled = true;
+      try {
+        const response = await (await api(`/api/polls/${encodeURIComponent(poll.id)}/vote`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({choice:Number(button.dataset.pollChoice)})
+        })).json();
+        if (room === currentRoom) { activePoll = response; refreshPoll(); }
+      } catch (error) { showError(error.message); button.disabled = false; }
+    });
+    box.querySelector('#closePoll')?.addEventListener('click', async () => {
+      if (!confirm('Terminer ce sondage ?')) return;
+      try { await api(`/api/polls/${encodeURIComponent(poll.id)}`, {method:'DELETE'}); refreshPoll(); }
+      catch (error) { showError(error.message); }
+    });
+  } catch (error) { if (room === currentRoom) $('#roomPoll').textContent = error.message; }
+}
+$('#createPoll').onclick = () => {
+  $('#pollCreator').classList.remove('hidden'); $('#createPoll').classList.add('hidden');
+  $('#pollQuestion').focus();
+};
+$('#cancelPoll').onclick = () => {
+  $('#pollCreator').reset(); $('#pollCreator').classList.add('hidden');
+  $('#createPoll').classList.toggle('hidden', Boolean(activePoll));
+};
+$('#pollCreator').onsubmit = async event => {
+  event.preventDefault();
+  const button = $('#submitPoll'); button.disabled = true;
+  try {
+    const question = $('#pollQuestion').value.trim();
+    const options = ['pollOption1','pollOption2','pollOption3','pollOption4'].map(id => $('#'+id).value.trim()).filter(Boolean);
+    await api('/api/polls', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({room:currentRoom,question,options})});
+    $('#pollCreator').reset(); $('#pollCreator').classList.add('hidden');
+    refreshPoll();
+  } catch (error) { showError(error.message); }
+  finally { button.disabled = false; }
+};

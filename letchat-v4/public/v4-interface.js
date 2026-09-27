@@ -153,7 +153,7 @@
       const text = document.createElement('span'); text.textContent = label;
       if (targetId === 'themeBtn') text.textContent = document.documentElement.dataset.theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre';
       button.append(symbol, text); button.disabled = target.disabled;
-      const badge = targetId === 'privateMessagesLink' ? $('#privateMessagesNavBadge') : targetId === 'notificationsBtn' ? $('#notificationsBadge') : null;
+      const badge = targetId === 'privateMessagesLink' ? $('#privateMessagesNavBadge') : targetId === 'notificationsBtn' ? $('#notificationsBadge') : targetId === 'adminBtn' ? $('#adminPendingBadge') : null;
       if (badge && !badge.classList.contains('hidden')) { const amount = document.createElement('b'); amount.textContent = badge.textContent; button.append(amount); }
       button.addEventListener('click', () => { closeOptions(); target.click(); }); list.append(button);
     });
@@ -163,9 +163,9 @@
   $('#mobileNavMembers').addEventListener('click', () => $('#onlineMembersLink').click());
   function syncMobileCounts() {
     $('#mobileOnlineCount').textContent = $('#onlineMembersBadge').textContent;
-    $('#mobileUnreadDot').classList.toggle('hidden', $('#privateMessagesNavBadge').classList.contains('hidden') && $('#notificationsBadge').classList.contains('hidden'));
+    $('#mobileUnreadDot').classList.toggle('hidden', $('#privateMessagesNavBadge').classList.contains('hidden') && $('#notificationsBadge').classList.contains('hidden') && $('#adminPendingBadge').classList.contains('hidden'));
   }
-  ['#onlineMembersBadge', '#privateMessagesNavBadge', '#notificationsBadge'].forEach(selector => new MutationObserver(syncMobileCounts).observe($(selector), {attributes:true, attributeFilter:['class'], childList:true, characterData:true, subtree:true}));
+  ['#onlineMembersBadge', '#privateMessagesNavBadge', '#notificationsBadge', '#adminPendingBadge'].forEach(selector => new MutationObserver(syncMobileCounts).observe($(selector), {attributes:true, attributeFilter:['class'], childList:true, characterData:true, subtree:true}));
   syncMobileCounts();
   Object.entries({attach:'Fichier', cameraBtn:'Photo', voiceBtn:'Vocal', emoji:'Emojis', viewOnceBtn:'Vue unique'}).forEach(([id,label]) => document.getElementById(id).dataset.mobileLabel = label);
   const composer = $('.composer'), mediaToggle = $('#mobileComposerToggle');
