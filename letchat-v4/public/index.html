@@ -19,7 +19,7 @@
 
   <title>Letchat — Discutez simplement</title>
 
-  <link rel="stylesheet" href="style.css?v=20260927-premium-refonte" />
+  <link rel="stylesheet" href="style.css?v=20260927-premium-xxx" />
   <link rel="stylesheet" href="v3-modern.css?v=notifications-mobile-v1" />
 
     <link rel="stylesheet" href="v2-community.css?v=1">
@@ -341,7 +341,7 @@
             <div class="v2-room-row" data-room-row="webcam"><a href="#salon-webcam" class="room" data-room="webcam" title="Choisissez une personne disponible"><span class="v2-room-icon" aria-hidden="true">♡</span><span class="v2-room-name">Webcam en direct</span></a><button type="button" class="v2-room-favorite" data-favorite="webcam" aria-label="Ajouter Webcam en direct aux favoris" aria-pressed="false">☆</button></div>
           </details>
           <details class="v2-room-group" open><summary>Espace adulte</summary>
-            <div class="v2-room-row" data-room-row="entraide"><a href="#salon-entraide" class="room adult-room-link" data-room="entraide" title="Salon réservé aux adultes"><span class="v2-room-icon" aria-hidden="true">18+</span><span class="v2-room-name">XXX</span></a><button type="button" class="v2-room-favorite" data-favorite="entraide" aria-label="Ajouter XXX aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="entraide"><a href="#salon-entraide" class="room adult-room-link" data-room="entraide" title="Salon réservé aux membres Premium majeurs"><span class="v2-room-icon" aria-hidden="true">18+</span><span class="v2-room-name">XXX · Premium</span></a><button type="button" class="v2-room-favorite" data-favorite="entraide" aria-label="Ajouter XXX aux favoris" aria-pressed="false">☆</button></div>
           </details>
         </div>
         <p id="roomSearchEmpty" class="v2-empty hidden" role="status">Aucun salon trouvé. Essayez un autre mot ou désactivez le filtre favoris.</p>
@@ -566,7 +566,7 @@
           <div class="premium-heading"><span class="premium-icon" aria-hidden="true">✦</span><div><h3 id="premiumTitle">Letchat Premium</h3><small>Un espace de discussion plus confortable</small></div></div>
           <p id="premiumState" role="status">Vérification de votre abonnement…</p>
           <p id="premiumRenewal" class="premium-renewal hidden"></p>
-          <ul class="premium-benefits"><li>Navigation sans publicité sur Letchat</li><li>Tous les salons, messages et appels restent accessibles avec un compte gratuit</li></ul>
+          <ul class="premium-benefits"><li>Navigation sans publicité sur Letchat</li><li>Accès au salon XXX réservé aux membres Premium majeurs</li><li>Les autres salons, messages et appels restent accessibles gratuitement</li></ul>
           <div id="premiumChoices" class="premium-choices">
             <button id="subscribePremium" type="button" disabled>
               <strong>Premium mensuel</strong><span id="premiumPrice">Chargement du tarif…</span><small>Facturation mensuelle</small>
@@ -800,6 +800,14 @@
         </div>
       </div>
     </section>
+    <section id="premiumRoomGate" class="premium-room-gate hidden" role="dialog" aria-modal="true" aria-labelledby="premiumRoomGateTitle">
+      <div class="premium-room-gate-card">
+        <span aria-hidden="true">✦</span>
+        <h2 id="premiumRoomGateTitle">Le salon XXX est réservé aux membres Premium</h2>
+        <p>Abonnez-vous à Premium ou Premium+ pour accéder à ce salon. L'accès est réservé aux personnes majeures.</p>
+        <div><button id="closePremiumRoomGate" type="button">Plus tard</button><button id="openPremiumRoomGate" type="button">Voir les formules</button></div>
+      </div>
+    </section>
     <section id="adultRoomWarning" class="adult-room-warning hidden" role="dialog" aria-modal="true" aria-labelledby="adultRoomTitle">
       <div class="adult-room-card">
         <div class="adult-room-icon">18+</div>
@@ -811,7 +819,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-cafe-v2.js?v=20260927-premium-refonte"></script>
+    <script type="module" src="app-v4-cafe-v2.js?v=20260927-premium-xxx"></script>
       <script src="v2-community.js?v=1" defer></script>
     <script src="v4-interface.js?v=20260927-premium-refonte" defer></script>
 </body>

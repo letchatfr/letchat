@@ -84,8 +84,8 @@ export const rooms = {
   },
 
   "entraide": {
-    "title": "🔞 Espace 18+",
-    "welcome": "Espace réservé aux membres adultes",
+    "title": "🔞 XXX · Premium",
+    "welcome": "Espace réservé aux membres Premium majeurs",
     "category": "Espace adulte"
   }
 };

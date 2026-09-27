@@ -1,4 +1,4 @@
-import { rooms } from "./room-catalog.js?v=v2-categories-1";
+import { rooms } from "./room-catalog.js?v=20260927-premium-xxx";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
 import {
   getAuth,
@@ -1447,6 +1447,18 @@ function connect() {
     if (currentPrivate) socket.emit("watch-private-status", currentPrivate.id);
     load();
   });
+  socket.on("premium-room-denied", () => {
+    premiumRoomUnlocked = false;
+    if (currentRoom === "entraide")
+      selectRoom(roomLinks.find(link => link.dataset.room === "cafe"), "cafe");
+    $("#premiumRoomGate").classList.remove("hidden");
+  });
+  socket.on("premium-room-revoked", () => {
+    premiumRoomUnlocked = false;
+    if (currentRoom === "entraide")
+      selectRoom(roomLinks.find(link => link.dataset.room === "cafe"), "cafe");
+    showError("Votre abonnement Premium ne donne plus accès au salon XXX.");
+  });
   socket.on("message", (m) => addMessage(m));
   socket.on("message-pinned", () => { if (!currentPrivate && currentRoom === "cafe") load(); });
   socket.on("room-activity", ({ room, userId } = {}) => {
@@ -1735,6 +1747,7 @@ async function loadSubscription() {
     const sessionId = paymentReturn === "success" ? query.get("session_id") : null;
     const path = sessionId ? `/api/subscription?session_id=${encodeURIComponent(sessionId)}` : "/api/subscription";
     const data = await (await api(path)).json();
+    premiumRoomUnlocked = Boolean(data.premium);
     const label = data.plan === "premium_plus" ? "Premium+" : "Premium";
     const statusLabels = {
       past_due: "Paiement en attente — vérifiez votre moyen de paiement",
@@ -1746,7 +1759,7 @@ async function loadSubscription() {
       ? `${label} actif — profitez de Letchat sans publicité`
       : paymentReturn === "success" ? "Paiement en cours de confirmation. Actualisez dans quelques instants."
       : paymentReturn === "cancel" ? "Paiement annulé — aucun changement à votre compte"
-      : statusLabels[data.status] || "Compte gratuit — accès à toutes les discussions";
+      : statusLabels[data.status] || "Compte gratuit — salon XXX réservé aux membres Premium";
     const renewal = $("#premiumRenewal");
     renewal.classList.toggle("hidden", !data.premium || !data.currentPeriodEnd);
     if (data.premium && data.currentPeriodEnd)
@@ -2107,6 +2120,12 @@ $("#blockBtn").onclick = async () => {
   }
 };
 const roomLinks = [...document.querySelectorAll(".room")];
+let premiumRoomUnlocked = false;
+$("#closePremiumRoomGate").onclick = () => $("#premiumRoomGate").classList.add("hidden");
+$("#openPremiumRoomGate").onclick = async () => {
+  $("#premiumRoomGate").classList.add("hidden");
+  $("#premiumShortcut").click();
+};
 function updateRoomBadges() {
   roomLinks.forEach((link) => {
     const count = roomUnread.get(link.dataset.room) || 0;
@@ -2208,6 +2227,10 @@ function renderMeetingProfiles(panel) {
   draw();
 }
 function selectRoom(link, id) {
+  if (id === "entraide" && !premiumRoomUnlocked) {
+    $("#premiumRoomGate").classList.remove("hidden");
+    return;
+  }
   saveDraft();
   if (typingActive) stopTyping();
   clearReply();
@@ -2255,8 +2278,18 @@ $("#viewOnceBtn").onclick = () => {
 roomLinks.forEach((link) => {
   const id = link.dataset.room;
   if (!id || !rooms[id]) return;
-  link.onclick = event => {
+  link.onclick = async event => {
     event.preventDefault();
+    if (id === "entraide") {
+      try {
+        premiumRoomUnlocked = Boolean((await (await api("/api/subscription")).json()).premium);
+      } catch { premiumRoomUnlocked = false; }
+      if (!premiumRoomUnlocked) {
+        $(".side").classList.remove("open");
+        $("#premiumRoomGate").classList.remove("hidden");
+        return;
+      }
+    }
     if (id === "entraide" && localStorage.getItem("letchatAdultRoomAccepted") !== "yes") {
       pendingAdultSelection = { link, id };
       $(".side").classList.remove("open");
