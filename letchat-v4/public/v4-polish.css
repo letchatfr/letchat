@@ -159,3 +159,111 @@ button:disabled { cursor: wait; opacity: .6; }
 .side button.brand { border: 0; padding: 0; background: transparent; color: var(--v3-text); text-align: left; cursor: pointer; border-radius: 12px; }
 .side button.brand:hover { color: var(--v3-primary-strong); }
 .side button.brand:focus-visible { outline: 3px solid var(--v3-primary); outline-offset: 4px; }
+
+/* Mobile : navigation compacte, clavier et saisie accessibles au pouce. */
+.mobile-nav-control, .composer #mobileComposerToggle { display: none; }
+.mobile-actions-list { display: grid; gap: 7px; }
+.mobile-actions-list > button { display: flex; align-items: center; gap: 12px; min-height: 48px; width: 100%; padding: 10px 12px; border: 1px solid var(--v3-border); border-radius: 12px; background: var(--v3-surface-soft); color: var(--v3-text); text-align: left; font-size: 15px; }
+.mobile-action-symbol { display: grid; place-items: center; width: 28px; font-size: 21px; color: var(--v3-accent); }
+.mobile-actions-list b { margin-left: auto; padding: 3px 8px; border-radius: 12px; background: #d7513d; color: white; font-size: 12px; }
+/* Le panneau du Café utilise les couleurs du thème, également sur ordinateur. */
+.cafe-overview, .cafe-overview-compact, .cafe-active, .cafe-pinned { background: var(--v3-surface-soft); color: var(--v3-text); border-color: var(--v3-border); }
+.cafe-active > div > span, .cafe-pinned button span { color: var(--v3-text-soft); }
+.cafe-pinned button { color: var(--v3-text); background: var(--v3-surface); border-color: var(--v3-border); }
+@media (max-width: 760px) {
+  body.mobile-chat-active { overflow: hidden; overscroll-behavior: none; }
+  .app { position: fixed; top: var(--mobile-viewport-top, 0px); right: 0; bottom: auto; left: 0; height: var(--mobile-app-height, 100dvh); min-height: 0; margin: 0; border: 0; border-radius: 0; overflow: hidden; }
+  .chat { min-height: 0; height: 100%; overflow: hidden; }
+  .chat > header { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px 44px; align-items: center; gap: 6px; padding: 8px 10px; min-height: 64px; flex: 0 0 auto; height: auto; }
+  .chat > header > .chat-heading { grid-column: 2; grid-row: 1; width: auto; min-width: 0; }
+  .chat h1 { margin: 0; font-size: 16px; line-height: 1.35; max-width: 100%; text-overflow: ellipsis; }
+  .chat header p { margin: 4px 0 0; font-size: 11px; line-height: 1.2; }
+  .chat > header > .chat-actions { display: none; }
+  .chat > header > .mobile-nav-control { display: grid; place-items: center; position: relative; width: 44px; min-width: 44px; height: 44px; padding: 8px; border: 1px solid var(--v3-border); border-radius: 13px; background: var(--v3-surface-soft); color: var(--v3-text); font-size: 24px; line-height: 1; }
+  #mobileNavRooms { grid-column: 1; grid-row: 1; }
+  #mobileNavMembers { grid-column: 3; grid-row: 1; }
+  #mobileNavMore { grid-column: 4; grid-row: 1; }
+  .mobile-nav-control svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .mobile-nav-badge { position: absolute; top: -4px; right: -4px; min-width: 17px; height: 17px; padding: 2px 4px; border-radius: 10px; border: 2px solid var(--v3-surface); background: #247653; color: #fff; font-size: 9px; font-weight: 800; }
+  .mobile-unread-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--v3-primary); }
+  .messages { flex: 1 1 auto; min-height: 0; padding: 16px 12px 10px; -webkit-overflow-scrolling: touch; overflow-x: hidden; overflow-y: auto; }
+  .message { max-width: 98%; gap: 8px; margin-bottom: 18px; }
+  .message-content { min-width: 0; max-width: 100%; }
+  .message .avatar { width: 30px; height: 30px; flex-basis: 30px; }
+  .message .meta { margin: 0 0 5px; font-size: 12px; }
+  .message .meta strong { overflow-wrap: anywhere; }
+  .message .bubble { padding: 9px 12px; border-radius: 3px 15px 15px; font-size: 15px; line-height: 1.5; }
+  .message.mine .bubble { border-radius: 15px 3px 15px 15px; }
+  .message-actions { margin-top: 6px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .message-actions button { min-height: 36px; padding: 6px 9px; font-size: 11px; }
+  .message .media { max-width: 100%; width: min(100%, 340px); max-height: 40dvh; }
+  .typing { height: 17px; flex-basis: 17px; padding-left: 12px; font-size: 11px; }
+  .chat > footer { padding: 7px 8px max(7px, env(safe-area-inset-bottom)); flex: 0 0 auto; }
+  .composer { display: grid; grid-template-columns: 44px repeat(4, minmax(0, 1fr)) 44px; align-items: end; gap: 2px; min-height: 54px; padding: 4px; border-radius: 18px; }
+  .composer textarea { order: 0; grid-column: 2 / 6; grid-row: 1; width: 100%; min-width: 0; min-height: 44px; max-height: 104px; margin: 0; padding: 11px 5px; font-size: 16px; line-height: 22px; border-radius: 0; overflow-y: auto; }
+  .composer #mobileComposerToggle { display: grid; grid-column: 1; grid-row: 1; place-items: center; width: 44px; height: 44px; margin: 0; border-radius: 12px; font-size: 26px; color: var(--v3-text-soft); }
+  .composer #mobileComposerToggle[aria-expanded="true"] { background: var(--v3-surface-strong); color: var(--v3-primary); }
+  .composer #send { display: grid; place-items: center; grid-column: 6; grid-row: 1; width: 44px; min-width: 44px; height: 44px; margin: 0; padding: 0; border-radius: 13px; font-size: 22px; box-shadow: none; }
+  .composer > button:not(#mobileComposerToggle):not(#send) { display: none; }
+  .composer.mobile-tools-open > button:not(#mobileComposerToggle):not(#send):not(.hidden) { display: grid; place-items: center; grid-row: 2; width: 100%; height: 44px; min-width: 0; margin: 4px 0 0; padding: 5px; border-radius: 10px; font-size: 22px; background: var(--v3-surface-strong); color: var(--v3-text); }
+  .composer #attach { grid-column: 1; }
+  .composer #cameraBtn { grid-column: 2; }
+  .composer #voiceBtn { grid-column: 3; }
+  .composer #emoji { grid-column: 4; }
+  .composer #viewOnceBtn { grid-column: 5; }
+  .composer-help { margin-top: 5px; font-size: 10px; }
+  .composer-help #messageCount { font-variant-numeric: tabular-nums; }
+  .jump-latest { bottom: calc(var(--composer-footer-height, 85px) + 25px); max-width: calc(100% - 24px); font-size: 12px; }
+  .emoji-picker { right: 8px; bottom: calc(100% + 5px); grid-template-columns: repeat(8, minmax(0, 1fr)); width: min(352px, calc(100vw - 16px)); box-sizing: border-box; }
+  .emoji-picker button { width: 100%; height: 40px; }
+  #roomFeature { flex: 0 0 auto; max-height: 108px; overflow-y: auto; margin: 6px 10px 0; }
+  .cafe-overview-compact { padding: 8px 10px; border-radius: 12px; }
+  .cafe-active { gap: 8px; min-height: 32px; }
+  .cafe-active > b { font-size: 12px; }
+  .cafe-active > div { min-width: 0; overflow-x: auto; flex-wrap: nowrap; }
+  .cafe-active > div > span { font-size: 11px; }
+  .cafe-active button, .cafe-active button img { width: 30px; height: 30px; }
+  .ad-banner { margin: 6px 10px 0; padding: 0; min-height: 0; border-radius: 10px; }
+  .ad-banner:has(ins[data-ad-status="unfilled"]) { display: none; }
+  body.mobile-keyboard-open #roomFeature { display: none; }
+  .side, .people { top: var(--mobile-viewport-top, 0px); bottom: auto; height: var(--mobile-app-height, 100dvh); max-height: var(--mobile-app-height, 100dvh); overflow-y: auto; overscroll-behavior: contain; }
+  .side { width: min(88vw, 320px); padding: 20px 14px max(18px, env(safe-area-inset-bottom)); }
+  .side .brand { margin-bottom: 18px; padding-right: 40px; font-size: 23px; }
+  .side .brand b { width: 40px; height: 40px; }
+  .side a, .side .new, .side .mobile-theme-button { min-height: 44px; }
+  .side nav { margin-top: 8px; }
+  .side .v2-room-group summary { padding-top: 12px; padding-bottom: 12px; }
+  .side .account { flex-shrink: 0; }
+  .close-side, .close-people { min-width: 44px; min-height: 44px; }
+  .people { width: min(94vw, 380px); }
+  .profile-modal { top: var(--mobile-viewport-top, 0px); bottom: auto; height: var(--mobile-app-height, 100dvh); align-items: end; padding: 10px 0 0; }
+  .profile-modal .profile-card { width: 100%; max-width: 100%; max-height: calc(var(--mobile-app-height, 100dvh) - 10px); padding: 24px 16px max(20px, env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; overflow-y: auto; }
+  .profile-card h2 { font-size: 21px; padding-right: 40px; }
+  .profile-card > p { font-size: 13px; line-height: 1.5; }
+  .profile-close { top: 10px; right: 10px; min-width: 44px; min-height: 44px; z-index: 1; color: var(--v3-text); background: var(--v3-surface-strong); }
+  .profile-card input, .profile-card textarea, .profile-card select, .contact-search input { font-size: 16px; }
+  .online-members-card .online-members-grid, .online-members-group-grid { grid-template-columns: minmax(0, 1fr); }
+  .online-member-actions button { min-height: 44px; }
+  .mobile-actions-card { max-height: min(80dvh, calc(var(--mobile-app-height, 100dvh) - 10px)) !important; }
+  .mobile-actions-card > p { margin-bottom: 15px; }
+  .login { min-height: 100dvh; padding: 20px 12px; }
+  .login-card { width: 100%; padding: 25px 20px; }
+  .login-tabs { gap: 3px; }
+  .login-tabs button { min-height: 44px; padding: 8px; font-size: 12px; }
+  .public-home-inner { max-width: 100%; }
+}
+.chat #roomFeature { background: var(--v3-surface-soft); color: var(--v3-text); border-color: var(--v3-border); }
+@media (max-width: 760px) {
+  .composer.mobile-tools-open > button[data-mobile-label]:not(.hidden) { height: 56px; gap: 3px; align-content: center; font-size: 20px; }
+  .composer.mobile-tools-open > button[data-mobile-label]::after { content: attr(data-mobile-label); display: block; font-size: 9px; font-weight: 600; line-height: 1.1; }
+  .search-modal, .notifications-modal, .contact-picker-modal, .admin-modal { top: var(--mobile-viewport-top, 0px); bottom: auto; height: var(--mobile-app-height, 100dvh); padding: 10px 0 0; align-items: end; }
+  .search-panel, .notifications-panel, .contact-picker-panel, .admin-panel { width: 100%; max-width: 100%; max-height: calc(var(--mobile-app-height, 100dvh) - 10px); border-radius: 22px 22px 0 0; }
+  .search-panel input, .contact-picker-panel input, .admin-panel input { font-size: 16px; }
+  .search-panel header button, .notifications-panel header button, .contact-picker-panel header button { min-width: 44px; min-height: 44px; }
+  .private-home-heading { flex-direction: column; align-items: stretch; padding: 16px; }
+  .private-home-heading h2 { font-size: 19px; }
+  .private-home-heading p { font-size: 12px; }
+  .private-home-grid { grid-template-columns: minmax(0, 1fr); }
+  .private-home .messages { padding: 12px; }
+  .private-home-page { gap: 18px; }
+}

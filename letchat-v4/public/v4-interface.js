@@ -69,7 +69,7 @@
 
   // Fenêtres : focus initial, fermeture avec Échap et retour au bouton d’origine.
   const closers = {
-    onlineMembersModal: 'closeOnlineMembers', profileModal: 'closeProfile', publicProfileModal: 'closePublicProfile', searchModal: 'closeSearch',
+    mobileActionsModal: 'closeMobileActions', onlineMembersModal: 'closeOnlineMembers', profileModal: 'closeProfile', publicProfileModal: 'closePublicProfile', searchModal: 'closeSearch',
     notificationsModal: 'closeNotifications', contactPickerModal: 'closeContactPicker', mediaLightbox: 'closeMediaLightbox',
   };
   const visibleModals = new Map();
@@ -119,9 +119,101 @@
   function syncPanels() {
     $('.side').inert = sideMedia.matches && !$('.side').classList.contains('open');
     $('.people').inert = peopleMedia.matches && !$('.people').classList.contains('open');
+    $('#mobileNavRooms').setAttribute('aria-expanded', String($('.side').classList.contains('open')));
     $('#roomsBtn').setAttribute('aria-expanded', String($('.side').classList.contains('open')));
     $('#peopleBtn').setAttribute('aria-expanded', String($('.people').classList.contains('open')));
   }
   [$('.side'), $('.people')].forEach(panel => new MutationObserver(syncPanels).observe(panel, { attributes: true, attributeFilter: ['class'] }));
   peopleMedia.addEventListener('change', syncPanels); sideMedia.addEventListener('change', syncPanels); syncPanels();
+
+  // Navigation mobile : les actions réutilisent les boutons existants.
+  const moreModal = $('#mobileActionsModal'), moreButton = $('#mobileNavMore');
+  const options = [
+    ['privateMessagesLink', 'Messages privés', '✉'],
+    ['peopleBtn', 'Amis et contacts', '👥'],
+    ['searchBtn', 'Rechercher', '⌕'],
+    ['notificationsBtn', 'Notifications', '🔔'],
+    ['profileBtn', 'Mon profil', '◎'],
+    ['themeBtn', 'Changer de thème', '☾'],
+    ['callBtn', 'Appeler un membre', '▣'],
+    ['adminBtn', 'Administration', '⚙'],
+    ['reportBtn', 'Signaler', '⚑'],
+    ['blockBtn', 'Bloquer', '⊘'],
+  ];
+  const closeOptions = () => { moreModal.classList.add('hidden'); moreButton.setAttribute('aria-expanded', 'false'); };
+  $('#closeMobileActions').addEventListener('click', closeOptions);
+  moreModal.addEventListener('click', event => { if (event.target === moreModal) closeOptions(); });
+  moreButton.addEventListener('click', () => {
+    const list = $('#mobileActionsList'); list.replaceChildren();
+    options.forEach(([targetId, label, icon]) => {
+      const target = document.getElementById(targetId);
+      if (!target || target.classList.contains('hidden')) return;
+      const button = document.createElement('button'); button.type = 'button'; button.dataset.mobileAction = targetId;
+      const symbol = document.createElement('span'); symbol.className = 'mobile-action-symbol'; symbol.textContent = icon; symbol.setAttribute('aria-hidden', 'true');
+      const text = document.createElement('span'); text.textContent = label;
+      if (targetId === 'themeBtn') text.textContent = document.documentElement.dataset.theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre';
+      button.append(symbol, text); button.disabled = target.disabled;
+      const badge = targetId === 'privateMessagesLink' ? $('#privateMessagesNavBadge') : targetId === 'notificationsBtn' ? $('#notificationsBadge') : null;
+      if (badge && !badge.classList.contains('hidden')) { const amount = document.createElement('b'); amount.textContent = badge.textContent; button.append(amount); }
+      button.addEventListener('click', () => { closeOptions(); target.click(); }); list.append(button);
+    });
+    moreModal.classList.remove('hidden'); moreButton.setAttribute('aria-expanded', 'true');
+  });
+  $('#mobileNavRooms').addEventListener('click', () => { $('.people').classList.remove('open'); $('#roomsBtn').click(); });
+  $('#mobileNavMembers').addEventListener('click', () => $('#onlineMembersLink').click());
+  function syncMobileCounts() {
+    $('#mobileOnlineCount').textContent = $('#onlineMembersBadge').textContent;
+    $('#mobileUnreadDot').classList.toggle('hidden', $('#privateMessagesNavBadge').classList.contains('hidden') && $('#notificationsBadge').classList.contains('hidden'));
+  }
+  ['#onlineMembersBadge', '#privateMessagesNavBadge', '#notificationsBadge'].forEach(selector => new MutationObserver(syncMobileCounts).observe($(selector), {attributes:true, attributeFilter:['class'], childList:true, characterData:true, subtree:true}));
+  syncMobileCounts();
+  Object.entries({attach:'Fichier', cameraBtn:'Photo', voiceBtn:'Vocal', emoji:'Emojis', viewOnceBtn:'Vue unique'}).forEach(([id,label]) => document.getElementById(id).dataset.mobileLabel = label);
+  const composer = $('.composer'), mediaToggle = $('#mobileComposerToggle');
+  const closeTools = () => { composer.classList.remove('mobile-tools-open'); mediaToggle.setAttribute('aria-expanded', 'false'); };
+  mediaToggle.addEventListener('click', () => {
+    const open = !composer.classList.contains('mobile-tools-open');
+    composer.classList.toggle('mobile-tools-open', open); mediaToggle.setAttribute('aria-expanded', String(open));
+  });
+  ['#attach', '#cameraBtn', '#voiceBtn', '#emoji'].forEach(selector => $(selector).addEventListener('click', closeTools));
+  input.addEventListener('focus', closeTools);
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') closeTools(); });
+  document.addEventListener('click', event => { if (!composer.contains(event.target)) closeTools(); });
+
+  // Suivre l’espace visible lorsque le clavier ou les barres du navigateur bougent.
+  const root = document.documentElement, viewport = window.visualViewport;
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  const syncBrowserTheme = () => { if (themeColor) themeColor.content = root.dataset.theme === 'dark' ? '#171d28' : '#ffffff'; };
+  new MutationObserver(syncBrowserTheme).observe(root, {attributes:true, attributeFilter:['data-theme']});
+  syncBrowserTheme();
+  let viewportQueued = false, normalHeight = window.innerHeight;
+  function fitMobileViewport() {
+    if (viewportQueued) return;
+    viewportQueued = true;
+    requestAnimationFrame(() => {
+      viewportQueued = false;
+      const mobile = sideMedia.matches, active = !$('#app').classList.contains('hidden');
+      document.body.classList.toggle('mobile-chat-active', mobile && active);
+      if (!mobile || (viewport && Math.abs(viewport.scale - 1) > .01)) return;
+      const height = Math.round(viewport?.height || window.innerHeight);
+      const editing = document.activeElement?.matches('input, textarea, select');
+      if (!editing) normalHeight = window.innerHeight;
+      const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 100;
+      root.style.setProperty('--mobile-app-height', `${height}px`);
+      root.style.setProperty('--mobile-viewport-top', `${Math.round(viewport?.offsetTop || 0)}px`);
+      document.body.classList.toggle('mobile-keyboard-open', Boolean(editing && height < normalHeight - 100));
+      if (nearBottom && document.activeElement === input) messages.scrollTop = messages.scrollHeight;
+    });
+  }
+  window.addEventListener('resize', fitMobileViewport);
+  viewport?.addEventListener('resize', fitMobileViewport);
+  viewport?.addEventListener('scroll', fitMobileViewport);
+  document.addEventListener('focusin', fitMobileViewport);
+  document.addEventListener('focusout', fitMobileViewport);
+  new MutationObserver(fitMobileViewport).observe($('#app'), {attributes:true, attributeFilter:['class']});
+  sideMedia.addEventListener('change', () => { closeOptions(); closeTools(); fitMobileViewport(); });
+  if (window.ResizeObserver) new ResizeObserver(entries => {
+    const height = entries[0].target.getBoundingClientRect().height;
+    root.style.setProperty('--composer-footer-height', `${Math.ceil(height)}px`);
+  }).observe($('.chat > footer'));
+  fitMobileViewport();
 })();
