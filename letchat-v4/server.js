@@ -46,6 +46,8 @@ async function saveStripeSubscription(subscription, fallbackUserId = "", allowRe
     [userId, String(subscription.customer), subscription.id, subscription.status,
       end ? new Date(end * 1000) : null, plan || "premium", allowReplacement]
   );
+  if (!["active", "trialing"].includes(subscription.status))
+    await moveExpiredPremiumSockets(userId);
 }
 const vapidPublicKey = String(process.env.VAPID_PUBLIC_KEY || "").trim();
 const vapidPrivateKey = String(process.env.VAPID_PRIVATE_KEY || "").trim();
@@ -765,7 +767,8 @@ app.get("/api/subscription", auth, requireAdult, async (req, res, next) => {
         }
       } catch (error) { console.error("Actualisation abonnement :", error.message); }
     }
-    const premium = Boolean(row && ["active", "trialing"].includes(row.status));
+    const premium = Boolean(row && ["active", "trialing"].includes(row.status) &&
+      (!row.current_period_end || new Date(row.current_period_end).getTime() > Date.now()));
     res.json({ premium, plan: row?.plan || null, status: row?.status || "free",
       currentPeriodEnd: row?.current_period_end || null, canManage: Boolean(row?.stripe_customer_id) });
   } catch (error) { next(error); }
@@ -1577,6 +1580,33 @@ app.delete("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, n
 
 const allowedRooms = new Set(Object.keys(roomCatalog));
 const getRoom = value => allowedRooms.has(String(value)) ? String(value) : "cafe";
+const premiumRoom = "entraide";
+async function hasPremiumAccess(userId) {
+  const result = await pool.query(
+    `SELECT 1 FROM letchat_subscriptions
+     WHERE user_id=$1 AND status IN ('active','trialing')
+       AND (current_period_end IS NULL OR current_period_end > NOW()) LIMIT 1`,
+    [userId]
+  );
+  return result.rowCount > 0;
+}
+async function moveExpiredPremiumSockets(userId) {
+  if (await hasPremiumAccess(userId)) return;
+  let moved = false;
+  for (const socket of io.sockets.sockets.values()) {
+    if (socket.user?.id !== userId || socket.room !== premiumRoom) continue;
+    socket.leave(premiumRoom);
+    socket.room = "cafe";
+    socket.join("cafe");
+    online.set(socket.id, { user: socket.user, room: "cafe" });
+    socket.emit("premium-room-revoked");
+    moved = true;
+  }
+  if (moved) {
+    emitPresence(premiumRoom);
+    emitPresence("cafe");
+  }
+}
 
 let meteredTurnCredential = null;
 let meteredTurnCredentialPromise = null;
@@ -1647,6 +1677,8 @@ app.get("/api/turn-credentials", auth, requireAdult, async (_req, res, next) => 
 app.get("/api/messages", auth, requireAdult, async (req, res, next) => {
   try {
     const room = getRoom(req.query.room);
+    if (room === premiumRoom && !await hasPremiumAccess(req.user.id))
+      return res.status(403).json({ error: "Le salon XXX est réservé aux membres Premium." });
     const { rows } = await pool.query(`
       SELECT m.id, m.user_id, m.author, m.room, m.photo, m.body, m.media_type, m.pinned,
              m.created_at, m.expires_at, m.reply_to_id,
@@ -1677,7 +1709,7 @@ app.get("/api/messages", auth, requireAdult, async (req, res, next) => {
 app.get("/api/media/:id", auth, requireAdult, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT m.media_data, m.media_type FROM letchat_messages m
+      `SELECT m.media_data, m.media_type, m.room FROM letchat_messages m
        WHERE m.id = $1 AND m.expires_at > NOW()
          AND NOT EXISTS (
            SELECT 1 FROM letchat_blocks b
@@ -1685,6 +1717,8 @@ app.get("/api/media/:id", auth, requireAdult, async (req, res, next) => {
          )`,
       [req.params.id, req.user.id]
     );
+    if (rows[0]?.room === premiumRoom && !await hasPremiumAccess(req.user.id))
+      return res.status(403).json({ error: "Le salon XXX est réservé aux membres Premium." });
     if (!rows[0]?.media_data) return res.sendStatus(404);
     res.type(rows[0].media_type)
       .set("Cache-Control", "private, no-store")
@@ -1717,6 +1751,8 @@ app.post("/api/messages", auth, requireAdult, requireRules,
   try {
     const body = String(req.body.body || "").trim().slice(0, 4000);
     const room = getRoom(req.body.room);
+    if (room === premiumRoom && !await hasPremiumAccess(req.user.id))
+      return res.status(403).json({ error: "Le salon XXX est réservé aux membres Premium." });
     const replyToId = req.body.replyToId ? String(req.body.replyToId) : null;
     const mediaType = String(req.body.mediaType || "");
     const media = req.body.mediaBase64
@@ -1750,8 +1786,22 @@ app.post("/api/messages", auth, requireAdult, requireRules,
       [req.user.id, req.user.name, room, req.user.photo, body, media, mediaType || null, reply?.id || null]
     );
     const message = { ...query.rows[0], reply_author: reply?.author || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
+    if (room === premiumRoom) {
+      const occupants = new Set([...io.sockets.sockets.values()]
+        .filter(socket => socket.room === premiumRoom).map(socket => socket.user.id));
+      for (const userId of occupants) await moveExpiredPremiumSockets(userId);
+    }
     io.to(room).emit("message", message);
-    io.emit("room-activity", { room, userId: req.user.id, messageId: message.id });
+    if (room === premiumRoom) {
+      const { rows: members } = await pool.query(
+        `SELECT user_id FROM letchat_subscriptions
+         WHERE status IN ('active','trialing')
+           AND (current_period_end IS NULL OR current_period_end > NOW())`
+      );
+      members.forEach(member => io.to(`user:${member.user_id}`).emit("room-activity", { room, userId: req.user.id, messageId: message.id }));
+    } else {
+      io.emit("room-activity", { room, userId: req.user.id, messageId: message.id });
+    }
     res.status(201).json(message);
   } catch (error) {
     next(error);
@@ -2101,6 +2151,7 @@ async function getMessageAccess(kind, id, userId) {
       "SELECT id, user_id, room FROM letchat_messages WHERE id=$1 AND expires_at > NOW()",
       [id]
     );
+    if (result.rows[0]?.room === premiumRoom && !await hasPremiumAccess(userId)) return null;
     return result.rows[0] || null;
   }
   if (kind === "private") {
@@ -2317,8 +2368,20 @@ io.on("connection", socket => {
     try { socket.emit("private-status", await getPrivateStatus(target)); } catch {}
   });
 
-  socket.on("join-room", value => {
+  socket.on("join-room", async value => {
     const nextRoom = getRoom(value);
+    if (nextRoom === premiumRoom) {
+      try {
+        if (!await hasPremiumAccess(socket.user.id)) {
+          await moveExpiredPremiumSockets(socket.user.id);
+          socket.emit("premium-room-denied");
+          return;
+        }
+      } catch {
+        socket.emit("premium-room-denied");
+        return;
+      }
+    }
     const previousRoom = socket.room;
     if (nextRoom === previousRoom) return emitPresence(nextRoom);
     socket.leave(previousRoom);
@@ -2329,7 +2392,8 @@ io.on("connection", socket => {
     emitPresence(nextRoom);
   });
 
-  socket.on("typing", value => {
+  socket.on("typing", async value => {
+    if (socket.room === premiumRoom && !await hasPremiumAccess(socket.user.id).catch(() => false)) return;
     socket.to(socket.room).emit("typing", { name: socket.user.name, active: Boolean(value) });
   });
 
@@ -2359,7 +2423,8 @@ io.on("connection", socket => {
     });
   });
 
-  socket.on("webrtc", ({ target, data } = {}) => {
+  socket.on("webrtc", async ({ target, data } = {}) => {
+    if (socket.room === premiumRoom && !await hasPremiumAccess(socket.user.id).catch(() => false)) return;
     const type = String(data?.type || "");
     if (!new Set(["invite", "join", "offer", "answer", "ice", "decline", "leave"]).has(type)) return;
     const signal = { from: socket.id, user: socket.user, data };
@@ -2398,6 +2463,9 @@ io.on("connection", socket => {
 
 async function deleteExpiredMessages() {
   try {
+    const premiumOccupants = new Set([...io.sockets.sockets.values()]
+      .filter(socket => socket.room === premiumRoom).map(socket => socket.user.id));
+    for (const userId of premiumOccupants) await moveExpiredPremiumSockets(userId);
     const bucketCutoff = Date.now() - 60 * 60 * 1000;
     for (const [key, times] of actionBuckets) {
       const active = times.filter(time => time > bucketCutoff);
