@@ -1,0 +1,27 @@
+LETCHAT V2 — CORRECTIFS DU 27 SEPTEMBRE 2026
+
+Ces fichiers sont prêts à être ajoutés au dépôt, mais ne sont pas encore en ligne.
+Base : version du dépôt publiée à 08 h 23 le 27 septembre 2026.
+
+1. Décompresse cette archive sur ton ordinateur.
+2. Ouvre https://github.com/letchatfr/letchat à la racine du dépôt.
+3. Crée une branche de travail depuis main, nommée correctifs-audit-v2.
+4. Sur cette branche, clique Add file > Upload files. Glisse les dossiers
+   extraits à la racine du dépôt pour préserver leurs chemins, puis enregistre.
+   Ne place pas le dossier letchat-v4 dans public ou dans un autre letchat-v4.
+5. Les fichiers absents de cette archive doivent être conservés.
+
+Consulte ensuite letchat-v4/CORRECTIFS-AUDIT.md pour le contrôle automatique,
+la préproduction, les commandes Render et la recette avant publication.
+Le rapport précise ce qui est corrigé et ce qui reste à vérifier.
+
+Résultats locaux : 10 tests ciblés + 37 vérifications d’intégration réussis.
+Aucun paiement réel ni modification de la base en production n’a été effectué.
+Google, caméra/micro, Stripe test et affichage mobile réel restent à valider.
+
+La publicité est suspendue jusqu’à la configuration du consentement AdSense.
+Les informations légales de l’éditeur restent à compléter avec les données réelles.
+
+Les tables existantes sont conservées. Les migrations ajoutent des champs et
+les nouvelles tables nécessaires. Le nettoyage supprime désormais les comptes
+invités expirés et leurs données : sauvegarder la base avant tout déploiement.
