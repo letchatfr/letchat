@@ -10,6 +10,19 @@
   try { const value = JSON.parse(localStorage.getItem(key) || '[]'); if (Array.isArray(value)) saved = value; } catch {}
   const favorites = new Set(saved.filter(id => rows.some(row => row.dataset.roomRow === id)));
   const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const tools = document.createElement('div');
+  tools.className = 'room-filter-status';
+  const count = document.createElement('span');
+  count.setAttribute('role', 'status');
+  const reset = document.createElement('button');
+  reset.type = 'button'; reset.textContent = 'Tout afficher';
+  tools.append(count, reset);
+  filter.after(tools);
+  reset.addEventListener('click', () => {
+    search.value = '';
+    filter.setAttribute('aria-pressed', 'false');
+    render(); search.focus();
+  });
   let wasFiltering = false;
   const openGroups = new Map();
   function render() {
@@ -27,7 +40,7 @@
       button.setAttribute('aria-pressed', String(favorite));
       button.setAttribute('aria-label', `${favorite ? 'Retirer' : 'Ajouter'} ${name} ${favorite ? 'des' : 'aux'} favoris`);
       button.title = button.getAttribute('aria-label');
-      row.hidden = !(normalize(name).includes(query) && (!onlyFavorites || favorite));
+      row.hidden = !(normalize(name + ' ' + (row.querySelector('.room').title || '')).includes(query) && (!onlyFavorites || favorite));
       if (!row.hidden) visible++;
     });
     groups.forEach(group => {
@@ -36,6 +49,9 @@
       else if (wasFiltering) group.open = openGroups.get(group) ?? true;
     });
     document.getElementById('roomSearchEmpty').classList.toggle('hidden', visible > 0);
+    count.textContent = `${visible} salon${visible > 1 ? 's' : ''} affiché${visible > 1 ? 's' : ''} sur ${rows.length}`;
+    reset.hidden = !filtering;
+    filter.textContent = `☆ Mes favoris (${favorites.size})`;
     wasFiltering = filtering;
   }
   search.addEventListener('input', render);

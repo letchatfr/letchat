@@ -1,5 +1,5 @@
-const CACHE = "letchat-shell-v24-dark-fix";
-const SHELL = ["/", "/index.html", "/style.css?v=typing-v3", "/v3-modern.css?v=notifications-mobile-v1", "/v3-theme.js?v=interface-finitions-v31", "/v2-community.css?v=1", "/v2-community.js?v=1", "/room-catalog.js?v=v2-categories-1", "/app-v4-cafe-v2.js?v=20260927-navigation", "/v4-polish.css?v=20260927-dark-fix", "/v4-interface.js?v=20260927-mobile", "/manifest.webmanifest", "/icon.svg?v=3"];
+const CACHE = "letchat-shell-v25-admin-salons";
+const SHELL = ["/", "/index.html", "/style.css?v=typing-v3", "/v3-modern.css?v=notifications-mobile-v1", "/v3-theme.js?v=interface-finitions-v31", "/v2-community.css?v=1", "/v2-community.js?v=20260927-admin-salons", "/room-catalog.js?v=v2-categories-1", "/app-v4-cafe-v2.js?v=20260927-navigation", "/v4-polish.css?v=20260927-admin-salons", "/v4-interface.js?v=20260927-admin-salons", "/manifest.webmanifest", "/icon.svg?v=3"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
