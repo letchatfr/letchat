@@ -72,6 +72,9 @@
 @media(max-width:520px) { .premium-choices { grid-template-columns: 1fr; } }
 
 .message-content { min-width: 0; }
+.message-author { border: 0; padding: 2px 4px; margin: -2px -4px; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; border-radius: 4px; }
+.message-author:hover { text-decoration: underline; }
+.message-author:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
 .message-quote { max-width: 360px; margin-bottom: 5px; padding: 7px 10px; border-left: 3px solid var(--coral); border-radius: 7px; background: #f7f4ef; display: grid; gap: 2px; font-size: 11px; }
 .message-quote strong { color: #a64838; }
 .message-quote span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #666; }
