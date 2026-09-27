@@ -154,3 +154,8 @@ button:disabled { cursor: wait; opacity: .6; }
 .online-members-group-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .online-members-category + .online-members-category { margin-top: 8px; }
 @media(max-width:600px) { .online-members-group-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Logo de navigation : conserve la présentation de la marque. */
+.side button.brand { border: 0; padding: 0; background: transparent; color: var(--v3-text); text-align: left; cursor: pointer; border-radius: 12px; }
+.side button.brand:hover { color: var(--v3-primary-strong); }
+.side button.brand:focus-visible { outline: 3px solid var(--v3-primary); outline-offset: 4px; }

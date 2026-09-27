@@ -2794,3 +2794,18 @@ $("#onlineMembersModal").addEventListener("click", event => {
   if (event.target === $("#onlineMembersModal")) $("#closeOnlineMembers").click();
 });
 $("#onlineMembersSearch").addEventListener("input", renderOnlineMembers);
+
+// Le logo revient au salon d’accueil sans recharger ni perdre les brouillons.
+$("#homeLink").addEventListener("click", () => {
+  const cafe = roomLinks.find(link => link.dataset.room === "cafe");
+  if (!cafe) return;
+  const search = $("#roomSearch"), favorites = $("#favoriteRoomsOnly");
+  if (search) { search.value = ""; search.dispatchEvent(new Event("input", { bubbles: true })); }
+  if (favorites?.getAttribute("aria-pressed") === "true") favorites.click();
+  cafe.closest("details").open = true;
+  $(".people").classList.remove("open");
+  selectRoom(cafe, "cafe");
+  const heading = $(".chat header h1");
+  heading.setAttribute("tabindex", "-1");
+  heading.focus({ preventScroll: true });
+});

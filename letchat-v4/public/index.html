@@ -29,7 +29,7 @@
     crossorigin="anonymous">
   </script>
     <link rel="stylesheet" href="v2-community.css?v=1">
-  <link rel="stylesheet" href="v4-polish.css?v=20260927-groups">
+  <link rel="stylesheet" href="v4-polish.css?v=20260927-navigation">
 </head>
 
 <body>
@@ -323,10 +323,10 @@
     <main id="app" class="app hidden">
       <aside class="side">
         <button id="closeSide" class="close-side" type="button" aria-label="Fermer les salons">×</button>
-        <div class="brand">
+        <button id="homeLink" class="brand" type="button" aria-label="Letchat — revenir à l’accueil du tchat" title="Revenir au Café">
           <b>◒</b>Letchat
           <span id="premiumBadge" class="premium-badge hidden">PRO</span>
-        </div>
+        </button>
         <button class="new">＋ Nouveau message</button>
         <button id="mobileThemeBtn" class="mobile-theme-button" type="button" aria-label="Activer le mode sombre" aria-pressed="false">☾ Mode sombre</button>
         <nav aria-label="Messagerie"><a id="privateMessagesLink" href="#private-messages" style="text-decoration:none">◌ Messages privés <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a></nav>
@@ -339,17 +339,6 @@
             <div class="v2-room-row" data-room-row="cafe"><a href="#salon-cafe" class="room active" data-room="cafe" title="Le rendez-vous de la communauté" aria-current="true"><span class="v2-room-icon" aria-hidden="true">☀</span><span class="v2-room-name">Le Café</span></a><button type="button" class="v2-room-favorite" data-favorite="cafe" aria-label="Ajouter Le Café aux favoris" aria-pressed="false">☆</button></div>
             <div class="v2-room-row" data-room-row="actualites"><a href="#salon-actualites" class="room" data-room="actualites" title="Échangez sur les nouvelles du jour"><span class="v2-room-icon" aria-hidden="true">◎</span><span class="v2-room-name">Actualités</span></a><button type="button" class="v2-room-favorite" data-favorite="actualites" aria-label="Ajouter Actualités aux favoris" aria-pressed="false">☆</button></div>
             <div class="v2-room-row" data-room-row="debats"><a href="#salon-debats" class="room" data-room="debats" title="Des points de vue différents, dans le respect"><span class="v2-room-icon" aria-hidden="true">◈</span><span class="v2-room-name">Débats</span></a><button type="button" class="v2-room-favorite" data-favorite="debats" aria-label="Ajouter Débats aux favoris" aria-pressed="false">☆</button></div>
-          </details>
-          <details class="v2-room-group" open><summary>Loisirs</summary>
-            <div class="v2-room-row" data-room-row="musique"><a href="#salon-musique" class="room" data-room="musique" title="Vos découvertes et artistes préférés"><span class="v2-room-icon" aria-hidden="true">♫</span><span class="v2-room-name">Musique</span></a><button type="button" class="v2-room-favorite" data-favorite="musique" aria-label="Ajouter Musique aux favoris" aria-pressed="false">☆</button></div>
-            <div class="v2-room-row" data-room-row="cinema"><a href="#salon-cinema" class="room" data-room="cinema" title="À voir, à revoir, à partager"><span class="v2-room-icon" aria-hidden="true">▣</span><span class="v2-room-name">Cinéma & séries</span></a><button type="button" class="v2-room-favorite" data-favorite="cinema" aria-label="Ajouter Cinéma & séries aux favoris" aria-pressed="false">☆</button></div>
-            <div class="v2-room-row" data-room-row="gaming"><a href="#salon-gaming" class="room" data-room="gaming" title="Trouvez des partenaires de jeu"><span class="v2-room-icon" aria-hidden="true">⌘</span><span class="v2-room-name">Jeux vidéo</span></a><button type="button" class="v2-room-favorite" data-favorite="gaming" aria-label="Ajouter Jeux vidéo aux favoris" aria-pressed="false">☆</button></div>
-            <div class="v2-room-row" data-room-row="sport"><a href="#salon-sport" class="room" data-room="sport" title="Matchs, pratique et motivation"><span class="v2-room-icon" aria-hidden="true">⚽</span><span class="v2-room-name">Sport</span></a><button type="button" class="v2-room-favorite" data-favorite="sport" aria-label="Ajouter Sport aux favoris" aria-pressed="false">☆</button></div>
-          </details>
-          <details class="v2-room-group" open><summary>Vie pratique</summary>
-            <div class="v2-room-row" data-room-row="voyages"><a href="#salon-voyages" class="room" data-room="voyages" title="Destinations et bonnes adresses"><span class="v2-room-icon" aria-hidden="true">✈</span><span class="v2-room-name">Voyages</span></a><button type="button" class="v2-room-favorite" data-favorite="voyages" aria-label="Ajouter Voyages aux favoris" aria-pressed="false">☆</button></div>
-            <div class="v2-room-row" data-room-row="cuisine"><a href="#salon-cuisine" class="room" data-room="cuisine" title="Recettes et astuces à partager"><span class="v2-room-icon" aria-hidden="true">♨</span><span class="v2-room-name">Cuisine</span></a><button type="button" class="v2-room-favorite" data-favorite="cuisine" aria-label="Ajouter Cuisine aux favoris" aria-pressed="false">☆</button></div>
-            <div class="v2-room-row" data-room-row="entraide-vie"><a href="#salon-entraide-vie" class="room" data-room="entraide-vie" title="Posez vos questions à la communauté"><span class="v2-room-icon" aria-hidden="true">✧</span><span class="v2-room-name">Entraide</span></a><button type="button" class="v2-room-favorite" data-favorite="entraide-vie" aria-label="Ajouter Entraide aux favoris" aria-pressed="false">☆</button></div>
           </details>
           <details class="v2-room-group" open><summary>Rencontres & médias</summary>
             <div class="v2-room-row" data-room-row="creatifs"><a href="#salon-creatifs" class="room" data-room="creatifs" title="Faites connaissance"><span class="v2-room-icon" aria-hidden="true">✦</span><span class="v2-room-name">Rencontres</span></a><button type="button" class="v2-room-favorite" data-favorite="creatifs" aria-label="Ajouter Rencontres aux favoris" aria-pressed="false">☆</button></div>
@@ -818,7 +807,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-cafe-v2.js?v=20260927-groups"></script>
+    <script type="module" src="app-v4-cafe-v2.js?v=20260927-navigation"></script>
       <script src="v2-community.js?v=1" defer></script>
     <script src="v4-interface.js?v=20260927-online" defer></script>
 </body>
