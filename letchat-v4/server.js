@@ -391,7 +391,7 @@ app.use(helmet({
         "https://www.googleapis.com",
         "https://apis.google.com"
       ],
-      "script-src-attr": ["'none'"],: ["'none'"],
+      "script-src-attr": ["'none'"],
       "style-src": ["'self'", "'unsafe-inline'"],
       "img-src": ["'self'", "data:", "blob:", "https://*.googleusercontent.com"],
       "media-src": ["'self'", "blob:"],
