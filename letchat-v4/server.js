@@ -2173,6 +2173,7 @@ function onlineMemberDirectory(entries) {
       name: user.name || "Membre",
       photo: user.photo || "",
       bio: user.profile?.bio || "",
+      gender: ["female", "male"].includes(user.profile?.gender) ? user.profile.gender : "neutral",
       availability: user.profile?.availability || "available",
       verified: user.profile?.verified === true,
       city: user.profile?.location_visible === true ? user.profile.city || "" : "",
