@@ -2162,6 +2162,32 @@ async function emitPrivateStatus(userId) {
   io.to(`watch-status:${userId}`).emit("private-status", await getPrivateStatus(userId));
 }
 
+// Annuaire global réservé aux connexions Socket.IO authentifiées.
+// Un membre reste présent tant qu’au moins un de ses onglets est connecté.
+function onlineMemberDirectory(entries) {
+  const members = new Map();
+  for (const { user } of entries) {
+    const id = String(user.id);
+    members.set(id, {
+      id,
+      name: user.name || "Membre",
+      photo: user.photo || "",
+      bio: user.profile?.bio || "",
+      availability: user.profile?.availability || "available",
+      verified: user.profile?.verified === true,
+      city: user.profile?.location_visible === true ? user.profile.city || "" : "",
+    });
+  }
+  return [...members.values()].sort((a, b) => a.name.localeCompare(b.name, "fr"));
+}
+let onlineDirectoryTimer;
+function broadcastOnlineMembers() {
+  clearTimeout(onlineDirectoryTimer);
+  onlineDirectoryTimer = setTimeout(() => {
+    io.emit("online-members", onlineMemberDirectory(online.values()));
+  }, 80);
+}
+
 function emitPresence(room) {
   const people = [...online.entries()]
     .filter(([, entry]) => entry.room === room)
@@ -2180,6 +2206,7 @@ function emitPresence(room) {
       } : null
     }));
   io.to(room).emit("presence", people);
+  broadcastOnlineMembers();
 }
 
 io.use(async (socket, next) => {
@@ -2300,6 +2327,7 @@ io.on("connection", socket => {
       });
     }
     online.delete(socket.id);
+    broadcastOnlineMembers();
     if (!userIsOnline(socket.user.id)) {
       await pool.query("UPDATE profiles SET last_seen=NOW() WHERE user_id=$1", [socket.user.id]).catch(() => {});
       await emitPrivateStatus(socket.user.id).catch(() => {});
