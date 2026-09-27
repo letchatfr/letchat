@@ -1418,7 +1418,9 @@ app.patch("/api/admin/reports/:id", auth, adminAuth, async (req, res, next) => {
     });
     await createNotification(
       result.rows[0].reporter_id, "report_update", "Mise à jour de votre signalement",
-      status === "resolved" ? "Votre signalement a été traité par la modération." : "Votre signalement a été examiné et classé.",
+      status === "resolved" ? "Votre signalement a été traité par la modération."
+        : status === "pending" ? "Votre signalement a été rouvert et sera réexaminé par la modération."
+        : "Votre signalement a été examiné et classé.",
       null, String(result.rows[0].id)
     );
     res.json(result.rows[0]);
