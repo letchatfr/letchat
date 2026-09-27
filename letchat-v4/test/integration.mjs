@@ -58,6 +58,9 @@ try {
   const root = await request("/");
   check(root.status===200 && root.headers.get("cross-origin-opener-policy")==="same-origin-allow-popups", "OAuth popup policy and public page");
   check(root.headers.get("content-security-policy").includes("script-src-attr 'none'"),"CSP rejects inline script attributes");
+  const scriptSources = root.headers.get("content-security-policy").split(";").find(d => d.trim().startsWith("script-src ")).trim().split(/\s+/).slice(1);
+  check(["https://www.gstatic.com", "https://www.googleapis.com", "https://apis.google.com"].every(origin => scriptSources.includes(origin)), "Firebase Google sign-in keeps its required origins");
+  check(!["*", "https:", "'unsafe-inline'", "'unsafe-eval'"].some(source => scriptSources.includes(source)), "chat keeps its restricted script policy");
   check(root.data.includes('name="description"') && root.data.includes('rel="canonical"'),"SEO metadata present");
   const asset=root.data.match(/\/assets\/app-v4-cafe-v2\.[a-f0-9]+\.js/)[0];
   check((await request(asset)).headers.get("cache-control").includes("immutable"),"fingerprinted assets use immutable cache");
@@ -66,7 +69,16 @@ try {
   const privacy=await request("/privacy.html");
   check(privacy.status===301&&privacy.headers.get("location")==="/confidentialite.html","old privacy link redirects to correct document");
   check((await request("/robots.txt")).data.startsWith("User-agent:"),"robots.txt is a real text resource");
-  check(!(await request(asset)).data.includes("pagead2.googlesyndication.com"),"no AdSense injection without consent setup");
+  check(!(await request(asset)).data.includes("pagead2.googlesyndication.com"),"chat never injects AdSense");
+  const discovery = await request("/decouvrir.html"), discoveryAgain = await request("/decouvrir.html");
+  const nonce = discovery.data.match(/nonce="([^"]+)"/)?.[1];
+  check(discovery.status === 200 && nonce && discovery.headers.get("content-security-policy").includes(`'nonce-${nonce}'`) && discovery.headers.get("content-security-policy").includes("'strict-dynamic'"), "public advertising document has a matching strict nonce CSP");
+  check(discovery.headers.get("cache-control").includes("no-store") && !discoveryAgain.data.includes(`nonce="${nonce}"`), "advertising HTML is not cached and nonces are unique");
+  check(!discovery.data.includes("adsbygoogle") && discovery.data.includes("discovery-page.js"), "public HTML does not request ads before the session and CMP checks");
+  const legal = await request("/confidentialite.html");
+  check(!/<script\b/i.test(legal.data) && !legal.headers.get("content-security-policy").includes("strict-dynamic"), "privacy page contains no scripts and keeps the restricted CSP");
+  const config = (await request("/api/public-config")).json;
+  check(config.advertisingEnabled === true && config.advertisingPages.length === 1 && config.advertisingPages[0] === "/decouvrir.html", "advertising configuration names only the public document");
 
   const register=async name=>{
     const result=await request("/api/auth/register",null,"POST",{username:name,password:"Initial-password-123",age:30,gender:"neutral",city:"Testville"});

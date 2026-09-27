@@ -1,4 +1,4 @@
-import { rooms } from "./room-catalog.js?v=20260927-premium-xxx";
+import { rooms } from "./room-catalog.aa9689894cbf.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
 import {
   getAuth,

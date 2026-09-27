@@ -1,5 +1,5 @@
-const CACHE = "letchat-shell-d5b443ee4e48";
-const SHELL = ["/","/index.html","/assets/icon.4a2a204d3b26.svg","/assets/favicon.f612d0ce5cfd.ico","/assets/style.26fa3220d705.css","/assets/v3-modern.20845ffa4f32.css","/assets/v2-community.4a3f3df9189d.css","/assets/v4-polish.cd2edb8233e1.css","/assets/audit-fixes.6eba884ba50f.css","/assets/v3-theme.1814c6a88724.js","/assets/room-catalog.aa9689894cbf.js","/assets/app-v4-cafe-v2.e85b35142050.js","/assets/v4-interface.c10af6551398.js","/manifest.webmanifest","/icon.svg"];
+const CACHE = "letchat-shell-2be30b5089a3";
+const SHELL = ["/","/index.html","/assets/icon.4a2a204d3b26.svg","/assets/favicon.f612d0ce5cfd.ico","/assets/style.26fa3220d705.css","/assets/v3-modern.20845ffa4f32.css","/assets/v2-community.4a3f3df9189d.css","/assets/v4-polish.cd2edb8233e1.css","/assets/audit-fixes.6eba884ba50f.css","/assets/v3-theme.1814c6a88724.js","/assets/room-catalog.aa9689894cbf.js","/assets/app-v4-cafe-v2.6688a182b056.js","/assets/v4-interface.c10af6551398.js","/manifest.webmanifest","/icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });

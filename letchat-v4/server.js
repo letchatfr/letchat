@@ -4,6 +4,7 @@ import { validateMedia, serveMedia } from "./lib/media.js";
 import { CallRegistry } from "./lib/calls.js";
 import { createCheckout, withBillingQueue } from "./lib/checkout.js";
 import { newRecoveryCode, recoveryHash, installRecoveryRoutes, purgeExpiredGuests } from "./lib/accounts.js";
+import { installAdvertisingPage } from "./lib/advertising.js";
 import helmet from "helmet";
 import http from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
@@ -457,6 +458,7 @@ app.use("/api", (req, res, next) => {
 });
 app.use("/api", (_req, res, next) => { res.set("Cache-Control", "private, no-store"); next(); });
 app.get("/privacy.html", (_req, res) => res.redirect(301, "/confidentialite.html"));
+await installAdvertisingPage(app);
 app.use(express.static("public", {
   etag: true, lastModified: true,
   setHeaders(res, filePath) {
@@ -719,7 +721,8 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.get("/api/public-config", (_req, res) => {
   res.json({
     contactEmail: String(process.env.CONTACT_EMAIL || "letchat@letchat.fr").trim(),
-    advertisingEnabled: false,
+    advertisingEnabled: process.env.ADSENSE_ENABLED !== "false",
+    advertisingPages: ["/decouvrir.html"],
     premiumConfigured: Boolean(stripe && process.env.STRIPE_PRICE_ID),
     premiumPlusConfigured: Boolean(stripe && process.env.STRIPE_PRICE_PLUS_ID),
     pushConfigured,
