@@ -1,0 +1,15 @@
+.recovery-dialog { box-sizing:border-box; width:min(94vw,480px); max-height:88dvh; overflow:auto; border:1px solid #b7c2ce; border-radius:18px; padding:24px; background:#fff; color:#172234; box-shadow:0 12px 60px #0005; }
+.recovery-dialog::backdrop { background:#111827b3; }
+.recovery-dialog h2 { font-size:1.3rem; margin:0 0 14px; }
+.recovery-dialog p,.recovery-dialog small { line-height:1.5; }
+.recovery-dialog label { display:block; font-weight:600; margin:10px 0; }
+.recovery-dialog input,.recovery-dialog textarea { box-sizing:border-box; width:100%; padding:12px; font:inherit; border:1px solid #8c9bad; border-radius:8px; background:#fff; color:#172234; margin-top:6px; }
+.recovery-dialog textarea { font-family:monospace; overflow-wrap:anywhere; }
+.recovery-dialog button { width:100%; padding:12px; margin-top:10px; border:1px solid #718198; border-radius:8px; background:#edf2f7; color:#172234; cursor:pointer; font:inherit; }
+.recovery-dialog button[type=submit],#downloadRecoveryCode { background:#ad3b2b; color:#fff; border-color:#ad3b2b; }
+.recovery-dialog a { color:#a93424; }
+.recovery-dialog [role=alert] { color:#a82121; }
+.recovery-dialog button:disabled { opacity:.6; cursor:wait; }
+.recovery-dialog :focus-visible { outline:3px solid #1e68bf; outline-offset:3px; }
+.media-unavailable { padding:12px; font-size:.9rem; }
+[data-theme="dark"] .recovery-dialog { background:#18202c; color:#f0f3f8; } [data-theme="dark"] .recovery-dialog input,[data-theme="dark"] .recovery-dialog textarea { background:#0e1520; color:#f0f3f8; } [data-theme="dark"] .recovery-dialog a { color:#ffa997; } [data-theme="dark"] .recovery-dialog [role=alert] { color:#ffa6a6; }

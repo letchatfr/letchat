@@ -14,16 +14,27 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
   <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="icon" type="image/svg+xml" href="/icon.svg?v=3" />
-<link rel="alternate icon" type="image/x-icon" href="/favicon.ico?v=3" />
+  <link rel="icon" type="image/svg+xml" href="/assets/icon.4a2a204d3b26.svg" />
+<link rel="alternate icon" type="image/x-icon" href="/assets/favicon.f612d0ce5cfd.ico" />
 
   <title>Letchat — Discutez simplement</title>
 
-  <link rel="stylesheet" href="style.css?v=20260927-premium-xxx" />
-  <link rel="stylesheet" href="v3-modern.css?v=notifications-mobile-v1" />
+  <link rel="stylesheet" href="/assets/style.26fa3220d705.css" />
+  <link rel="stylesheet" href="/assets/v3-modern.20845ffa4f32.css" />
 
-    <link rel="stylesheet" href="v2-community.css?v=20260927-salons-simples">
-  <link rel="stylesheet" href="v4-polish.css?v=20260927-salons-simples">
+    <link rel="stylesheet" href="/assets/v2-community.4a3f3df9189d.css">
+  <link rel="stylesheet" href="/assets/v4-polish.cd2edb8233e1.css">
+  <link rel="stylesheet" href="/assets/audit-fixes.6eba884ba50f.css">
+  <meta name="description" content="Rejoignez Letchat, le tchat francophone réservé aux adultes : salons de discussion, messages privés et appels audio et vidéo.">
+  <link rel="canonical" href="https://www.letchat.fr/">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="fr_FR">
+  <meta property="og:title" content="Letchat — Discutez simplement">
+  <meta property="og:description" content="Salons de discussion, messages privés et appels audio et vidéo. Un espace francophone réservé aux adultes.">
+  <meta property="og:url" content="https://www.letchat.fr/">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Letchat — Discutez simplement">
+  <meta name="twitter:description" content="Tchat francophone, messages privés et appels pour les adultes.">
 </head>
 
 <body>
@@ -33,12 +44,13 @@
         <h1>Bienvenue sur Letchat</h1>
         <p>Discutez, partagez et appelez vos proches en toute simplicité.</p>
         <button id="googleLogin"><span>G</span> Continuer avec Google</button>
+        <button id="googleRedirect" type="button" class="hidden">Ouvrir Google dans cet onglet</button>
         <div class="login-separator"><span>ou</span></div>
         <div class="login-tabs"><button type="button" data-auth-tab="login" class="active">Pseudonyme</button><button type="button" data-auth-tab="register">Créer un compte</button><button type="button" data-auth-tab="guest">Invité</button></div>
         <form id="localLoginForm" class="local-auth-form">
           <input id="localLoginName" required minlength="3" maxlength="40" placeholder="Pseudonyme" autocomplete="username">
           <input id="localLoginPassword" required minlength="8" maxlength="200" type="password" placeholder="Mot de passe" autocomplete="current-password">
-          <button type="submit">Se connecter</button>
+          <button type="submit">Se connecter</button><button id="forgotPassword" type="button" class="secondary-action">Mot de passe oublié ?</button>
         </form>
         <form id="localRegisterForm" class="local-auth-form hidden">
           <input id="localRegisterName" required minlength="3" maxlength="40" placeholder="Choisir un pseudonyme" autocomplete="username">
@@ -266,7 +278,7 @@
       <button
         type="button"
         class="public-access-button"
-        onclick="window.scrollTo({top:0,behavior:'smooth'})"
+        id="backToLogin"
       >
         Accéder à Letchat ↑
       </button>
@@ -575,6 +587,8 @@
         </section>
         <section class="account-data">
           <h3>Mes données et mon compte</h3>
+          <button id="recoverySettings" type="button" class="account-export hidden">Créer un nouveau code de récupération</button>
+          <p>Publicité : suspendue. Aucun traceur publicitaire n’est chargé.</p>
           <p>Contact officiel : <a id="contactEmail">Chargement…</a></p>
           <button id="exportAccount" type="button" class="account-export">
             Télécharger mes données</button
@@ -805,9 +819,34 @@
       </div>
     </section> <!-- Pied de page légal Letchat -->
 
+    <dialog id="recoverDialog" class="recovery-dialog">
+      <form id="recoverForm" class="local-auth-form">
+        <h2>Récupérer mon compte</h2><p>Utilisez le code de récupération enregistré lors de l’inscription ou depuis votre profil. Pour Google, utilisez « Continuer avec Google ».</p>
+        <label>Pseudonyme<input id="recoverUsername" required minlength="3" maxlength="40" autocomplete="username"></label>
+        <label>Code de récupération<input id="recoverCode" required maxlength="64" autocomplete="off" spellcheck="false"></label>
+        <label>Nouveau mot de passe<input id="recoverPassword" required minlength="8" maxlength="200" type="password" autocomplete="new-password"></label>
+        <p id="recoverError" role="alert"></p><button type="submit">Changer mon mot de passe</button>
+        <button type="button" data-close-dialog="recoverDialog">Annuler</button>
+        <small>Sans code préalablement enregistré, la récupération automatique est impossible. Contact : <a href="/contact.html">assistance Letchat</a>.</small>
+      </form>
+    </dialog>
+    <dialog id="recoverySettingsDialog" class="recovery-dialog">
+      <form id="recoverySettingsForm" class="local-auth-form"><h2>Code de récupération</h2>
+        <p>Le nouveau code remplacera votre ancien code.</p>
+        <label>Mot de passe actuel<input id="recoveryCurrentPassword" type="password" required maxlength="200" autocomplete="current-password"></label>
+        <p id="recoverySettingsError" role="alert"></p><button type="submit">Créer mon code</button>
+        <button type="button" data-close-dialog="recoverySettingsDialog">Annuler</button>
+      </form>
+    </dialog>
+    <dialog id="recoveryCodeDialog" class="recovery-dialog">
+      <h2>Enregistrez votre code de récupération</h2><p>Ce code permet de changer votre mot de passe. Conservez-le en lieu sûr et ne le partagez pas. Il ne sera plus affiché après fermeture.</p>
+      <label>Votre code<textarea id="recoveryCodeValue" readonly spellcheck="false" rows="3"></textarea></label>
+      <button id="downloadRecoveryCode" type="button">Télécharger mon code</button>
+      <button id="closeRecoveryCode" type="button">J’ai enregistré mon code</button>
+    </dialog>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-cafe-v2.js?v=20260927-sans-bandeau-vide"></script>
-    <script src="v4-interface.js?v=20260927-premium-refonte" defer></script>
+    <script src="/assets/v3-theme.1814c6a88724.js"></script>
+    <script type="module" src="/assets/app-v4-cafe-v2.e85b35142050.js"></script>
+    <script src="/assets/v4-interface.c10af6551398.js" defer></script>
 </body>
 </html>

@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /__/auth/
+Disallow: /socket.io/
+
+Sitemap: https://www.letchat.fr/sitemap.xml

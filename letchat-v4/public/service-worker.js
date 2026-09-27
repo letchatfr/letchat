@@ -1,6 +1,5 @@
-const CACHE = "letchat-shell-v26-sans-bandeau-vide";
-const SHELL = ["/", "/index.html", "/style.css?v=20260927-premium-xxx", "/v3-modern.css?v=notifications-mobile-v1", "/v3-theme.js?v=interface-finitions-v31", "/v2-community.css?v=20260927-salons-simples", "/room-catalog.js?v=20260927-premium-xxx", "/app-v4-cafe-v2.js?v=20260927-sans-bandeau-vide", "/v4-polish.css?v=20260927-salons-simples", "/v4-interface.js?v=20260927-premium-refonte", "/manifest.webmanifest", "/icon.svg?v=3"];
-
+const CACHE = "letchat-shell-d5b443ee4e48";
+const SHELL = ["/","/index.html","/assets/icon.4a2a204d3b26.svg","/assets/favicon.f612d0ce5cfd.ico","/assets/style.26fa3220d705.css","/assets/v3-modern.20845ffa4f32.css","/assets/v2-community.4a3f3df9189d.css","/assets/v4-polish.cd2edb8233e1.css","/assets/audit-fixes.6eba884ba50f.css","/assets/v3-theme.1814c6a88724.js","/assets/room-catalog.aa9689894cbf.js","/assets/app-v4-cafe-v2.e85b35142050.js","/assets/v4-interface.c10af6551398.js","/manifest.webmanifest","/icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
@@ -16,20 +15,21 @@ self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== location.origin) return;
   // Ne jamais mettre en cache les API, médias privés ou URL avec jeton.
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/socket.io") || url.searchParams.has("t")) return;
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/socket.io") || url.pathname.startsWith("/__/auth") || url.searchParams.has("t")) return;
   if (event.request.mode === "navigate") {
+    if (!["/", "/index.html"].includes(url.pathname)) return;
     event.respondWith(fetch(event.request).catch(() => caches.match("/index.html")));
     return;
   }
   const allowed = SHELL.some(path => new URL(path, location.origin).href === url.href);
   if (!allowed) return;
-  event.respondWith(fetch(event.request).then(response => {
+  event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
     if (response.ok) {
       const copy = response.clone();
       event.waitUntil(caches.open(CACHE).then(cache => cache.put(event.request, copy)));
     }
     return response;
-  }).catch(() => caches.match(event.request)));
+  })));
 });
 
 self.addEventListener("push", event => {

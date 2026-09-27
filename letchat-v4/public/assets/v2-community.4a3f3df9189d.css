@@ -1,0 +1,17 @@
+/* Community navigation: uses the existing light/dark theme palette. */
+.side { min-height:0; overflow:hidden; }
+.side > .brand { margin-bottom:16px; flex-shrink:0; }
+.side > .new, .side > nav, .side > .account, .side > .mobile-theme-button { flex-shrink:0; }
+.side > nav { margin:10px 0; }
+.v2-room-directory { min-height:70px; flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--v3-border) transparent; padding-right:3px; }
+.v2-room-group { margin:0 0 8px; }
+.v2-room-group summary { padding:10px 4px; font-size:11px; font-weight:800; letter-spacing:.6px; text-transform:uppercase; color:var(--v3-text-soft); cursor:pointer; }
+.v2-room-row { display:flex; align-items:center; gap:2px; }
+.v2-room-row[hidden], .v2-room-group[hidden] { display:none!important; }
+.side .v2-room-row .room { margin:2px 0; padding:9px 8px; min-width:0; flex:1; text-decoration:none; font-size:13px; gap:8px; border-radius:10px; }
+.v2-room-icon { width:24px; text-align:center; flex-shrink:0; font-size:15px; }
+.v2-room-name { min-width:0; overflow-wrap:anywhere; }
+.v2-room-row .room-unread { margin-left:auto; flex-shrink:0; }
+.side > .account { margin-top:12px; padding-top:14px; }
+@media(max-width:650px) { .side.open { overflow:hidden; padding-bottom:max(16px,env(safe-area-inset-bottom)); } }
+@media(prefers-reduced-motion:reduce) { *, *::before, *::after { scroll-behavior:auto!important; animation-duration:.01ms!important; transition-duration:.01ms!important; } }
