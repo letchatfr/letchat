@@ -1915,7 +1915,7 @@ async function loadAdminReports() {
       ? rows
           .map(
             (report) =>
-              `<article class="report-item" data-report-id="${report.id}" data-user-id="${safe(report.reported_id)}"><div class="report-head"><strong>${safe(report.reported_name)}</strong><time>${new Date(report.created_at).toLocaleString("fr-FR")}</time></div><p><b>Motif :</b> ${safe(reportReasons[report.reason] || report.reason)}</p><p><b>Signalé par :</b> ${safe(report.reporter_name)}</p>${report.evidence_body ? `<blockquote class="report-evidence"><b>Message signalé :</b><br>${safe(report.evidence_body)}</blockquote>` : ""}${report.details ? `<p class="report-details">${safe(report.details)}</p>` : ""}<p class="suspension-state">${report.suspended ? "Compte actuellement suspendu" : "Compte actif"}</p><div class="admin-actions">${$("#adminStatus").value === "pending" ? '<button data-action="resolved">Traité</button><button data-action="dismissed">Rejeter</button>' : ""}${report.message_id ? '<button data-action="delete-message" class="danger">Supprimer le message</button>' : ""}<button data-action="24h">Suspendre 24 h</button><button data-action="7d">Suspendre 7 jours</button><button data-action="permanent" class="danger">Suspendre définitivement</button>${report.suspended ? '<button data-action="unsuspend">Réactiver</button>' : ""}</div></article>`,
+              `<article class="report-item" data-report-id="${report.id}" data-user-id="${safe(report.reported_id)}"><div class="report-head"><strong>${safe(report.reported_name)}</strong><time>${new Date(report.created_at).toLocaleString("fr-FR")}</time></div><p><b>Motif :</b> ${safe(reportReasons[report.reason] || report.reason)}</p><p><b>Signalé par :</b> ${safe(report.reporter_name)}</p>${report.evidence_body ? `<blockquote class="report-evidence"><b>Message signalé :</b><br>${safe(report.evidence_body)}</blockquote>` : ""}${report.details ? `<p class="report-details">${safe(report.details)}</p>` : ""}<p class="suspension-state">${report.suspended ? "Compte actuellement suspendu" : "Compte actif"}</p><div class="admin-actions">${$("#adminStatus").value === "pending" ? '<button data-action="resolved">Traité</button><button data-action="dismissed">Rejeter</button>' : ""}${$("#adminStatus").value !== "pending" ? '<button data-action="pending">Rouvrir le signalement</button>' : ""}${report.message_id ? '<button data-action="delete-message" class="danger">Supprimer le message</button>' : ""}<button data-action="24h">Suspendre 24 h</button><button data-action="7d">Suspendre 7 jours</button><button data-action="permanent" class="danger">Suspendre définitivement</button>${report.suspended ? '<button data-action="unsuspend">Réactiver</button>' : ""}</div></article>`,
           )
           .join("")
       : '<p class="admin-empty">Aucun signalement dans cette catégorie.</p>';
@@ -1934,7 +1934,7 @@ async function adminAction(button) {
     userId = card.dataset.userId;
   button.disabled = true;
   try {
-    if (["resolved", "dismissed"].includes(action)) {
+    if (["resolved", "dismissed", "pending"].includes(action)) {
       await api(`/api/admin/reports/${encodeURIComponent(reportId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
