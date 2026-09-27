@@ -21,6 +21,32 @@ if (jwtSecret.length < 32) {
 const localJwtSecret = new TextEncoder().encode(jwtSecret);
 const port = process.env.PORT || 10000;
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+const premiumPrices = { premium: process.env.STRIPE_PRICE_ID, premium_plus: process.env.STRIPE_PRICE_PLUS_ID };
+const premiumLabel = { premium: "Premium", premium_plus: "Premium+" };
+function planFromPrice(priceId) {
+  return Object.keys(premiumPrices).find(plan => premiumPrices[plan] && premiumPrices[plan] === priceId) || null;
+}
+async function saveStripeSubscription(subscription, fallbackUserId = "", allowReplacement = false) {
+  const userId = String(subscription.metadata?.userId || fallbackUserId);
+  if (!userId || !subscription.customer) return;
+  const priceId = subscription.items?.data?.[0]?.price?.id;
+  const plan = planFromPrice(priceId) || (premiumLabel[subscription.metadata?.plan] ? subscription.metadata.plan : null);
+  const end = subscription.items?.data?.[0]?.current_period_end || subscription.current_period_end;
+  await pool.query(
+    `INSERT INTO letchat_subscriptions
+     (user_id,email,stripe_customer_id,stripe_subscription_id,status,current_period_end,plan,updated_at)
+     VALUES ($1,'',$2,$3,$4,$5,$6,NOW())
+     ON CONFLICT (user_id) DO UPDATE SET
+       stripe_customer_id=EXCLUDED.stripe_customer_id,
+       stripe_subscription_id=EXCLUDED.stripe_subscription_id,
+       status=EXCLUDED.status,current_period_end=EXCLUDED.current_period_end,
+       plan=EXCLUDED.plan,updated_at=NOW()
+     WHERE letchat_subscriptions.stripe_subscription_id=EXCLUDED.stripe_subscription_id
+       OR ($7 AND letchat_subscriptions.stripe_customer_id=EXCLUDED.stripe_customer_id)`,
+    [userId, String(subscription.customer), subscription.id, subscription.status,
+      end ? new Date(end * 1000) : null, plan || "premium", allowReplacement]
+  );
+}
 const vapidPublicKey = String(process.env.VAPID_PUBLIC_KEY || "").trim();
 const vapidPrivateKey = String(process.env.VAPID_PRIVATE_KEY || "").trim();
 const pushConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
@@ -275,33 +301,6 @@ await pool.query(`
   ON letchat_push_subscriptions(user_id);
 `);
 
-// Paramètres des salons, préférences, sondages et délai par membre.
-await pool.query(`
-  CREATE TABLE IF NOT EXISTS letchat_room_settings (
-    room TEXT PRIMARY KEY, slow_seconds INTEGER NOT NULL DEFAULT 0
-      CHECK (slow_seconds IN (0,10,30,60))
-  );
-  CREATE TABLE IF NOT EXISTS letchat_room_last_sent (
-    room TEXT NOT NULL, user_id TEXT NOT NULL, sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY(room,user_id)
-  );
-  CREATE TABLE IF NOT EXISTS letchat_notification_preferences (
-    user_id TEXT PRIMARY KEY, private_messages BOOLEAN NOT NULL DEFAULT TRUE,
-    friends BOOLEAN NOT NULL DEFAULT TRUE, reports BOOLEAN NOT NULL DEFAULT TRUE
-  );
-  CREATE TABLE IF NOT EXISTS letchat_polls (
-    id BIGSERIAL PRIMARY KEY, room TEXT NOT NULL, author_id TEXT NOT NULL,
-    question TEXT NOT NULL, options JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours')
-  );
-  CREATE INDEX IF NOT EXISTS idx_letchat_polls_room ON letchat_polls(room, expires_at DESC);
-  CREATE TABLE IF NOT EXISTS letchat_poll_votes (
-    poll_id BIGINT NOT NULL REFERENCES letchat_polls(id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL, choice INTEGER NOT NULL, PRIMARY KEY(poll_id,user_id)
-  );
-`);
-
 await pool.query(`
   CREATE TABLE IF NOT EXISTS letchat_consents (
     user_id TEXT PRIMARY KEY,
@@ -382,35 +381,18 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
       const userId = String(session.client_reference_id || session.metadata?.userId || "");
-      if (userId && session.customer) {
-        const subscription = session.subscription
-          ? await stripe.subscriptions.retrieve(String(session.subscription))
-          : null;
-        await pool.query(
-          `INSERT INTO letchat_subscriptions
-           (user_id,email,stripe_customer_id,stripe_subscription_id,status,current_period_end,plan,updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
-           ON CONFLICT (user_id) DO UPDATE SET email=EXCLUDED.email,
-             stripe_customer_id=EXCLUDED.stripe_customer_id,
-             stripe_subscription_id=EXCLUDED.stripe_subscription_id,
-             status=EXCLUDED.status,current_period_end=EXCLUDED.current_period_end,
-             plan=EXCLUDED.plan,updated_at=NOW()`,
-          [userId, session.customer_details?.email || "", String(session.customer),
-           subscription?.id || null, subscription?.status || "active",
-           subscription?.current_period_end ? new Date(subscription.current_period_end * 1000) : null,
-           String(session.metadata?.plan || subscription?.metadata?.plan || "premium")]
-        );
+      if (userId && session.mode === "subscription" && session.subscription &&
+          session.payment_status !== "unpaid") {
+        const subscription = await stripe.subscriptions.retrieve(String(session.subscription));
+        await saveStripeSubscription(subscription, userId, true);
       }
     }
     if (["customer.subscription.updated", "customer.subscription.deleted"].includes(event.type)) {
-      const subscription = event.data.object;
-      await pool.query(
-        `UPDATE letchat_subscriptions SET status=$1,current_period_end=$2,updated_at=NOW()
-         WHERE stripe_subscription_id=$3 OR stripe_customer_id=$4`,
-        [subscription.status,
-         subscription.current_period_end ? new Date(subscription.current_period_end * 1000) : null,
-         subscription.id, String(subscription.customer)]
-      );
+      const received = event.data.object;
+      const subscription = event.type === "customer.subscription.deleted"
+        ? received : await stripe.subscriptions.retrieve(received.id);
+      const known = await pool.query("SELECT user_id FROM letchat_subscriptions WHERE stripe_subscription_id=$1", [subscription.id]);
+      await saveStripeSubscription(subscription, known.rows[0]?.user_id);
     }
     res.json({ received: true });
   } catch (error) {
@@ -515,16 +497,6 @@ function adminAuth(req, res, next) {
 }
 
 async function createNotification(userId, type, title, body = "", actorId = null, referenceId = null) {
-  const preferenceKey = type === "private_message" ? "private_messages"
-    : ["friend_request", "friend_accepted"].includes(type) ? "friends"
-    : type === "report_update" ? "reports" : null;
-  if (preferenceKey) {
-    const prefs = await pool.query(
-      `SELECT private_messages, friends, reports FROM letchat_notification_preferences WHERE user_id=$1`,
-      [userId]
-    );
-    if (prefs.rows[0]?.[preferenceKey] === false) return null;
-  }
   const { rows } = await pool.query(
     `INSERT INTO letchat_notifications
      (user_id, type, title, body, actor_id, reference_id)
@@ -765,27 +737,77 @@ app.get("/api/auth/me", auth, (req,res) => res.json({ user:{ id:req.user.id,name
 
 app.get("/api/subscription", auth, requireAdult, async (req, res, next) => {
   try {
+    const sessionId = String(req.query.session_id || "");
+    if (sessionId) {
+      if (!stripe || !/^cs_(test|live)_[A-Za-z0-9]+$/.test(sessionId))
+        return res.status(400).json({ error: "Session de paiement incorrecte" });
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      if (session.client_reference_id !== req.user.id)
+        return res.status(403).json({ error: "Ce paiement ne correspond pas à votre compte" });
+      if (session.status === "complete" && session.payment_status !== "unpaid" && session.subscription) {
+        await saveStripeSubscription(await stripe.subscriptions.retrieve(String(session.subscription)), req.user.id, true);
+      }
+    }
     const { rows } = await pool.query(
-      "SELECT status,current_period_end,stripe_customer_id,plan FROM letchat_subscriptions WHERE user_id=$1",
+      "SELECT status,current_period_end,stripe_customer_id,stripe_subscription_id,plan FROM letchat_subscriptions WHERE user_id=$1",
       [req.user.id]
     );
-    const row = rows[0];
+    let row = rows[0];
+    if (stripe && row?.stripe_subscription_id && row.status !== "canceled") {
+      try {
+        const subscription = await stripe.subscriptions.retrieve(row.stripe_subscription_id);
+        if (String(subscription.customer) === row.stripe_customer_id) {
+          await saveStripeSubscription(subscription, req.user.id);
+          row = (await pool.query(
+            "SELECT status,current_period_end,stripe_customer_id,plan FROM letchat_subscriptions WHERE user_id=$1",
+            [req.user.id]
+          )).rows[0];
+        }
+      } catch (error) { console.error("Actualisation abonnement :", error.message); }
+    }
     const premium = Boolean(row && ["active", "trialing"].includes(row.status));
-    res.json({ premium, plan: row?.plan || null, status: row?.status || "free", currentPeriodEnd: row?.current_period_end || null, canManage: Boolean(row?.stripe_customer_id) });
+    res.json({ premium, plan: row?.plan || null, status: row?.status || "free",
+      currentPeriodEnd: row?.current_period_end || null, canManage: Boolean(row?.stripe_customer_id) });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/premium/plans", async (_req, res, next) => {
+  try {
+    const plans = await Promise.all(Object.entries(premiumPrices).map(async ([id, priceId]) => {
+      if (!stripe || !priceId) return { id, label: premiumLabel[id], available: false };
+      try {
+        const price = await stripe.prices.retrieve(priceId);
+        return { id, label: premiumLabel[id], available: Boolean(price.active && price.type === "recurring" && Number.isInteger(price.unit_amount)),
+          amount: price.unit_amount, currency: price.currency,
+          interval: price.recurring?.interval, intervalCount: price.recurring?.interval_count };
+      } catch (error) {
+        console.error("Tarif Stripe :", id, error.message);
+        return { id, label: premiumLabel[id], available: false };
+      }
+    }));
+    res.json({ plans });
   } catch (error) { next(error); }
 });
 
 app.post("/api/stripe/checkout", auth, requireAdult, rateLimitAction("stripe-checkout", 5, 60 * 60 * 1000), async (req, res, next) => {
   try {
-    const plan = req.body?.plan === "premium_plus" ? "premium_plus" : "premium";
-    const priceId = plan === "premium_plus" ? process.env.STRIPE_PRICE_PLUS_ID : process.env.STRIPE_PRICE_ID;
+    const plan = req.body?.plan;
+    if (!Object.hasOwn(premiumPrices, plan)) return res.status(400).json({ error: "Formule inconnue" });
+    const priceId = premiumPrices[plan];
     if (!stripe || !priceId) return res.status(503).json({ error: "Cette formule est temporairement indisponible" });
-    const existing = await pool.query("SELECT stripe_customer_id FROM letchat_subscriptions WHERE user_id=$1", [req.user.id]);
+    const price = await stripe.prices.retrieve(priceId);
+    if (!price.active || price.type !== "recurring") return res.status(503).json({ error: "Cette formule est temporairement indisponible" });
+    const existing = await pool.query("SELECT stripe_customer_id,stripe_subscription_id FROM letchat_subscriptions WHERE user_id=$1", [req.user.id]);
+    if (existing.rows[0]?.stripe_subscription_id) {
+      const current = await stripe.subscriptions.retrieve(existing.rows[0].stripe_subscription_id);
+      if (["active", "trialing", "past_due", "unpaid"].includes(current.status))
+        return res.status(409).json({ error: "Vous avez déjà un abonnement. Utilisez « Gérer mon abonnement »." });
+    }
     const baseUrl = String(process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const params = {
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${baseUrl}/?premium=success`,
+      success_url: `${baseUrl}/?premium=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/?premium=cancel`,
       client_reference_id: req.user.id,
       metadata: { userId: req.user.id, plan },
@@ -842,7 +864,7 @@ app.post("/api/age-accept", auth, rateLimitAction("age", 5, 60 * 60 * 1000), asy
 app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 60 * 60 * 1000), async (req, res, next) => {
   try {
     const uid = req.user.id;
-    const [profile, publicMessages, privateMessages, friends, blocks, notifications, reports, consents, conversationPreferences, notificationPreferences, createdPolls, pollVotes] = await Promise.all([
+    const [profile, publicMessages, privateMessages, friends, blocks, notifications, reports, consents, conversationPreferences] = await Promise.all([
       pool.query("SELECT user_id,email,display_name,photo,city,bio,gender,availability,last_seen,location_visible,updated_at FROM profiles WHERE user_id=$1", [uid]),
       pool.query("SELECT id,author,room,body,media_type,created_at,expires_at FROM letchat_messages WHERE user_id=$1 ORDER BY created_at", [uid]),
       pool.query(`SELECT id,sender_id,recipient_id,sender_name,body,media_type,view_once,opened_at,created_at,expires_at
@@ -853,10 +875,7 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
       pool.query("SELECT id,reporter_id,reported_id,reason,details,status,created_at FROM letchat_reports WHERE reporter_id=$1 OR reported_id=$1 ORDER BY created_at", [uid]),
       pool.query(`SELECT 'rules' AS type,rules_version AS version,accepted_at FROM letchat_consents WHERE user_id=$1
                   UNION ALL SELECT 'age','18+',accepted_at FROM letchat_age_consents WHERE user_id=$1`, [uid]),
-      pool.query("SELECT other_id,archived,muted,hidden_before,updated_at FROM letchat_conversation_preferences WHERE user_id=$1", [uid]),
-      pool.query("SELECT private_messages,friends,reports FROM letchat_notification_preferences WHERE user_id=$1", [uid]),
-      pool.query("SELECT id,room,question,options,created_at,expires_at FROM letchat_polls WHERE author_id=$1", [uid]),
-      pool.query("SELECT poll_id,choice FROM letchat_poll_votes WHERE user_id=$1", [uid])
+      pool.query("SELECT other_id,archived,muted,hidden_before,updated_at FROM letchat_conversation_preferences WHERE user_id=$1", [uid])
     ]);
     const data = {
       exportedAt: new Date().toISOString(),
@@ -870,9 +889,6 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
       reports: reports.rows,
       consents: consents.rows,
       conversationPreferences: conversationPreferences.rows,
-      notificationPreferences: notificationPreferences.rows[0] || null,
-      createdPolls: createdPolls.rows,
-      pollVotes: pollVotes.rows,
       note: "Les fichiers image et vidéo binaires ne sont pas inclus dans cet export JSON. Leurs types sont indiqués."
     };
     res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -904,10 +920,6 @@ app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account",
     await client.query("DELETE FROM letchat_blocks WHERE blocker_id=$1 OR blocked_id=$1", [uid]);
     await client.query("DELETE FROM letchat_notifications WHERE user_id=$1 OR actor_id=$1", [uid]);
     await client.query("DELETE FROM letchat_push_subscriptions WHERE user_id=$1", [uid]);
-    await client.query("DELETE FROM letchat_notification_preferences WHERE user_id=$1", [uid]);
-    await client.query("DELETE FROM letchat_room_last_sent WHERE user_id=$1", [uid]);
-    await client.query("DELETE FROM letchat_poll_votes WHERE user_id=$1", [uid]);
-    await client.query("DELETE FROM letchat_polls WHERE author_id=$1", [uid]);
     await client.query("UPDATE letchat_reports SET reporter_id=$2 WHERE reporter_id=$1", [uid, anonymousId]);
     await client.query("UPDATE letchat_reports SET reported_id=$2 WHERE reported_id=$1", [uid, anonymousId]);
     await client.query("DELETE FROM letchat_suspensions WHERE user_id=$1", [uid]);
@@ -1102,30 +1114,6 @@ app.get("/api/notifications", auth, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
-
-app.get("/api/notification-preferences", auth, async (req, res, next) => {
-  try {
-    const { rows } = await pool.query(
-      "SELECT private_messages, friends, reports FROM letchat_notification_preferences WHERE user_id=$1", [req.user.id]
-    );
-    res.json(rows[0] || { private_messages: true, friends: true, reports: true });
-  } catch (error) { next(error); }
-});
-app.put("/api/notification-preferences", auth, async (req, res, next) => {
-  try {
-    const fields = ["private_messages", "friends", "reports"];
-    if (fields.some(key => typeof req.body?.[key] !== "boolean"))
-      return res.status(400).json({ error: "Préférences incorrectes" });
-    const { rows } = await pool.query(
-      `INSERT INTO letchat_notification_preferences(user_id, private_messages, friends, reports)
-       VALUES($1,$2,$3,$4) ON CONFLICT(user_id) DO UPDATE SET
-       private_messages=EXCLUDED.private_messages, friends=EXCLUDED.friends,
-       reports=EXCLUDED.reports RETURNING private_messages, friends, reports`,
-      [req.user.id, ...fields.map(key => req.body[key])]
-    );
-    res.json(rows[0]);
-  } catch (error) { next(error); }
 });
 
 app.post("/api/push/subscribe", auth, async (req, res, next) => {
@@ -1340,21 +1328,10 @@ app.post("/api/reports", auth, requireAdult, requireRules, rateLimitAction("repo
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [req.user.id, reportedId, reason, details, messageKind, messageId, evidenceBody]
     );
-    io.to("letchat:admins").emit("report-count-changed");
     res.status(201).json({ ok: true });
   } catch (error) {
     next(error);
   }
-});
-
-app.get("/api/my-reports", auth, requireAdult, async (req, res, next) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT id, reason, status, created_at FROM letchat_reports
-       WHERE reporter_id=$1 ORDER BY created_at DESC LIMIT 50`, [req.user.id]
-    );
-    res.json(rows);
-  } catch (error) { next(error); }
 });
 
 app.get("/api/admin/me", auth, (req, res) => {
@@ -1369,13 +1346,6 @@ async function logModerationAction(req, action, { targetUserId = null, reportId 
     [req.user.id, req.user.name || "Administrateur", action, targetUserId, reportId, String(details || "").slice(0, 1000)]
   );
 }
-
-app.get("/api/admin/pending-count", auth, adminAuth, async (_req, res, next) => {
-  try {
-    const { rows } = await pool.query("SELECT COUNT(*)::int AS count FROM letchat_reports WHERE status='pending'");
-    res.json(rows[0]);
-  } catch (error) { next(error); }
-});
 
 app.get("/api/admin/moderation-log", auth, adminAuth, async (_req, res, next) => {
   try {
@@ -1507,12 +1477,9 @@ app.patch("/api/admin/reports/:id", auth, adminAuth, async (req, res, next) => {
     });
     await createNotification(
       result.rows[0].reporter_id, "report_update", "Mise à jour de votre signalement",
-      status === "resolved" ? "Votre signalement a été traité par la modération."
-        : status === "pending" ? "Votre signalement a été rouvert et sera réexaminé par la modération."
-        : "Votre signalement a été examiné et classé.",
+      status === "resolved" ? "Votre signalement a été traité par la modération." : "Votre signalement a été examiné et classé.",
       null, String(result.rows[0].id)
     );
-    io.to("letchat:admins").emit("report-count-changed");
     res.json(result.rows[0]);
   } catch (error) {
     next(error);
@@ -1677,113 +1644,6 @@ app.get("/api/turn-credentials", auth, requireAdult, async (_req, res, next) => 
   }
 });
 
-// Une seule configuration par salon, modifiable uniquement par un administrateur.
-app.get("/api/rooms/:room/slow-mode", auth, requireAdult, async (req, res, next) => {
-  try {
-    if (!allowedRooms.has(req.params.room)) return res.status(404).json({ error: "Salon inconnu" });
-    const { rows } = await pool.query("SELECT slow_seconds FROM letchat_room_settings WHERE room=$1", [req.params.room]);
-    res.json({ seconds: rows[0]?.slow_seconds || 0 });
-  } catch (error) { next(error); }
-});
-app.put("/api/rooms/:room/slow-mode", auth, adminAuth, async (req, res, next) => {
-  try {
-    if (!allowedRooms.has(req.params.room)) return res.status(404).json({ error: "Salon inconnu" });
-    const seconds = req.body?.seconds;
-    if (![0,10,30,60].includes(seconds)) return res.status(400).json({ error: "Durée incorrecte" });
-    await pool.query(`INSERT INTO letchat_room_settings(room,slow_seconds) VALUES($1,$2)
-      ON CONFLICT(room) DO UPDATE SET slow_seconds=EXCLUDED.slow_seconds`, [req.params.room, seconds]);
-    io.emit("room-slow-mode", { room: req.params.room, seconds });
-    res.json({ seconds });
-  } catch (error) { next(error); }
-});
-
-async function getPoll(pollId, userId) {
-  const { rows } = await pool.query(
-    `SELECT p.id,p.room,p.author_id,p.question,p.options,p.expires_at,
-       COALESCE(SUM(v.count),0)::int AS votes,
-       COALESCE(jsonb_agg(jsonb_build_object('choice',v.choice,'count',v.count))
-         FILTER (WHERE v.choice IS NOT NULL), '[]'::jsonb) AS counts,
-       (SELECT choice FROM letchat_poll_votes WHERE poll_id=p.id AND user_id=$2) AS my_choice
-     FROM letchat_polls p LEFT JOIN (
-       SELECT poll_id,choice,COUNT(*)::int AS count, MIN(user_id) AS user_id
-       FROM letchat_poll_votes GROUP BY poll_id,choice
-     ) v ON v.poll_id=p.id WHERE p.id=$1
-     GROUP BY p.id`, [pollId, userId]
-  );
-  return rows[0] || null;
-}
-app.get("/api/polls", auth, requireAdult, async (req, res, next) => {
-  try {
-    const room = String(req.query.room || "");
-    if (!allowedRooms.has(room)) return res.status(400).json({ error: "Salon inconnu" });
-    const { rows } = await pool.query(
-      `SELECT id FROM letchat_polls WHERE room=$1 AND expires_at>NOW()
-       ORDER BY created_at DESC LIMIT 1`, [room]
-    );
-    res.json(rows[0] ? await getPoll(rows[0].id, req.user.id) : null);
-  } catch (error) { next(error); }
-});
-app.post("/api/polls", auth, requireAdult, requireRules, rateLimitAction("poll-create", 3, 24*60*60*1000), async (req, res, next) => {
-  try {
-    const room = String(req.body?.room || "");
-    if (!allowedRooms.has(room)) return res.status(400).json({ error: "Salon inconnu" });
-    const question = String(req.body?.question || "").trim().slice(0, 160);
-    const options = req.body?.options;
-    if (!question || !Array.isArray(options) || options.length < 2 || options.length > 4 ||
-        options.some(option => typeof option !== "string" || !option.trim() || option.length > 80))
-      return res.status(400).json({ error: "Question ou réponses incorrectes" });
-    const clean = options.map(option => option.trim());
-    if (new Set(clean.map(option => option.toLocaleLowerCase("fr"))).size !== clean.length)
-      return res.status(400).json({ error: "Les réponses doivent être différentes" });
-    const client = await pool.connect();
-    let pollId;
-    try {
-      await client.query("BEGIN");
-      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`letchat-poll:${room}`]);
-      const existing = await client.query("SELECT 1 FROM letchat_polls WHERE room=$1 AND expires_at>NOW() LIMIT 1", [room]);
-      if (existing.rowCount) {
-        await client.query("ROLLBACK");
-        return res.status(409).json({ error: "Un sondage est déjà en cours dans ce salon" });
-      }
-      const created = await client.query(
-        `INSERT INTO letchat_polls(room,author_id,question,options) VALUES($1,$2,$3,$4::jsonb) RETURNING id`,
-        [room, req.user.id, question, JSON.stringify(clean)]
-      );
-      pollId = created.rows[0].id;
-      await client.query("COMMIT");
-    } catch (error) { await client.query("ROLLBACK"); throw error; }
-    finally { client.release(); }
-    io.to(room).emit("poll-updated", { room });
-    res.status(201).json(await getPoll(pollId, req.user.id));
-  } catch (error) { next(error); }
-});
-app.post("/api/polls/:id/vote", auth, requireAdult, requireRules, rateLimitAction("poll-vote", 20, 60*60*1000), async (req, res, next) => {
-  try {
-    if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "Sondage incorrect" });
-    const { rows } = await pool.query("SELECT room,options,expires_at FROM letchat_polls WHERE id=$1", [req.params.id]);
-    if (!rows[0] || new Date(rows[0].expires_at) <= new Date()) return res.status(404).json({ error: "Sondage terminé" });
-    const choice = req.body?.choice;
-    if (!Number.isInteger(choice) || choice < 0 || choice >= rows[0].options.length)
-      return res.status(400).json({ error: "Réponse incorrecte" });
-    await pool.query(`INSERT INTO letchat_poll_votes(poll_id,user_id,choice) VALUES($1,$2,$3)
-      ON CONFLICT(poll_id,user_id) DO UPDATE SET choice=EXCLUDED.choice`, [req.params.id, req.user.id, choice]);
-    io.to(rows[0].room).emit("poll-updated", { room: rows[0].room });
-    res.json(await getPoll(req.params.id, req.user.id));
-  } catch (error) { next(error); }
-});
-app.delete("/api/polls/:id", auth, async (req, res, next) => {
-  try {
-    if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: "Sondage incorrect" });
-    const poll = await pool.query("SELECT room,author_id FROM letchat_polls WHERE id=$1", [req.params.id]);
-    if (!poll.rowCount) return res.status(404).json({ error: "Sondage introuvable" });
-    if (poll.rows[0].author_id !== req.user.id && !isAdminUser(req.user))
-      return res.status(403).json({ error: "Action interdite" });
-    await pool.query("UPDATE letchat_polls SET expires_at=NOW() WHERE id=$1", [req.params.id]);
-    io.to(poll.rows[0].room).emit("poll-updated", { room: poll.rows[0].room });
-    res.json({ ok: true });
-  } catch (error) { next(error); }
-});
-
 app.get("/api/messages", auth, requireAdult, async (req, res, next) => {
   try {
     const room = getRoom(req.query.room);
@@ -1879,22 +1739,6 @@ app.post("/api/messages", auth, requireAdult, requireRules,
       );
       if (!result.rowCount) return res.status(400).json({ error: "Message cité introuvable" });
       reply = result.rows[0];
-    }
-
-    if (!isAdminUser(req.user)) {
-      const reserved = await pool.query(
-        `INSERT INTO letchat_room_last_sent(room,user_id,sent_at)
-         SELECT $1,$2,NOW() WHERE EXISTS (
-           SELECT 1 FROM letchat_room_settings WHERE room=$1 AND slow_seconds>0
-         )
-         ON CONFLICT(room,user_id) DO UPDATE SET sent_at=NOW()
-         WHERE letchat_room_last_sent.sent_at <= NOW() -
-           (SELECT slow_seconds * INTERVAL '1 second' FROM letchat_room_settings WHERE room=$1)
-         RETURNING sent_at`, [room, req.user.id]
-      );
-      const mode = await pool.query("SELECT slow_seconds FROM letchat_room_settings WHERE room=$1", [room]);
-      if (mode.rows[0]?.slow_seconds && !reserved.rowCount)
-        return res.status(429).json({ error: `Mode lent : patientez ${mode.rows[0].slow_seconds} secondes entre vos messages.` });
     }
 
     const query = await pool.query(
@@ -2457,7 +2301,6 @@ io.use(async (socket, next) => {
 io.on("connection", socket => {
   pool.query("UPDATE profiles SET last_seen=NOW() WHERE user_id=$1", [socket.user.id]).catch(() => {});
   socket.join(`user:${socket.user.id}`);
-  if (isAdminUser(socket.user)) socket.join("letchat:admins");
   socket.room = "cafe";
   socket.join(socket.room);
   online.set(socket.id, { user: socket.user, room: socket.room });
@@ -2596,7 +2439,6 @@ async function deleteExpiredMessages() {
 
 await deleteExpiredMessages();
 setInterval(deleteExpiredMessages, 30000).unref();
-setInterval(() => pool.query("DELETE FROM letchat_polls WHERE expires_at < NOW() - INTERVAL '7 days'").catch(error => console.error("Nettoyage sondages :", error.message)), 60 * 60 * 1000).unref();
 
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "Route API introuvable" });
