@@ -1,5 +1,9 @@
 import { rooms as roomCatalog } from "./public/room-catalog.js";
 import express from "express";
+import { validateMedia, serveMedia } from "./lib/media.js";
+import { CallRegistry } from "./lib/calls.js";
+import { createCheckout, withBillingQueue } from "./lib/checkout.js";
+import { newRecoveryCode, recoveryHash, installRecoveryRoutes, purgeExpiredGuests } from "./lib/accounts.js";
 import helmet from "helmet";
 import http from "node:http";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
@@ -12,7 +16,7 @@ import webpush from "web-push";
 const app = express();
 app.set("trust proxy", 1);
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 10e6 });
+const io = new Server(server, { maxHttpBufferSize: 100000 });
 const projectId = process.env.FIREBASE_PROJECT_ID || "letchat-1d79d";
 const jwtSecret = String(process.env.JWT_SECRET || "").trim();
 if (jwtSecret.length < 32) {
@@ -42,7 +46,8 @@ async function saveStripeSubscription(subscription, fallbackUserId = "", allowRe
        status=EXCLUDED.status,current_period_end=EXCLUDED.current_period_end,
        plan=EXCLUDED.plan,updated_at=NOW()
      WHERE letchat_subscriptions.stripe_subscription_id=EXCLUDED.stripe_subscription_id
-       OR ($7 AND letchat_subscriptions.stripe_customer_id=EXCLUDED.stripe_customer_id)`,
+       OR ($7 AND letchat_subscriptions.stripe_customer_id=EXCLUDED.stripe_customer_id
+         AND letchat_subscriptions.status IN ('free','canceled','incomplete_expired'))`,
     [userId, String(subscription.customer), subscription.id, subscription.status,
       end ? new Date(end * 1000) : null, plan || "premium", allowReplacement]
   );
@@ -332,6 +337,19 @@ await pool.query(`
   ALTER TABLE letchat_subscriptions ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'premium';
 `);
 
+await pool.query(`
+  ALTER TABLE letchat_local_accounts ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE letchat_local_accounts ADD COLUMN IF NOT EXISTS recovery_hash TEXT;
+  CREATE TABLE IF NOT EXISTS letchat_session_revocations (
+    user_id TEXT PRIMARY KEY, revoked_before TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE TABLE IF NOT EXISTS letchat_billing_accounts (
+    user_id TEXT PRIMARY KEY, stripe_customer_id TEXT UNIQUE,
+    checkout_key TEXT, checkout_plan TEXT, checkout_params JSONB,
+    checkout_session_id TEXT, checkout_started_at TIMESTAMPTZ
+  );
+`);
+
 // Proxy Firebase nécessaire à la connexion Google par redirection sur Render.
 app.use("/__/auth", async (req, res) => {
   try {
@@ -363,9 +381,24 @@ app.use("/__/auth", async (req, res) => {
 });
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      "default-src": ["'self'"],
+      "script-src": ["'self'", "https://www.gstatic.com", "https://www.googleapis.com"],
+      "script-src-attr": ["'none'"],
+      "style-src": ["'self'", "'unsafe-inline'"],
+      "img-src": ["'self'", "data:", "blob:", "https://*.googleusercontent.com"],
+      "media-src": ["'self'", "blob:"],
+      "connect-src": ["'self'", "wss://www.letchat.fr", "https://identitytoolkit.googleapis.com", "https://securetoken.googleapis.com", "https://www.googleapis.com"],
+      "frame-src": ["'self'", "https://letchat-1d79d.firebaseapp.com", "https://accounts.google.com"],
+      "object-src": ["'none'"], "base-uri": ["'self'"], "form-action": ["'self'"],
+      "frame-ancestors": ["'none'"], "upgrade-insecure-requests": process.env.NODE_ENV === "production" ? [] : null
+    }
+  },
+  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
   referrerPolicy: { policy: "strict-origin-when-cross-origin" },
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginResourcePolicy: { policy: "same-origin" }
 }));
 app.use((_req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(self), microphone=(self), display-capture=(self), geolocation=()");
@@ -417,11 +450,14 @@ app.use("/api", (req, res, next) => {
   ipBuckets.set(key, recent);
   next();
 });
+app.use("/api", (_req, res, next) => { res.set("Cache-Control", "private, no-store"); next(); });
+app.get("/privacy.html", (_req, res) => res.redirect(301, "/confidentialite.html"));
 app.use(express.static("public", {
-  etag: false,
-  lastModified: false,
-  setHeaders(res) {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  etag: true, lastModified: true,
+  setHeaders(res, filePath) {
+    // Fingerprinted build assets only; HTML, unversioned code and SW revalidate.
+    const immutable = /[/\\]assets[/\\].*\.[a-f0-9]{12}\.(?:js|css|svg|ico|png)$/.test(filePath);
+    res.setHeader("Cache-Control", immutable ? "public, max-age=31536000, immutable" : "public, max-age=0, must-revalidate");
   }
 }));
 
@@ -429,16 +465,19 @@ async function verify(token) {
   try {
     const { payload } = await jwtVerify(token, localJwtSecret, { issuer: "letchat-local", audience: "letchat" });
     const account = await pool.query(
-      `SELECT username,is_guest,expires_at FROM letchat_local_accounts
+      `SELECT username,is_guest,expires_at,session_version FROM letchat_local_accounts
        WHERE user_id=$1 AND (expires_at IS NULL OR expires_at > NOW())`, [String(payload.sub)]
     );
-    if (!account.rowCount) throw new Error("Session locale expirée");
-    return { id: String(payload.sub), email: "", name: account.rows[0].username, photo: null, local: true, guest: account.rows[0].is_guest };
+    if (!account.rowCount || Number(payload.ver || 0) !== account.rows[0].session_version) throw new Error("Session locale expirée");
+    return { id: String(payload.sub), email: "", name: account.rows[0].username, photo: null, local: true, guest: account.rows[0].is_guest, expiresAt: Math.min(Number(payload.exp) * 1000, account.rows[0].expires_at ? new Date(account.rows[0].expires_at).getTime() : Infinity) };
   } catch (localError) {
     if (localError.message === "Session locale expirée") throw localError;
   }
   const { payload } = await jwtVerify(token, jwks, { issuer: `https://securetoken.google.com/${projectId}`, audience: projectId });
+  const revoked = await pool.query("SELECT revoked_before FROM letchat_session_revocations WHERE user_id=$1", [String(payload.sub)]);
+  if (revoked.rowCount && Number(payload.auth_time || payload.iat) * 1000 <= new Date(revoked.rows[0].revoked_before).getTime()) throw new Error("Session révoquée");
   return {
+    expiresAt: Number(payload.exp) * 1000,
     id: String(payload.sub),
     email: String(payload.email || ""),
     name: String(payload.name || payload.email || "Utilisateur"),
@@ -453,7 +492,8 @@ function passwordDigest(password, salt) {
   return scryptSync(password, salt, 64).toString("hex");
 }
 async function issueLocalToken(userId, guest = false) {
-  return new SignJWT({ guest }).setProtectedHeader({ alg: "HS256" }).setSubject(userId)
+  const account = await pool.query("SELECT session_version FROM letchat_local_accounts WHERE user_id=$1", [userId]);
+  return new SignJWT({ guest, ver: account.rows[0]?.session_version || 0 }).setProtectedHeader({ alg: "HS256" }).setSubject(userId)
     .setIssuer("letchat-local").setAudience("letchat").setIssuedAt()
     .setExpirationTime(guest ? "24h" : "30d").sign(localJwtSecret);
 }
@@ -468,8 +508,7 @@ function isAdminUser(user) {
 
 async function auth(req, res, next) {
   try {
-    const mediaRequest = req.method === "GET" && /^\/api\/(?:private-)?media\/[^/]+$/.test(req.path);
-    const token = req.headers.authorization?.replace(/^Bearer\s+/i, "") || (mediaRequest ? req.query.t : null);
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
     if (!token) throw new Error("Jeton absent");
     req.user = await verify(String(token));
     if (!isAdminUser(req.user)) {
@@ -674,13 +713,16 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/api/public-config", (_req, res) => {
   res.json({
-    contactEmail: String(process.env.CONTACT_EMAIL || "").trim(),
+    contactEmail: String(process.env.CONTACT_EMAIL || "letchat@letchat.fr").trim(),
+    advertisingEnabled: false,
     premiumConfigured: Boolean(stripe && process.env.STRIPE_PRICE_ID),
     premiumPlusConfigured: Boolean(stripe && process.env.STRIPE_PRICE_PLUS_ID),
     pushConfigured,
     vapidPublicKey: pushConfigured ? vapidPublicKey : ""
   });
 });
+
+installRecoveryRoutes({ app, pool, io, auth, rateLimitPublicAction, rateLimitAction });
 
 app.post("/api/auth/register", rateLimitPublicAction("register", 10, 60 * 60 * 1000), async (req, res, next) => {
   try {
@@ -692,17 +734,17 @@ app.post("/api/auth/register", rateLimitPublicAction("register", 10, 60 * 60 * 1
     if (password.length < 8 || password.length > 200) return res.status(400).json({ error: "Le mot de passe doit contenir au moins 8 caractères" });
     if (!Number.isInteger(age) || age < 18 || age > 120) return res.status(400).json({ error: "Letchat est réservé aux personnes majeures" });
     if (city.length < 2) return res.status(400).json({ error: "Ville incorrecte" });
-    const userId = `local:${randomUUID()}`, salt = randomBytes(16).toString("hex");
+    const userId = `local:${randomUUID()}`, salt = randomBytes(16).toString("hex"), recoveryCode = newRecoveryCode();
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`INSERT INTO letchat_local_accounts(user_id,username,username_key,password_hash,password_salt,gender,city) VALUES($1,$2,$3,$4,$5,$6,$7)`, [userId,username,key,passwordDigest(password,salt),salt,gender,city]);
+      await client.query(`INSERT INTO letchat_local_accounts(user_id,username,username_key,password_hash,password_salt,gender,city,recovery_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, [userId,username,key,passwordDigest(password,salt),salt,gender,city,recoveryHash(recoveryCode)]);
       await client.query(`INSERT INTO profiles(user_id,email,display_name,region,department,city,gender) VALUES($1,'',$2,'','',$3,$4)`, [userId,username,city,gender]);
       await client.query(`INSERT INTO letchat_age_consents(user_id,over_18) VALUES($1,TRUE) ON CONFLICT(user_id) DO UPDATE SET over_18=TRUE,accepted_at=NOW()`, [userId]);
       await client.query("COMMIT");
     } catch (error) { await client.query("ROLLBACK"); if (error.code === "23505") return res.status(409).json({ error: "Ce pseudonyme est déjà utilisé" }); throw error; }
     finally { client.release(); }
-    res.status(201).json({ token: await issueLocalToken(userId), user: { id:userId, name:username, guest:false } });
+    res.status(201).json({ recoveryCode, token: await issueLocalToken(userId), user: { id:userId, name:username, guest:false } });
   } catch (error) { next(error); }
 });
 
@@ -761,7 +803,7 @@ app.get("/api/subscription", auth, requireAdult, async (req, res, next) => {
         if (String(subscription.customer) === row.stripe_customer_id) {
           await saveStripeSubscription(subscription, req.user.id);
           row = (await pool.query(
-            "SELECT status,current_period_end,stripe_customer_id,plan FROM letchat_subscriptions WHERE user_id=$1",
+            "SELECT status,current_period_end,stripe_customer_id,stripe_subscription_id,plan FROM letchat_subscriptions WHERE user_id=$1",
             [req.user.id]
           )).rows[0];
         }
@@ -770,7 +812,7 @@ app.get("/api/subscription", auth, requireAdult, async (req, res, next) => {
     const premium = Boolean(row && ["active", "trialing"].includes(row.status) &&
       (!row.current_period_end || new Date(row.current_period_end).getTime() > Date.now()));
     res.json({ premium, plan: row?.plan || null, status: row?.status || "free",
-      currentPeriodEnd: row?.current_period_end || null, canManage: Boolean(row?.stripe_customer_id) });
+      currentPeriodEnd: row?.current_period_end || null, canManage: Boolean(row?.stripe_customer_id && row?.stripe_subscription_id) });
   } catch (error) { next(error); }
 });
 
@@ -792,35 +834,14 @@ app.get("/api/premium/plans", async (_req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.post("/api/stripe/checkout", auth, requireAdult, rateLimitAction("stripe-checkout", 5, 60 * 60 * 1000), async (req, res, next) => {
+app.post("/api/stripe/checkout", auth, requireAdult, rateLimitAction("stripe-checkout", 20, 60 * 60 * 1000), async (req, res, next) => {
   try {
+    if (req.user.guest) return res.status(403).json({ error: "Créez un compte permanent avant de vous abonner." });
     const plan = req.body?.plan;
     if (!Object.hasOwn(premiumPrices, plan)) return res.status(400).json({ error: "Formule inconnue" });
-    const priceId = premiumPrices[plan];
-    if (!stripe || !priceId) return res.status(503).json({ error: "Cette formule est temporairement indisponible" });
-    const price = await stripe.prices.retrieve(priceId);
-    if (!price.active || price.type !== "recurring") return res.status(503).json({ error: "Cette formule est temporairement indisponible" });
-    const existing = await pool.query("SELECT stripe_customer_id,stripe_subscription_id FROM letchat_subscriptions WHERE user_id=$1", [req.user.id]);
-    if (existing.rows[0]?.stripe_subscription_id) {
-      const current = await stripe.subscriptions.retrieve(existing.rows[0].stripe_subscription_id);
-      if (["active", "trialing", "past_due", "unpaid"].includes(current.status))
-        return res.status(409).json({ error: "Vous avez déjà un abonnement. Utilisez « Gérer mon abonnement »." });
-    }
-    const baseUrl = String(process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
-    const params = {
-      mode: "subscription",
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${baseUrl}/?premium=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/?premium=cancel`,
-      client_reference_id: req.user.id,
-      metadata: { userId: req.user.id, plan },
-      subscription_data: { metadata: { userId: req.user.id, plan } },
-      allow_promotion_codes: true
-    };
-    if (existing.rows[0]?.stripe_customer_id) params.customer = existing.rows[0].stripe_customer_id;
-    else params.customer_email = req.user.email;
-    const session = await stripe.checkout.sessions.create(params);
-    res.json({ url: session.url });
+    if (!stripe || !premiumPrices[plan]) return res.status(503).json({ error: "Cette formule est temporairement indisponible" });
+    const baseUrl = String(process.env.PUBLIC_BASE_URL || "https://www.letchat.fr").replace(/\/$/, "");
+    res.json(await createCheckout({ pool, stripe, user: req.user, plan, priceId: premiumPrices[plan], baseUrl }));
   } catch (error) { next(error); }
 });
 
@@ -902,15 +923,32 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
   }
 });
 
-app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account", 2, 24 * 60 * 60 * 1000), async (req, res, next) => {
+app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account", 2, 24 * 60 * 60 * 1000), async (req, res, next) => withBillingQueue(req.user.id, async () => {
   const client = await pool.connect();
+  let billingLocked = false;
   try {
     if (req.body.confirmation !== "SUPPRIMER") {
       return res.status(400).json({ error: "Confirmation incorrecte" });
     }
     const uid = req.user.id;
+    await client.query("SELECT pg_advisory_lock(hashtextextended($1,0))", [`letchat-checkout:${uid}`]);
+    billingLocked = true;
+    const pending = (await client.query("SELECT * FROM letchat_billing_accounts WHERE user_id=$1", [uid])).rows[0];
+    if (pending?.checkout_key && !pending.checkout_session_id)
+      return res.status(409).json({ error: "Un paiement doit être vérifié avant la suppression du compte. Contactez le support." });
+    if (stripe && pending?.stripe_customer_id) {
+      const subscriptions = await stripe.subscriptions.list({ customer: pending.stripe_customer_id, status: "all", limit: 100 });
+      if (subscriptions.data.some(item => !["canceled", "incomplete_expired"].includes(item.status)))
+        return res.status(409).json({ error: "Terminez votre abonnement avant de supprimer le compte." });
+    }
+    if (stripe && pending?.checkout_session_id) {
+      const checkout = await stripe.checkout.sessions.retrieve(pending.checkout_session_id);
+      if (checkout.status === "open") await stripe.checkout.sessions.expire(checkout.id);
+      if (checkout.status === "complete" && !(await client.query("SELECT 1 FROM letchat_subscriptions WHERE user_id=$1 AND stripe_subscription_id=$2", [uid, checkout.subscription])).rowCount)
+        return res.status(409).json({ error: "Votre paiement est en cours de confirmation. Réessayez plus tard." });
+    }
     const billing = await client.query("SELECT status FROM letchat_subscriptions WHERE user_id=$1", [uid]);
-    if (billing.rows[0] && ["active", "trialing", "past_due"].includes(billing.rows[0].status)) {
+    if (billing.rows[0] && ["active", "trialing", "past_due", "unpaid", "incomplete", "paused"].includes(billing.rows[0].status)) {
       return res.status(409).json({ error: "Annulez d’abord votre abonnement Premium depuis le portail Stripe" });
     }
     const anonymousId = `compte-supprime-${createHash("sha256").update(uid).digest("hex").slice(0,24)}`;
@@ -929,18 +967,23 @@ app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account",
     await client.query("DELETE FROM letchat_consents WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_age_consents WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_subscriptions WHERE user_id=$1", [uid]);
+    await client.query("DELETE FROM letchat_billing_accounts WHERE user_id=$1", [uid]);
+    await client.query("INSERT INTO letchat_session_revocations(user_id) VALUES($1) ON CONFLICT(user_id) DO UPDATE SET revoked_before=NOW()", [uid]);
     await client.query("DELETE FROM letchat_local_accounts WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM profiles WHERE user_id=$1", [uid]);
     await client.query("COMMIT");
     io.to(`user:${uid}`).emit("account-deleted");
+    io.in(`user:${uid}`).disconnectSockets(true);
     res.json({ ok: true });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     next(error);
   } finally {
-    client.release();
+    let discard = false;
+    if (billingLocked) try { await client.query("SELECT pg_advisory_unlock(hashtextextended($1,0))", [`letchat-checkout:${req.user.id}`]); } catch { discard = true; }
+    client.release(discard);
   }
-});
+}));
 
 app.get("/api/rules-status", auth, async (req, res, next) => {
   try {
@@ -997,7 +1040,12 @@ app.put("/api/profile", auth, async (req, res, next) => {
     if (photoData && (!/^data:image\/(jpeg|png|webp);base64,/i.test(photoData) || photoData.length > 2100000)) {
       return res.status(400).json({ error: "Photo incorrecte ou trop volumineuse" });
     }
-    const photo = photoData || req.user.photo || "";
+    let photo = req.user.photo || "";
+    if (photoData) {
+      const [header, base64] = photoData.split(",");
+      const result = await validateMedia(base64, header.slice(5).split(";")[0]);
+      photo = `data:${result.mediaType};base64,${result.media.toString("base64")}`;
+    }
     const locationVisible = req.body.locationVisible !== false;
     if (!city) {
       return res.status(400).json({ error: "Ville obligatoire" });
@@ -1082,6 +1130,7 @@ app.post("/api/blocks/:userId", auth, async (req, res, next) => {
           OR (requester_id=$2 AND addressee_id=$1)`,
       [req.user.id, blockedId]
     );
+    calls.endBetween(req.user.id, blockedId);
     io.to(`user:${blockedId}`).emit("friends-updated");
     res.status(201).json({ ok: true });
   } catch (error) {
@@ -1595,6 +1644,7 @@ async function moveExpiredPremiumSockets(userId) {
   let moved = false;
   for (const socket of io.sockets.sockets.values()) {
     if (socket.user?.id !== userId || socket.room !== premiumRoom) continue;
+    calls.end(socket.id, "premium-expired");
     socket.leave(premiumRoom);
     socket.room = "cafe";
     socket.join("cafe");
@@ -1720,9 +1770,7 @@ app.get("/api/media/:id", auth, requireAdult, async (req, res, next) => {
     if (rows[0]?.room === premiumRoom && !await hasPremiumAccess(req.user.id))
       return res.status(403).json({ error: "Le salon XXX est réservé aux membres Premium." });
     if (!rows[0]?.media_data) return res.sendStatus(404);
-    res.type(rows[0].media_type)
-      .set("Cache-Control", "private, no-store")
-      .send(rows[0].media_data);
+    serveMedia(res, rows[0].media_data, rows[0].media_type);
   } catch (error) {
     next(error);
   }
@@ -1754,19 +1802,10 @@ app.post("/api/messages", auth, requireAdult, requireRules,
     if (room === premiumRoom && !await hasPremiumAccess(req.user.id))
       return res.status(403).json({ error: "Le salon XXX est réservé aux membres Premium." });
     const replyToId = req.body.replyToId ? String(req.body.replyToId) : null;
-    const mediaType = String(req.body.mediaType || "");
-    const media = req.body.mediaBase64
-      ? Buffer.from(String(req.body.mediaBase64), "base64")
-      : null;
+    const { media, mediaType } = await validateMedia(req.body.mediaBase64, req.body.mediaType);
 
     if (!body && !media) return res.status(400).json({ error: "Message vide" });
     if (body && await rejectSpamMessage(req, res, body)) return;
-    if (media && media.length > 8e6) {
-      return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
-    }
-    if (media && !/^(image|video|audio)\//.test(mediaType)) {
-      return res.status(415).json({ error: "Format non accepté" });
-    }
     let reply = null;
     if (replyToId) {
       const result = await pool.query(
@@ -1996,9 +2035,7 @@ app.get("/api/private-media/:id", auth, requireAdult, async (req, res, next) => 
     }
     await client.query("COMMIT");
     if (openedAt) res.set("X-Letchat-Opened-At", new Date(openedAt).toISOString());
-    res.type(media.media_type)
-      .set("Cache-Control", "private, no-store, max-age=0")
-      .send(media.media_data);
+    serveMedia(res, media.media_data, media.media_type);
     if (media.view_once && media.recipient_id === req.user.id) {
       io.to(`user:${media.sender_id}`).emit("view-once-opened", {
         id: String(req.params.id), opened_at: new Date(openedAt).toISOString()
@@ -2019,10 +2056,8 @@ app.post("/api/private", auth, requireAdult, requireRules,
     const recipientId = String(req.body.recipientId || "").slice(0, 200);
     const body = String(req.body.body || "").trim().slice(0, 4000);
     const replyToId = req.body.replyToId ? String(req.body.replyToId) : null;
-    const mediaType = String(req.body.mediaType || "");
     const viewOnce = req.body.viewOnce === true;
-    const media = req.body.mediaBase64
-      ? Buffer.from(String(req.body.mediaBase64), "base64") : null;
+    const { media, mediaType } = await validateMedia(req.body.mediaBase64, req.body.mediaType);
     if (!recipientId || recipientId === req.user.id) {
       return res.status(400).json({ error: "Destinataire incorrect" });
     }
@@ -2056,12 +2091,6 @@ app.post("/api/private", auth, requireAdult, requireRules,
     }
     if (!body && !media) return res.status(400).json({ error: "Message vide" });
     if (body && await rejectSpamMessage(req, res, body, recipientId)) return;
-    if (media && media.length > 8e6) {
-      return res.status(413).json({ error: "Fichier trop volumineux (8 Mo maximum)" });
-    }
-    if (media && !/^(image|video|audio)\//.test(mediaType)) {
-      return res.status(415).json({ error: "Format non accepté" });
-    }
     if (viewOnce && (!media || !/^(image|video)\//.test(mediaType))) {
       return res.status(400).json({ error: "Le mode visible une fois est réservé aux photos et vidéos" });
     }
@@ -2349,7 +2378,35 @@ io.use(async (socket, next) => {
   }
 });
 
+const calls = new CallRegistry({ sockets: io.sockets.sockets, permitted: async (a, b) => {
+  if (!await socketSessionValid(a) || !await socketSessionValid(b)) return false;
+  if (a.room === premiumRoom && (!await hasPremiumAccess(a.user.id) || !await hasPremiumAccess(b.user.id))) return false;
+  const blocked = await pool.query(`SELECT 1 FROM letchat_blocks
+    WHERE (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1) LIMIT 1`, [a.user.id, b.user.id]);
+  return !blocked.rowCount;
+} });
+async function socketSessionValid(socket) {
+  try {
+    if (Date.now() >= socket.user.expiresAt) return false;
+    await verify(socket.handshake.auth?.token);
+    if (isAdminUser(socket.user)) return true;
+    return !(await pool.query(`SELECT 1 FROM letchat_suspensions WHERE user_id=$1
+      AND (suspended_until IS NULL OR suspended_until > NOW())`, [socket.user.id])).rowCount;
+  } catch { return false; }
+}
 io.on("connection", socket => {
+  const expire = () => { socket.emit("session-expired"); socket.disconnect(true); };
+  const expiryTimer = setTimeout(expire, Math.max(1, Math.min(2147483647, socket.user.expiresAt - Date.now())));
+  expiryTimer.unref?.();
+  const events = new Map();
+  socket.use(async ([event], next) => {
+    const now = Date.now(), limit = event === "webrtc" ? 120 : 20;
+    const recent = (events.get(event) || []).filter(t => now - t < 10000);
+    if (recent.length >= limit) return next(new Error("rate-limited"));
+    recent.push(now); events.set(event, recent);
+    if (!await socketSessionValid(socket)) { expire(); return; }
+    next();
+  });
   pool.query("UPDATE profiles SET last_seen=NOW() WHERE user_id=$1", [socket.user.id]).catch(() => {});
   socket.join(`user:${socket.user.id}`);
   socket.room = "cafe";
@@ -2384,6 +2441,7 @@ io.on("connection", socket => {
     }
     const previousRoom = socket.room;
     if (nextRoom === previousRoom) return emitPresence(nextRoom);
+    calls.end(socket.id, "room-changed");
     socket.leave(previousRoom);
     socket.room = nextRoom;
     socket.join(nextRoom);
@@ -2423,26 +2481,13 @@ io.on("connection", socket => {
     });
   });
 
-  socket.on("webrtc", async ({ target, data } = {}) => {
-    if (socket.room === premiumRoom && !await hasPremiumAccess(socket.user.id).catch(() => false)) return;
-    const type = String(data?.type || "");
-    if (!new Set(["invite", "join", "offer", "answer", "ice", "decline", "leave"]).has(type)) return;
-    const signal = { from: socket.id, user: socket.user, data };
-    if (target) {
-      const recipient = io.sockets.sockets.get(String(target));
-      if (recipient?.room === socket.room) {
-        recipient.emit("webrtc", signal);
-      }
-      return;
-    }
-    for (const recipient of io.sockets.sockets.values()) {
-      if (recipient.id !== socket.id && recipient.room === socket.room) {
-        recipient.emit("webrtc", signal);
-      }
-    }
+  socket.on("webrtc", payload => {
+    calls.handle(socket, payload).catch(() => socket.emit("webrtc-error", { error: "Appel temporairement indisponible" }));
   });
 
   socket.on("disconnect", async () => {
+    clearTimeout(expiryTimer);
+    calls.end(socket.id, "disconnected");
     const room = socket.room;
     if (socket.privateTypingTarget) {
       io.to(`user:${socket.privateTypingTarget}`).emit("private-typing", {
@@ -2466,11 +2511,17 @@ async function deleteExpiredMessages() {
     const premiumOccupants = new Set([...io.sockets.sockets.values()]
       .filter(socket => socket.room === premiumRoom).map(socket => socket.user.id));
     for (const userId of premiumOccupants) await moveExpiredPremiumSockets(userId);
-    const bucketCutoff = Date.now() - 60 * 60 * 1000;
+    calls.prune();
+    await purgeExpiredGuests(pool, io);
+    const bucketCutoff = Date.now() - 24 * 60 * 60 * 1000;
     for (const [key, times] of actionBuckets) {
       const active = times.filter(time => time > bucketCutoff);
       if (active.length) actionBuckets.set(key, active);
       else actionBuckets.delete(key);
+    }
+    for (const [key, times] of publicActionBuckets) {
+      const active = times.filter(time => time > bucketCutoff);
+      if (active.length) publicActionBuckets.set(key, active); else publicActionBuckets.delete(key);
     }
     for (const [key, times] of ipBuckets) {
       const active = times.filter(time => time > bucketCutoff);
@@ -2513,12 +2564,13 @@ app.use("/api", (_req, res) => {
 });
 
 app.use((error, _req, res, _next) => {
-  console.error(error);
-  res.status(500).json({ error: "Erreur interne du serveur" });
+  console.error(error.expose ? error.message : "Erreur serveur", error.code || error.name);
+  const status = error.expose && Number.isInteger(error.status) ? error.status : error.type === "entity.too.large" ? 413 : 500;
+  res.status(status).json({ error: error.expose ? error.message : status === 413 ? "Fichier trop volumineux" : "Erreur interne du serveur" });
 });
 
 app.use((_req, res) => {
-  res.sendFile(new URL("./public/index.html", import.meta.url).pathname);
+  res.status(404).type("html").send('<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Page introuvable — Letchat</title><h1>Page introuvable</h1><p><a href="/">Revenir à Letchat</a></p></html>');
 });
 
 server.listen(port, () => console.log(`Letchat prêt sur le port ${port}`));
