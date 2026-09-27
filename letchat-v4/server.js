@@ -385,7 +385,7 @@ app.use(helmet({
     useDefaults: true,
     directives: {
       "default-src": ["'self'"],
-      "script-src": ["'self'", "https://www.gstatic.com", "https://www.googleapis.com"],
+      "script-src": ["'self'", "https://www.gstatic.com", "https://www.googleapis.com", "https://apis.google.com"], ["'self'", "https://www.gstatic.com", "https://www.googleapis.com"],
       "script-src-attr": ["'none'"],
       "style-src": ["'self'", "'unsafe-inline'"],
       "img-src": ["'self'", "data:", "blob:", "https://*.googleusercontent.com"],
