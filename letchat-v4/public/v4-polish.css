@@ -364,8 +364,6 @@ html[data-theme="dark"] .voice-recording button:not(#sendVoice) {
 .admin-filter-summary { margin: 0; padding: 9px 20px; color: var(--v3-text-soft); font-size: 12px; flex-shrink: 0; }
 .admin-panel .report-list { min-height: 0; overflow-wrap: anywhere; }
 .admin-toolbar #refreshReports { min-height: 44px; }
-.room-filter-status { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-shrink: 0; margin: 0 0 7px; color: var(--v3-text-soft); font-size: 11px; }
-.room-filter-status button { padding: 8px; min-height: 36px; border: 1px solid var(--v3-border); border-radius: 8px; background: var(--v3-surface); color: var(--v3-text); cursor: pointer; }
 @media (max-width: 650px) {
   .admin-section-nav { padding: 10px 12px 0; gap: 5px; }
   .admin-section-nav button { font-size: 12px; padding: 7px 5px; }
