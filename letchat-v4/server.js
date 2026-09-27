@@ -1,3 +1,4 @@
+import { installSurprise } from "./lib/surprise.js";
 import { installSocial } from "./lib/social.js";
 import { installPremiumBenefits } from "./lib/premium-benefits.js";
 import { rooms as roomCatalog } from "./public/room-catalog.js";
@@ -736,6 +737,7 @@ installRecoveryRoutes({ app, pool, io, auth, rateLimitPublicAction, rateLimitAct
 const premiumBenefits = await installPremiumBenefits({ app, pool, auth, requireAdult, requireRules, rateLimitAction, hasPremiumAccess,
   onlineIds: () => [...new Set([...online.values()].filter(e => !premiumBenefits.isDiscreet(e.user.id)).map(e => e.user.id))], changed: refreshPremiumIdentity });
 const social = await installSocial({ app, pool, io, auth, requireAdult, requireRules, rateLimitAction, hasPremiumAccess, roomCatalog, socketSessionValid });
+const surprise = installSurprise({ io, pool, socketSessionValid, rulesVersion: RULES_VERSION });
 
 app.post("/api/auth/register", rateLimitPublicAction("register", 10, 60 * 60 * 1000), async (req, res, next) => {
   try {
@@ -1090,6 +1092,7 @@ app.put("/api/profile", auth, async (req, res, next) => {
       }
     }
     emitPrivateStatus(req.user.id).catch(() => {});
+    await surprise.refresh(req.user.id);
     res.json(rows[0]);
   } catch (error) {
     next(error);
@@ -1148,6 +1151,7 @@ app.post("/api/blocks/:userId", auth, async (req, res, next) => {
     );
     calls.endBetween(req.user.id, blockedId);
     social.live.endBetween(req.user.id, blockedId);
+    await surprise.endBetween(req.user.id, blockedId);
     io.to(`user:${blockedId}`).emit("friends-updated");
     res.status(201).json({ ok: true });
   } catch (error) {
@@ -2445,6 +2449,7 @@ io.on("connection", socket => {
     if (!await socketSessionValid(socket)) { expire(); return; }
     next();
   });
+  surprise.attach(socket);
   pool.query("UPDATE profiles SET last_seen=NOW() WHERE user_id=$1", [socket.user.id]).catch(() => {});
   socket.join(`user:${socket.user.id}`);
   socket.room = "cafe";
