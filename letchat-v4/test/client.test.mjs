@@ -23,7 +23,9 @@ test("client initializes against the delivered HTML and recovery dialogs are rea
     w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event("close"))};
     let code=await readFile("public/app-v4-cafe-v2.js","utf8");
     code=code.replace(/^import\s+[\s\S]*?from\s+["'][^"']+["'];\s*/gm,"");
-    w.eval(code);
+    const socialModules = await Promise.all(["social-voice.js", "social-live.js", "social.js"].map(file => readFile(`public/${file}`, "utf8")));
+    const socialCode = socialModules.map(source => source.replace(/^import\s+.*?;\s*$/gm, "").replace(/^export\s+/gm, "")).join("\n");
+    w.eval(socialCode + "\n" + code);
     w.document.querySelector("#forgotPassword").click();
     assert.equal(w.document.querySelector("#recoverDialog").open,true);
     w.document.querySelector('[data-close-dialog="recoverDialog"]').click();

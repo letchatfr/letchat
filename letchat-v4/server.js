@@ -1,3 +1,4 @@
+import { installSocial } from "./lib/social.js";
 import { rooms as roomCatalog } from "./public/room-catalog.js";
 import express from "express";
 import { validateMedia, serveMedia } from "./lib/media.js";
@@ -731,6 +732,7 @@ app.get("/api/public-config", (_req, res) => {
 });
 
 installRecoveryRoutes({ app, pool, io, auth, rateLimitPublicAction, rateLimitAction });
+const social = await installSocial({ app, pool, io, auth, requireAdult, requireRules, rateLimitAction, hasPremiumAccess, roomCatalog, socketSessionValid });
 
 app.post("/api/auth/register", rateLimitPublicAction("register", 10, 60 * 60 * 1000), async (req, res, next) => {
   try {
@@ -921,6 +923,7 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
       reports: reports.rows,
       consents: consents.rows,
       conversationPreferences: conversationPreferences.rows,
+      social: await social.exportData(uid),
       note: "Les fichiers image et vidéo binaires ne sont pas inclus dans cet export JSON. Leurs types sont indiqués."
     };
     res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -1139,6 +1142,7 @@ app.post("/api/blocks/:userId", auth, async (req, res, next) => {
       [req.user.id, blockedId]
     );
     calls.endBetween(req.user.id, blockedId);
+    social.live.endBetween(req.user.id, blockedId);
     io.to(`user:${blockedId}`).emit("friends-updated");
     res.status(201).json({ ok: true });
   } catch (error) {
@@ -1653,6 +1657,7 @@ async function moveExpiredPremiumSockets(userId) {
   for (const socket of io.sockets.sockets.values()) {
     if (socket.user?.id !== userId || socket.room !== premiumRoom) continue;
     calls.end(socket.id, "premium-expired");
+    social.live.removeUser(userId, `room:${premiumRoom}`);
     socket.leave(premiumRoom);
     socket.room = "cafe";
     socket.join("cafe");
@@ -2408,7 +2413,7 @@ io.on("connection", socket => {
   expiryTimer.unref?.();
   const events = new Map();
   socket.use(async ([event], next) => {
-    const now = Date.now(), limit = event === "webrtc" ? 120 : 20;
+    const now = Date.now(), limit = ["webrtc", "live-signal"].includes(event) ? 180 : 20;
     const recent = (events.get(event) || []).filter(t => now - t < 10000);
     if (recent.length >= limit) return next(new Error("rate-limited"));
     recent.push(now); events.set(event, recent);
@@ -2448,6 +2453,7 @@ io.on("connection", socket => {
       }
     }
     const previousRoom = socket.room;
+    if (previousRoom !== nextRoom) social.live.removeUser(socket.user.id, `room:${previousRoom}`);
     if (nextRoom === previousRoom) return emitPresence(nextRoom);
     calls.end(socket.id, "room-changed");
     socket.leave(previousRoom);
@@ -2520,6 +2526,7 @@ async function deleteExpiredMessages() {
       .filter(socket => socket.room === premiumRoom).map(socket => socket.user.id));
     for (const userId of premiumOccupants) await moveExpiredPremiumSockets(userId);
     calls.prune();
+    await social.prune();
     await purgeExpiredGuests(pool, io);
     const bucketCutoff = Date.now() - 24 * 60 * 60 * 1000;
     for (const [key, times] of actionBuckets) {

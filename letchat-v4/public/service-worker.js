@@ -1,5 +1,5 @@
-const CACHE = "letchat-shell-4212a9840e75";
-const SHELL = ["/","/index.html","/assets/icon.4a2a204d3b26.svg","/assets/favicon.f612d0ce5cfd.ico","/assets/style.26fa3220d705.css","/assets/v3-modern.20845ffa4f32.css","/assets/v2-community.4a3f3df9189d.css","/assets/v4-polish.fd0d7d7edd62.css","/assets/audit-fixes.6eba884ba50f.css","/assets/v3-theme.1814c6a88724.js","/assets/room-catalog.aa9689894cbf.js","/assets/chat-comfort.bbaf8a24a95b.js","/assets/app-v4-cafe-v2.ee59c8d2ebfb.js","/assets/v4-interface.0155a0cc7ee9.js","/manifest.webmanifest","/icon.svg"];
+const CACHE = "letchat-shell-38358e8a39de";
+const SHELL = ["/","/index.html","/assets/icon.4a2a204d3b26.svg","/assets/favicon.f612d0ce5cfd.ico","/assets/style.26fa3220d705.css","/assets/v3-modern.20845ffa4f32.css","/assets/v2-community.4a3f3df9189d.css","/assets/v4-polish.fd0d7d7edd62.css","/assets/audit-fixes.6eba884ba50f.css","/assets/social.3633281b84b8.css","/assets/v3-theme.1814c6a88724.js","/assets/social-voice.e9c6f0e283d0.js","/assets/social-live.d8b6f156ef72.js","/assets/social.2abf854b8324.js","/assets/room-catalog.aa9689894cbf.js","/assets/chat-comfort.bbaf8a24a95b.js","/assets/app-v4-cafe-v2.6c904e5776e7.js","/assets/v4-interface.0155a0cc7ee9.js","/manifest.webmanifest","/icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
