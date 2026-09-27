@@ -1740,7 +1740,7 @@ app.get("/api/messages", auth, requireAdult, async (req, res, next) => {
     const { rows } = await pool.query(`
       SELECT m.id, m.user_id, m.author, m.room, m.photo, m.body, m.media_type, m.pinned,
              m.created_at, m.expires_at, m.reply_to_id,
-             parent.author AS reply_author, parent.body AS reply_body,
+             parent.author AS reply_author, parent.user_id AS reply_user_id, parent.body AS reply_body,
              (m.media_data IS NOT NULL) AS has_media,
              COALESCE((SELECT jsonb_object_agg(x.emoji, x.total) FROM (
                SELECT emoji, COUNT(*)::int AS total
@@ -1817,7 +1817,7 @@ app.post("/api/messages", auth, requireAdult, requireRules,
     let reply = null;
     if (replyToId) {
       const result = await pool.query(
-        "SELECT id, author, body FROM letchat_messages WHERE id=$1 AND room=$2 AND expires_at > NOW()",
+        "SELECT id, user_id, author, body FROM letchat_messages WHERE id=$1 AND room=$2 AND expires_at > NOW()",
         [replyToId, room]
       );
       if (!result.rowCount) return res.status(400).json({ error: "Message cité introuvable" });
@@ -1832,7 +1832,7 @@ app.post("/api/messages", auth, requireAdult, requireRules,
                  (media_data IS NOT NULL) AS has_media`,
       [req.user.id, req.user.name, room, req.user.photo, body, media, mediaType || null, reply?.id || null]
     );
-    const message = { ...query.rows[0], reply_author: reply?.author || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
+    const message = { ...query.rows[0], reply_author: reply?.author || null, reply_user_id: reply?.user_id || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
     if (room === premiumRoom) {
       const occupants = new Set([...io.sockets.sockets.values()]
         .filter(socket => socket.room === premiumRoom).map(socket => socket.user.id));
@@ -1971,7 +1971,7 @@ app.get("/api/private/:otherId", auth, requireAdult, async (req, res, next) => {
       `SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.sender_name AS author,
               m.sender_photo AS photo, m.body, m.media_type, m.created_at, m.expires_at,
               m.delivered_at, m.read_at, m.view_once, m.opened_at,
-              m.reply_to_id, parent.sender_name AS reply_author, parent.body AS reply_body,
+              m.reply_to_id, parent.sender_name AS reply_author, parent.sender_id AS reply_user_id, parent.body AS reply_body,
               (m.media_data IS NOT NULL) AS has_media,
               COALESCE((SELECT jsonb_object_agg(x.emoji, x.total) FROM (
                 SELECT emoji, COUNT(*)::int AS total
@@ -2105,7 +2105,7 @@ app.post("/api/private", auth, requireAdult, requireRules,
     let reply = null;
     if (replyToId) {
       const result = await pool.query(
-        `SELECT id, sender_name AS author, body FROM letchat_private_messages
+        `SELECT id, sender_id AS user_id, sender_name AS author, body FROM letchat_private_messages
          WHERE id=$1 AND expires_at > NOW()
            AND ((sender_id=$2 AND recipient_id=$3) OR (sender_id=$3 AND recipient_id=$2))`,
         [replyToId, req.user.id, recipientId]
@@ -2123,7 +2123,7 @@ app.post("/api/private", auth, requireAdult, requireRules,
                  (media_data IS NOT NULL) AS has_media`,
       [req.user.id, recipientId, req.user.name, req.user.photo, body, media, mediaType || null, reply?.id || null, viewOnce]
     );
-    const message = { ...rows[0], private: true, recipient_id: recipientId, reply_author: reply?.author || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
+    const message = { ...rows[0], private: true, recipient_id: recipientId, reply_author: reply?.author || null, reply_user_id: reply?.user_id || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
     await pool.query(
       `INSERT INTO letchat_conversation_preferences (user_id,other_id,archived)
        VALUES ($1,$2,FALSE),($2,$1,FALSE)
@@ -2460,7 +2460,7 @@ io.on("connection", socket => {
 
   socket.on("typing", async value => {
     if (socket.room === premiumRoom && !await hasPremiumAccess(socket.user.id).catch(() => false)) return;
-    socket.to(socket.room).emit("typing", { name: socket.user.name, active: Boolean(value) });
+    socket.to(socket.room).emit("typing", { userId: socket.user.id, name: socket.user.name, active: Boolean(value) });
   });
 
   socket.on("private-typing", async payload => {
@@ -2582,3 +2582,4 @@ app.use((_req, res) => {
 });
 
 server.listen(port, () => console.log(`Letchat prêt sur le port ${port}`));
+

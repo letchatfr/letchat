@@ -23,7 +23,7 @@
   <link rel="stylesheet" href="/assets/v3-modern.20845ffa4f32.css" />
 
     <link rel="stylesheet" href="/assets/v2-community.4a3f3df9189d.css">
-  <link rel="stylesheet" href="/assets/v4-polish.6b9edbfb86ed.css">
+  <link rel="stylesheet" href="/assets/v4-polish.fd0d7d7edd62.css">
   <link rel="stylesheet" href="/assets/audit-fixes.6eba884ba50f.css">
   <meta name="description" content="Rejoignez Letchat, le tchat francophone réservé aux adultes : salons de discussion, messages privés et appels audio et vidéo.">
   <link rel="canonical" href="https://www.letchat.fr/">
@@ -357,8 +357,8 @@
           </details>
         </div>
         <div class="account">
-          <img id="mePhoto" />
-          <div><strong id="meName"></strong><small>En ligne</small></div>
+          <button id="mePhotoLink" class="member-link member-avatar-link" type="button" aria-label="Ouvrir mon profil"><img id="mePhoto" alt="Mon avatar" /></button>
+          <div><button id="meName" class="member-link" type="button" title="Ouvrir mon profil"></button><small>En ligne</small></div>
           <button id="profileBtn" title="Modifier mon profil">⚙</button
           ><button id="logout" title="Déconnexion">↪</button>
         </div>
@@ -373,6 +373,7 @@
           <button id="mobileNavMembers" class="mobile-nav-control" type="button" aria-label="Membres en ligne"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-3-5"/></svg><span id="mobileOnlineCount" class="mobile-nav-badge">…</span></button>
           <button id="mobileNavMore" class="mobile-nav-control" type="button" aria-label="Plus d’options" aria-controls="mobileActionsModal" aria-expanded="false">⋯<span id="mobileUnreadDot" class="mobile-unread-dot hidden"></span></button>
           <div class="chat-actions">
+            <button id="privateProfileBtn" class="hidden" type="button" title="Voir le profil de ce membre">Voir le profil</button>
             <button id="roomsBtn" class="rooms-button" title="Ouvrir les salons" aria-label="Ouvrir les salons">☰</button
             ><button id="themeBtn" class="theme-button" type="button" title="Changer de thème" aria-label="Activer le mode sombre" aria-pressed="false">☾</button
             ><button id="searchBtn" class="search-button" title="Rechercher">
@@ -477,7 +478,7 @@
         <hr />
         <h2>Dans ce salon</h2><button id="onlineMembersShortcut" type="button" class="online-members-shortcut">Voir tous les membres en ligne →</button>
         <p class="people-help">
-          Touchez un utilisateur pour lui écrire ou l’ajouter.
+          Touchez un nom ou une photo pour écrire en privé.
         </p>
         <div id="people"></div>
       </aside>
@@ -607,7 +608,7 @@
     <section id="publicProfileModal" class="profile-modal hidden">
       <div class="profile-card public-profile-card">
         <button type="button" id="closePublicProfile" class="profile-close">×</button>
-        <div class="public-profile-head"><img id="publicProfilePhoto" alt="Photo du profil" /><div><h2 id="publicProfileName"></h2><p id="publicProfileStatus"></p></div></div>
+        <div class="public-profile-head"><button id="publicProfilePhotoLink" class="member-link member-avatar-link public-profile-photo-link" type="button" hidden><img id="publicProfilePhoto" alt="Photo du profil" /></button><div><h2 id="publicProfileName"></h2><p id="publicProfileStatus"></p></div></div>
         <p id="publicProfileBio" class="public-profile-bio"></p>
         <dl class="public-profile-details"><div><dt>Ville</dt><dd id="publicProfileCity"></dd></div><div><dt>Dernière connexion</dt><dd id="publicProfileLastSeen"></dd></div></dl>
         <div class="public-profile-actions public-profile-actions-main">
@@ -848,10 +849,11 @@
     </dialog>
     <script src="/socket.io/socket.io.js"></script>
     <script src="/assets/v3-theme.1814c6a88724.js"></script>
-    <script type="module" src="/assets/app-v4-cafe-v2.cc83ddd543bf.js"></script>
-    <script src="/assets/v4-interface.c10af6551398.js" defer></script>
+    <script type="module" src="/assets/app-v4-cafe-v2.ee59c8d2ebfb.js"></script>
+    <script src="/assets/v4-interface.0155a0cc7ee9.js" defer></script>
 </body>
 </html>
+
 
 
 
