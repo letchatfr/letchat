@@ -267,3 +267,88 @@ button:disabled { cursor: wait; opacity: .6; }
   .private-home .messages { padding: 12px; }
   .private-home-page { gap: 18px; }
 }
+
+/* Correctif mode sombre — 27 septembre 2026.
+   Couleurs uniquement : conserver la géométrie et les interactions mobiles. */
+html[data-theme="light"] { color-scheme: light; }
+html[data-theme="dark"] {
+  --ink: var(--v3-text);
+  --muted: var(--v3-text-soft);
+  --line: var(--v3-border);
+  --panel: var(--v3-surface);
+}
+html[data-theme="dark"] .side,
+html[data-theme="dark"] .side.open,
+html[data-theme="dark"] .people {
+  background: var(--v3-surface-soft);
+  color: var(--v3-text);
+  border-color: var(--v3-border);
+}
+html[data-theme="dark"] :is(.admin-toolbar, .report-item, .admin-stats article,
+  .search-result, .rules-card, .incoming-call-card, .adult-room-card,
+  .webcam-members article, .media-gallery .message) {
+  background: var(--v3-surface);
+  color: var(--v3-text);
+  border-color: var(--v3-border);
+}
+html[data-theme="dark"] :is(.admin-toolbar select, .admin-toolbar button,
+  .admin-profile-search input, .report-details, .rules-card ul,
+  .search-result-icon, .rules-icon, .blocked-person button,
+  .contact-picker-panel header button, .adult-room-actions button:first-child) {
+  background: var(--v3-surface-strong);
+  color: var(--v3-text);
+  border-color: var(--v3-border);
+}
+html[data-theme="dark"] :is(.admin-actions button) {
+  background: var(--v3-surface-strong);
+  color: var(--v3-text);
+}
+html[data-theme="dark"] :is(.admin-actions .danger, .admin-profile-item button.danger,
+  .report-evidence, .voice-recording, .login-error, .error) {
+  background: #39262d;
+  color: #ffb4a8;
+  border-color: #84514e;
+}
+html[data-theme="dark"] :is(.profile-error, .suspension-state) { color: #ffb4a8; }
+html[data-theme="dark"] :is(.admin-empty, .admin-loading, .admin-stats-note,
+  .admin-stats span, .report-head time, .admin-profile-item small,
+  .profile-card > p, .profile-photo-editor small, .no-blocks,
+  .search-panel header p, .search-results h3, .search-result small, .search-empty,
+  .notifications-empty, .contact-picker-panel p, .contact-picker-empty,
+  .rules-card > p, .incoming-call-card > p, .adult-room-card p,
+  .room-feature-title span, .message-status, .side h3,
+  .location-group h3, #friendRequests h3, #friendsList h3) {
+  color: var(--v3-text-soft);
+}
+html[data-theme="dark"] .admin-stats strong { color: var(--v3-accent); }
+html[data-theme="dark"] .report-card #reportTarget { color: var(--v3-text); }
+html[data-theme="dark"] :is(.account small, .person small, .contact-picker-item small,
+  .public-profile-head p, .meeting-profile small) { color: var(--v3-success); }
+html[data-theme="dark"] :is(.search-result:hover, .person-button:hover) {
+  background: var(--v3-surface-strong);
+}
+html[data-theme="dark"] :is(.search-panel > header, .notifications-panel > header,
+  .contact-picker-panel > header, .blocked-list, .blocked-person, .rules-agreement,
+  .location-group h3) { border-color: var(--v3-border); }
+html[data-theme="dark"] :is(input, textarea)::placeholder {
+  color: var(--v3-text-soft);
+  opacity: 1;
+}
+html[data-theme="dark"] select option {
+  color: var(--v3-text);
+  background: var(--v3-surface);
+}
+html[data-theme="dark"] .person-button.gender-female {
+  background: #2b222d; border-color: #57394a; color: var(--v3-text);
+}
+html[data-theme="dark"] .person-button.gender-female strong { color: #f4a8c8; }
+html[data-theme="dark"] .person-button.gender-male {
+  background: #202b39; border-color: #354b63; color: var(--v3-text);
+}
+html[data-theme="dark"] .person-button.gender-male strong { color: #9bc9f2; }
+html[data-theme="dark"] .person-button.gender-neutral {
+  background: #202734; border-color: var(--v3-border); color: var(--v3-text);
+}
+html[data-theme="dark"] .voice-recording button:not(#sendVoice) {
+  background: var(--v3-surface-strong); color: var(--v3-text);
+}
