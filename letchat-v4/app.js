@@ -562,7 +562,8 @@ function addMessage(m, force = false) {
     quote = m.reply_to_id
       ? `<div class="message-quote"><strong>${safe(m.reply_author || "Message supprimé")}</strong><span>${safe(m.reply_body || "Message original indisponible")}</span></div>`
       : "";
-  a.innerHTML = `<div class="avatar">${m.photo ? `<img src="${m.photo}" class="avatar">` : initials(m.author)}</div><div class="message-content"><p class="meta"><strong>${mine ? "Vous" : safe(m.author)}</strong><time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time></p>${quote}${m.body ? `<p class="bubble">${safe(m.body)}</p>` : ""}${media}<div class="reaction-summary">${reactionHtml(m.reactions, m.my_reactions || [])}</div>${m.private && mine ? `<div class="message-status">${receiptText(m.delivered_at, m.read_at)}</div>` : ""}<div class="message-actions"><button class="reply-action" title="Répondre">↩ Répondre</button><button class="react-action" title="Réagir">☺</button>${mine ? '<button class="delete-action" title="Supprimer">Supprimer</button>' : '<button class="report-message-action" title="Signaler ce message">⚑ Signaler</button>'}<div class="reaction-picker hidden">${["👍", "❤️", "😂", "😮"].map((emoji) => `<button data-pick-reaction="${emoji}">${emoji}</button>`).join("")}</div></div></div>`;
+  a.innerHTML = `<div class="avatar">${m.photo ? `<img src="${m.photo}" class="avatar">` : initials(m.author)}</div><div class="message-content"><p class="meta">${mine ? '<strong>Vous</strong>' : `<button type="button" class="message-author" title="Écrire à ${safe(m.author)}" aria-label="Écrire un message privé à ${safe(m.author)}">${safe(m.author)}</button>`}<time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time></p>${quote}${m.body ? `<p class="bubble">${safe(m.body)}</p>` : ""}${media}<div class="reaction-summary">${reactionHtml(m.reactions, m.my_reactions || [])}</div>${m.private && mine ? `<div class="message-status">${receiptText(m.delivered_at, m.read_at)}</div>` : ""}<div class="message-actions"><button class="reply-action" title="Répondre">↩ Répondre</button><button class="react-action" title="Réagir">☺</button>${mine ? '<button class="delete-action" title="Supprimer">Supprimer</button>' : '<button class="report-message-action" title="Signaler ce message">⚑ Signaler</button>'}<div class="reaction-picker hidden">${["👍", "❤️", "😂", "😮"].map((emoji) => `<button data-pick-reaction="${emoji}">${emoji}</button>`).join("")}</div></div></div>`;
+  a.querySelector(".message-author")?.addEventListener("click", () => openPrivate(String(m.user_id), m.author));
   a.querySelector(".reply-action").onclick = () => setReply(m);
   a.querySelector(".react-action").onclick = () =>
     a.querySelector(".reaction-picker").classList.toggle("hidden");
@@ -843,6 +844,7 @@ async function deleteConversation(id, name) {
 $("#activeConversations").onclick = () => { showArchivedConversations = false; renderPrivateConversations(); };
 $("#archivedConversations").onclick = () => { showArchivedConversations = true; renderPrivateConversations(); };
 function openPrivate(id, name) {
+  id = String(id);
   if (id === user.uid)
     return showError("Vous ne pouvez pas vous écrire à vous-même");
   if (blockedUsers.has(String(id)))
@@ -853,6 +855,7 @@ function openPrivate(id, name) {
   unreadPrivate.delete(id);
   updateUnread();
   currentPrivate = { id, name };
+  $(".people").classList.remove("open");
   privateContactStatus = null;
   socket?.emit("watch-private-status", id);
   updateViewOnceButton();
@@ -1173,7 +1176,7 @@ function renderFriends() {
   document.querySelectorAll(".friend-open").forEach(
     (button) =>
       (button.onclick = () => {
-        showPublicProfile(button.dataset.friendId, button.dataset.friendName);
+        openPrivate(button.dataset.friendId, button.dataset.friendName);
         $(".people").classList.remove("open");
       }),
   );
@@ -1246,7 +1249,7 @@ function renderPeople(list) {
   document.querySelectorAll(".person-button").forEach(
     (button) =>
       (button.onclick = () => {
-        if(button.dataset.userId===user.uid) showProfile(); else showPublicProfile(button.dataset.userId, button.dataset.userName);
+        if(button.dataset.userId===user.uid) showProfile(); else openPrivate(button.dataset.userId, button.dataset.userName);
         $(".people").classList.remove("open");
       }),
   );
