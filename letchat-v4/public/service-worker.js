@@ -1,5 +1,5 @@
-const CACHE = "letchat-shell-de671c0d281d";
-const SHELL = ["/assets/chat-comfort.bbaf8a24a95b.js","/","/index.html","/assets/icon.4a2a204d3b26.svg","/assets/favicon.f612d0ce5cfd.ico","/assets/style.26fa3220d705.css","/assets/v3-modern.20845ffa4f32.css","/assets/v2-community.4a3f3df9189d.css","/assets/v4-polish.fd0d7d7edd62.css","/assets/audit-fixes.6eba884ba50f.css","/assets/v3-theme.1814c6a88724.js","/assets/room-catalog.aa9689894cbf.js","/assets/app-v4-cafe-v2.ee59c8d2ebfb.js","/assets/v4-interface.0155a0cc7ee9.js","/manifest.webmanifest","/icon.svg"];
+const CACHE = "letchat-shell-4212a9840e75";
+const SHELL = ["/","/index.html","/assets/icon.4a2a204d3b26.svg","/assets/favicon.f612d0ce5cfd.ico","/assets/style.26fa3220d705.css","/assets/v3-modern.20845ffa4f32.css","/assets/v2-community.4a3f3df9189d.css","/assets/v4-polish.fd0d7d7edd62.css","/assets/audit-fixes.6eba884ba50f.css","/assets/v3-theme.1814c6a88724.js","/assets/room-catalog.aa9689894cbf.js","/assets/chat-comfort.bbaf8a24a95b.js","/assets/app-v4-cafe-v2.ee59c8d2ebfb.js","/assets/v4-interface.0155a0cc7ee9.js","/manifest.webmanifest","/icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
@@ -53,7 +53,3 @@ self.addEventListener("notificationclick", event => {
     return existing ? existing.focus() : clients.openWindow(url);
   }));
 });
-
-
-
-
