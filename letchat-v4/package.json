@@ -12,7 +12,8 @@
     "test:integration": "node test/integration.mjs",
     "test:social": "node test/social-integration.mjs",
     "test:premium": "node test/social-integration.mjs --premium-room",
-    "test:albums": "node test/social-integration.mjs --albums"
+    "test:albums": "node test/social-integration.mjs --albums",
+    "test:premium-benefits": "node test/social-integration.mjs --premium-benefits"
   },
   "engines": {
     "node": ">=20.9.0"

@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { validateMedia, serveMedia } from "./media.js";
 
-const LIMIT = 12;
+const MAX_PHOTOS = 36;
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status, expose: true }); };
 
-export async function installAlbums({ app, pool, base, write, wrap, blocked, transaction, rateLimitAction }) {
+export async function installAlbums({ app, pool, base, write, wrap, blocked, transaction, rateLimitAction, hasPremiumAccess }) {
   await pool.query(`CREATE TABLE IF NOT EXISTS letchat_album_photos (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES profiles(user_id) ON DELETE CASCADE,
     image_data BYTEA NOT NULL, thumbnail_data BYTEA NOT NULL,
@@ -19,8 +19,9 @@ export async function installAlbums({ app, pool, base, write, wrap, blocked, tra
   // Albums are visible to members independently of friendship and Premium status.
   app.get("/api/social/albums/:owner", ...base, wrap(async (req, res) => {
     await access(req.params.owner, req.user.id);
-    const { rows } = await pool.query("SELECT id,created_at FROM letchat_album_photos WHERE user_id=$1 ORDER BY created_at,id LIMIT $2", [req.params.owner, LIMIT]);
-    res.set("Cache-Control", "private, no-store").json({ photos: rows, limit: LIMIT });
+    const limit = await hasPremiumAccess(req.params.owner) ? 36 : 12;
+    const { rows } = await pool.query("SELECT id,created_at FROM letchat_album_photos WHERE user_id=$1 ORDER BY created_at,id LIMIT $2", [req.params.owner, MAX_PHOTOS]);
+    res.set("Cache-Control", "private, no-store").json({ photos: rows, limit });
   }));
   app.get("/api/social/albums/:owner/:photo/:size", ...base, wrap(async (req, res) => {
     if (!["image", "thumbnail"].includes(req.params.size)) fail("Photo introuvable", 404);
@@ -30,7 +31,7 @@ export async function installAlbums({ app, pool, base, write, wrap, blocked, tra
     if (!row) fail("Photo introuvable", 404);
     serveMedia(res, row.data, row.media_type);
   }));
-  app.post("/api/social/albums", ...write, rateLimitAction("album-upload", 24, 60000), wrap(async (req, res) => {
+  app.post("/api/social/albums", ...write, rateLimitAction("album-upload", 48, 60000), wrap(async (req, res) => {
     const { media, mediaType } = await validateMedia(req.body.mediaBase64, req.body.mediaType);
     if (!media || !mediaType.startsWith("image/")) fail("Choisissez une photo JPG, PNG, WebP, GIF ou AVIF", 415);
     // Store a static, metadata-free image and a small thumbnail for the profile grid.
@@ -41,7 +42,8 @@ export async function installAlbums({ app, pool, base, write, wrap, blocked, tra
       // Serialize uploads for each owner so simultaneous requests cannot exceed the cap.
       if (!(await db.query("SELECT user_id FROM profiles WHERE user_id=$1 FOR UPDATE", [req.user.id])).rowCount) fail("Profil introuvable", 404);
       const count = Number((await db.query("SELECT count(*) AS count FROM letchat_album_photos WHERE user_id=$1", [req.user.id])).rows[0].count);
-      if (count >= LIMIT) fail("Votre album contient déjà 12 photos. Supprimez-en une pour en ajouter une nouvelle.", 409);
+      const limit = await hasPremiumAccess(req.user.id, db) ? 36 : 12;
+      if (count >= limit) fail(`La limite de votre formule est de ${limit} photos. Vos photos existantes restent conservées. Supprimez-en pour libérer une place.`, 409);
       return (await db.query(`INSERT INTO letchat_album_photos(id,user_id,image_data,thumbnail_data)
         VALUES($1,$2,$3,$4) RETURNING id,created_at`, [randomUUID(), req.user.id, image, thumbnail])).rows[0];
     });

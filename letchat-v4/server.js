@@ -1,4 +1,5 @@
 import { installSocial } from "./lib/social.js";
+import { installPremiumBenefits } from "./lib/premium-benefits.js";
 import { rooms as roomCatalog } from "./public/room-catalog.js";
 import express from "express";
 import { validateMedia, serveMedia } from "./lib/media.js";
@@ -732,6 +733,8 @@ app.get("/api/public-config", (_req, res) => {
 });
 
 installRecoveryRoutes({ app, pool, io, auth, rateLimitPublicAction, rateLimitAction });
+const premiumBenefits = await installPremiumBenefits({ app, pool, auth, requireAdult, requireRules, rateLimitAction, hasPremiumAccess,
+  onlineIds: () => [...new Set([...online.values()].filter(e => !premiumBenefits.isDiscreet(e.user.id)).map(e => e.user.id))], changed: refreshPremiumIdentity });
 const social = await installSocial({ app, pool, io, auth, requireAdult, requireRules, rateLimitAction, hasPremiumAccess, roomCatalog, socketSessionValid });
 
 app.post("/api/auth/register", rateLimitPublicAction("register", 10, 60 * 60 * 1000), async (req, res, next) => {
@@ -924,6 +927,7 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
       consents: consents.rows,
       conversationPreferences: conversationPreferences.rows,
       social: await social.exportData(uid),
+      premiumPreferences: (await pool.query("SELECT accent,frame,badge,discreet FROM letchat_premium_preferences WHERE user_id=$1",[uid])).rows[0] || null,
       note: "Les fichiers image et vidéo binaires ne sont pas inclus dans cet export JSON. Leurs types sont indiqués."
     };
     res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -983,6 +987,7 @@ app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account",
     await client.query("DELETE FROM letchat_local_accounts WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM profiles WHERE user_id=$1", [uid]);
     await client.query("COMMIT");
+    premiumBenefits.forget(uid);
     io.to(`user:${uid}`).emit("account-deleted");
     io.in(`user:${uid}`).disconnectSockets(true);
     res.json({ ok: true });
@@ -1100,7 +1105,7 @@ app.get("/api/profile/:userId", auth, async (req, res, next) => {
       [String(req.params.userId)]
     );
     if (!rows[0]) return res.status(404).json({ error: "Profil introuvable" });
-    res.json(rows[0]);
+    res.json((await premiumBenefits.decorate(rows))[0]);
   } catch (error) {
     next(error);
   }
@@ -1256,7 +1261,7 @@ app.get("/api/friends", auth, async (req, res, next) => {
        ORDER BY f.updated_at DESC`,
       [req.user.id]
     );
-    res.json(rows);
+    res.json(await premiumBenefits.decorate(rows));
   } catch (error) {
     next(error);
   }
@@ -1642,8 +1647,8 @@ app.delete("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, n
 const allowedRooms = new Set(Object.keys(roomCatalog));
 const getRoom = value => allowedRooms.has(String(value)) ? String(value) : "cafe";
 const isPremiumRoom = room => roomCatalog[room]?.premium === true;
-async function hasPremiumAccess(userId) {
-  const result = await pool.query(
+async function hasPremiumAccess(userId, db = pool) {
+  const result = await db.query(
     `SELECT 1 FROM letchat_subscriptions
      WHERE user_id=$1 AND status IN ('active','trialing')
        AND (current_period_end IS NULL OR current_period_end > NOW()) LIMIT 1`,
@@ -1914,7 +1919,7 @@ app.get("/api/private-conversations", auth, requireAdult, async (req, res, next)
        LIMIT 100`,
       [req.user.id]
     );
-    res.json(rows);
+    res.json(await premiumBenefits.decorate(rows));
   } catch (error) {
     next(error);
   }
@@ -2293,6 +2298,8 @@ function userIsOnline(userId) {
 }
 
 async function getPrivateStatus(userId) {
+  if (premiumBenefits.isDiscreet(userId))
+    return { userId, online: false, availability: null, lastSeen: null, presence_hidden: true };
   const active = [...online.values()].find(entry => entry.user.id === userId);
   if (active) {
     return {
@@ -2306,6 +2313,7 @@ async function getPrivateStatus(userId) {
     "SELECT availability,last_seen FROM profiles WHERE user_id=$1",
     [userId]
   );
+  if (premiumBenefits.isDiscreet(userId)) return { userId, online: false, availability: null, lastSeen: null, presence_hidden: true };
   return { userId, online: false, availability: rows[0]?.availability || "available", lastSeen: rows[0]?.last_seen || null };
 }
 
@@ -2318,6 +2326,7 @@ async function emitPrivateStatus(userId) {
 function onlineMemberDirectory(entries) {
   const members = new Map();
   for (const { user } of entries) {
+    if (premiumBenefits.isDiscreet(user.id)) continue;
     const id = String(user.id);
     members.set(id, {
       id,
@@ -2342,7 +2351,7 @@ function broadcastOnlineMembers() {
 
 function emitPresence(room) {
   const people = [...online.entries()]
-    .filter(([, entry]) => entry.room === room)
+    .filter(([, entry]) => entry.room === room && !premiumBenefits.isDiscreet(entry.user.id))
     .map(([socketId, entry]) => ({
       id: entry.user.id,
       name: entry.user.name,
@@ -2359,6 +2368,22 @@ function emitPresence(room) {
     }));
   io.to(room).emit("presence", people);
   broadcastOnlineMembers();
+}
+
+async function refreshPremiumIdentity(userId) {
+  const info = (await premiumBenefits.info([userId])).get(userId), rooms = new Set();
+  for (const socket of io.sockets.sockets.values()) if (socket.user?.id === userId) {
+    socket.user.premiumInfo = info; rooms.add(socket.room);
+    if (info?.discreet) {
+      socket.to(socket.room).emit("typing", { userId, active: false });
+      if (socket.privateTypingTarget) io.to(`user:${socket.privateTypingTarget}`).emit("private-typing", { userId, active: false });
+      socket.privateTypingTarget = null;
+    }
+  }
+  for (const room of rooms) emitPresence(room);
+  await emitPrivateStatus(userId);
+  io.emit("premium-appearance-updated", { id: userId, ...premiumBenefits.appearance(info), presence_hidden: premiumBenefits.isDiscreet(userId) });
+  io.to(`user:${userId}`).emit("premium-benefits-updated");
 }
 
 io.use(async (socket, next) => {
@@ -2382,6 +2407,7 @@ io.use(async (socket, next) => {
       [socket.user.id]
     );
     socket.user.profile = rows[0] || null;
+    socket.user.premiumInfo = (await premiumBenefits.info([socket.user.id])).get(socket.user.id);
     if (rows[0]?.display_name) socket.user.name = rows[0].display_name;
     if (rows[0]?.photo) socket.user.photo = rows[0].photo;
     next();
@@ -2464,11 +2490,13 @@ io.on("connection", socket => {
   });
 
   socket.on("typing", async value => {
+    if (premiumBenefits.isDiscreet(socket.user.id)) return;
     if (isPremiumRoom(socket.room) && !await hasPremiumAccess(socket.user.id).catch(() => false)) return;
     socket.to(socket.room).emit("typing", { userId: socket.user.id, name: socket.user.name, active: Boolean(value) });
   });
 
   socket.on("private-typing", async payload => {
+    if (premiumBenefits.isDiscreet(socket.user.id)) return;
     const target = String(payload?.target || "").slice(0, 200);
     const active = Boolean(payload?.active);
     if (!target || target === socket.user.id) return;

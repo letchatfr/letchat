@@ -42,6 +42,7 @@ export async function installSocial({ app, pool, io, auth, requireAdult, require
       status TEXT NOT NULL CHECK(status IN ('pending','accepted')), joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY(group_id,user_id)
     );
+    ALTER TABLE letchat_groups ADD COLUMN IF NOT EXISTS member_limit INTEGER NOT NULL DEFAULT 8;
     CREATE INDEX IF NOT EXISTS idx_group_members_user ON letchat_group_members(user_id);
     CREATE TABLE IF NOT EXISTS letchat_group_messages (
       id BIGSERIAL PRIMARY KEY, group_id TEXT NOT NULL REFERENCES letchat_groups(id) ON DELETE CASCADE,
@@ -70,6 +71,9 @@ export async function installSocial({ app, pool, io, auth, requireAdult, require
   const base = [auth, requireAdult];
   const write = [...base, requireRules, rateLimitAction("social-write", 60, 60000)];
   const invite = [...base, requireRules, rateLimitAction("social-invite", 12, 3600000)];
+  app.get("/api/social/limits", ...base, wrap(async (req,res) => {
+    const premium = await hasPremiumAccess(req.user.id); res.json({ groupLimit: premium ? 20 : 8 });
+  }));
   const blocked = async (a, b, db = pool) => Boolean((await db.query(`SELECT 1 FROM letchat_blocks WHERE
     (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1) LIMIT 1`, [a, b])).rowCount);
   const friends = async (a, b) => Boolean((await pool.query(`SELECT 1 FROM letchat_friends WHERE status='accepted'
@@ -108,11 +112,14 @@ export async function installSocial({ app, pool, io, auth, requireAdult, require
   }));
   app.post("/api/social/groups", ...invite, wrap(async (req, res) => {
     const name = clean(req.body.name, 60), ids = [...new Set(Array.isArray(req.body.members) ? req.body.members.map(x => clean(x, 200)) : [])];
-    if (!name || !ids.length || ids.length > 7 || ids.includes(req.user.id)) fail("Choisissez un nom et de 1 à 7 invités");
+    const limit = await hasPremiumAccess(req.user.id) ? 20 : 8;
+    if (!name || !ids.length || ids.length >= limit || ids.includes(req.user.id)) fail(`Choisissez un nom et de 1 à ${limit - 1} invités`);
     for (const id of ids) await contact(req.user.id, id);
     const id = randomUUID();
     await transaction(async db => {
-      await db.query("INSERT INTO letchat_groups(id,name,owner_id) VALUES($1,$2,$3)", [id, name, req.user.id]);
+      const currentLimit = await hasPremiumAccess(req.user.id, db) ? 20 : 8;
+      if (ids.length >= currentLimit) fail("Votre abonnement a changé. Réduisez le nombre d’invités.", 403);
+      await db.query("INSERT INTO letchat_groups(id,name,owner_id,member_limit) VALUES($1,$2,$3,$4)", [id, name, req.user.id, currentLimit]);
       await db.query("INSERT INTO letchat_group_members(group_id,user_id,status) VALUES($1,$2,'accepted')", [id, req.user.id]);
       for (const uid of ids) await db.query("INSERT INTO letchat_group_members(group_id,user_id,status) VALUES($1,$2,'pending')", [id, uid]);
     });
@@ -255,7 +262,7 @@ export async function installSocial({ app, pool, io, auth, requireAdult, require
     });
     res.json({ ok: true });
   }));
-  await installAlbums({ app, pool, base, write, wrap, blocked, transaction, rateLimitAction });
+  await installAlbums({ app, pool, base, write, wrap, blocked, transaction, rateLimitAction, hasPremiumAccess });
   const live = installLive({ io, pool, blocked, member, hasPremiumAccess, roomCatalog, socketSessionValid });
   return {
     live,

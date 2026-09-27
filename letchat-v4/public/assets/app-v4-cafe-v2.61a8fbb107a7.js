@@ -1,7 +1,7 @@
-import { installSocial } from "./social.js";
-import { installPremiumBenefitsUI } from "./premium-benefits.js";
-import { rooms } from "./room-catalog.js?v=20260927-premium-xxx";
-import { messageDayInfo, shouldSendOnEnter } from "./chat-comfort.js";
+import { installSocial } from "./social.13a3d4d6555d.js";
+import { installPremiumBenefitsUI } from "./premium-benefits.58b3de1f82e9.js";
+import { rooms } from "./room-catalog.2ef7971ebb04.js";
+import { messageDayInfo, shouldSendOnEnter } from "./chat-comfort.bbaf8a24a95b.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
 import {
   getAuth,
