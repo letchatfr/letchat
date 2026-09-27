@@ -142,6 +142,32 @@
 .premium-choices #subscribePremiumPlus { background: linear-gradient(135deg, #9b6518, #e3a437); }
 @media(max-width:520px) { .premium-choices { grid-template-columns: 1fr; } }
 
+/* Abonnement : styles cohérents dans le profil, sur mobile et en mode sombre. */
+.premium-box { gap: 14px; border-color: #dec49d; background: #fffaf1; }
+.premium-heading { display: flex; align-items: center; gap: 11px; }
+.premium-icon { flex: 0 0 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; color: #fff; background: #a86a24; font-size: 20px; }
+.premium-heading h3 { font-size: 17px; }
+.premium-box #premiumState { padding: 11px 12px; border-radius: 9px; background: #fff; color: #503b21; font-weight: 700; line-height: 1.4; }
+.premium-box .premium-renewal { line-height: 1.5; }
+.premium-benefits { margin: 0; padding-left: 21px; color: #503b21; line-height: 1.55; font-size: 12px; }
+.premium-benefits li + li { margin-top: 5px; }
+.premium-choices button { min-height: 90px; text-align: left; padding: 13px; cursor: pointer; }
+.premium-choices button strong { font-size: 14px; }
+.premium-choices button span { font-size: 16px; }
+.premium-choices button small { color: inherit; opacity: .9; line-height: 1.3; }
+.premium-box button:disabled { opacity: .56; cursor: not-allowed; }
+.premium-box #managePremium { cursor: pointer; }
+.premium-box #premiumFootnote { line-height: 1.5; }
+.premium-shortcut { width: 100%; margin-top: 9px; padding: 10px; border: 1px solid #d4aa68; border-radius: 10px; background: #fff6e7; color: #6b4217; font-weight: 800; cursor: pointer; }
+.premium-shortcut:hover { background: #ffeac5; }
+html[data-theme="dark"] .premium-shortcut { background: #3b3023; border-color: #8b6d47; color: #ffe6b5; }
+html[data-theme="dark"] .premium-box { background: #25251f; border-color: #765c3b; color: #f3e8d8; }
+html[data-theme="dark"] .premium-box #premiumState { background: #343025; color: #fff0d8; }
+html[data-theme="dark"] .premium-box .premium-benefits,
+html[data-theme="dark"] .premium-box p,
+html[data-theme="dark"] .premium-box small { color: #e2d4c0; }
+html[data-theme="dark"] .premium-box #managePremium { background: #454139; color: #fff0d8; }
+
 .message-content { min-width: 0; }
 .message-quote { max-width: 360px; margin-bottom: 5px; padding: 7px 10px; border-left: 3px solid var(--coral); border-radius: 7px; background: #f7f4ef; display: grid; gap: 2px; font-size: 11px; }
 .message-quote strong { color: #a64838; }

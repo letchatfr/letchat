@@ -19,17 +19,11 @@
 
   <title>Letchat — Discutez simplement</title>
 
-  <link rel="stylesheet" href="style.css?v=typing-v3" />
+  <link rel="stylesheet" href="style.css?v=20260927-premium-refonte" />
   <link rel="stylesheet" href="v3-modern.css?v=notifications-mobile-v1" />
 
-  <!-- Google AdSense -->
-  <script
-    async
-    src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3317597986908171"
-    crossorigin="anonymous">
-  </script>
     <link rel="stylesheet" href="v2-community.css?v=1">
-  <link rel="stylesheet" href="v4-polish.css?v=20260927-five-features">
+  <link rel="stylesheet" href="v4-polish.css?v=20260927-mobile">
 </head>
 
 <body>
@@ -328,25 +322,29 @@
           <span id="premiumBadge" class="premium-badge hidden">PRO</span>
         </button>
         <button class="new">＋ Nouveau message</button>
+        <button id="premiumShortcut" type="button" class="premium-shortcut">✦ Découvrir Premium</button>
         <button id="mobileThemeBtn" class="mobile-theme-button" type="button" aria-label="Activer le mode sombre" aria-pressed="false">☾ Mode sombre</button>
         <nav aria-label="Messagerie"><a id="privateMessagesLink" href="#private-messages" style="text-decoration:none">◌ Messages privés <span id="privateMessagesNavBadge" class="room-unread hidden">0</span></a></nav>
         <nav aria-label="Communauté"><a id="onlineMembersLink" href="#membres-en-ligne">👥 Membres en ligne <span id="onlineMembersBadge" class="online-members-badge">…</span></a></nav>
         <div class="v2-explore-heading"><h2>Explorer les salons</h2><span>COMMUNAUTÉ</span></div>
+        <label class="v2-room-search"><span class="v2-sr-only">Rechercher un salon</span><input id="roomSearch" type="search" placeholder="Rechercher un salon…" autocomplete="off"></label>
+        <button id="favoriteRoomsOnly" class="v2-favorites-filter" type="button" aria-pressed="false">☆ Mes favoris</button>
         <div id="roomDirectory" class="v2-room-directory">
           <details class="v2-room-group" open><summary>Discussions</summary>
-            <div class="v2-room-row" data-room-row="cafe"><a href="#salon-cafe" class="room active" data-room="cafe" title="Le rendez-vous de la communauté" aria-current="true"><span class="v2-room-icon" aria-hidden="true">☀</span><span class="v2-room-name">Le Café</span></a></div>
-            <div class="v2-room-row" data-room-row="actualites"><a href="#salon-actualites" class="room" data-room="actualites" title="Échangez sur les nouvelles du jour"><span class="v2-room-icon" aria-hidden="true">◎</span><span class="v2-room-name">Actualités</span></a></div>
-            <div class="v2-room-row" data-room-row="debats"><a href="#salon-debats" class="room" data-room="debats" title="Des points de vue différents, dans le respect"><span class="v2-room-icon" aria-hidden="true">◈</span><span class="v2-room-name">Débats</span></a></div>
+            <div class="v2-room-row" data-room-row="cafe"><a href="#salon-cafe" class="room active" data-room="cafe" title="Le rendez-vous de la communauté" aria-current="true"><span class="v2-room-icon" aria-hidden="true">☀</span><span class="v2-room-name">Le Café</span></a><button type="button" class="v2-room-favorite" data-favorite="cafe" aria-label="Ajouter Le Café aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="actualites"><a href="#salon-actualites" class="room" data-room="actualites" title="Échangez sur les nouvelles du jour"><span class="v2-room-icon" aria-hidden="true">◎</span><span class="v2-room-name">Actualités</span></a><button type="button" class="v2-room-favorite" data-favorite="actualites" aria-label="Ajouter Actualités aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="debats"><a href="#salon-debats" class="room" data-room="debats" title="Des points de vue différents, dans le respect"><span class="v2-room-icon" aria-hidden="true">◈</span><span class="v2-room-name">Débats</span></a><button type="button" class="v2-room-favorite" data-favorite="debats" aria-label="Ajouter Débats aux favoris" aria-pressed="false">☆</button></div>
           </details>
           <details class="v2-room-group" open><summary>Rencontres & médias</summary>
-            <div class="v2-room-row" data-room-row="creatifs"><a href="#salon-creatifs" class="room" data-room="creatifs" title="Faites connaissance"><span class="v2-room-icon" aria-hidden="true">✦</span><span class="v2-room-name">Rencontres</span></a></div>
-            <div class="v2-room-row" data-room-row="amateurs"><a href="#salon-amateurs" class="room" data-room="amateurs" title="Partagez vos créations"><span class="v2-room-icon" aria-hidden="true">◇</span><span class="v2-room-name">Photos & vidéos</span></a></div>
-            <div class="v2-room-row" data-room-row="webcam"><a href="#salon-webcam" class="room" data-room="webcam" title="Choisissez une personne disponible"><span class="v2-room-icon" aria-hidden="true">♡</span><span class="v2-room-name">Webcam en direct</span></a></div>
+            <div class="v2-room-row" data-room-row="creatifs"><a href="#salon-creatifs" class="room" data-room="creatifs" title="Faites connaissance"><span class="v2-room-icon" aria-hidden="true">✦</span><span class="v2-room-name">Rencontres</span></a><button type="button" class="v2-room-favorite" data-favorite="creatifs" aria-label="Ajouter Rencontres aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="amateurs"><a href="#salon-amateurs" class="room" data-room="amateurs" title="Partagez vos créations"><span class="v2-room-icon" aria-hidden="true">◇</span><span class="v2-room-name">Photos & vidéos</span></a><button type="button" class="v2-room-favorite" data-favorite="amateurs" aria-label="Ajouter Photos & vidéos aux favoris" aria-pressed="false">☆</button></div>
+            <div class="v2-room-row" data-room-row="webcam"><a href="#salon-webcam" class="room" data-room="webcam" title="Choisissez une personne disponible"><span class="v2-room-icon" aria-hidden="true">♡</span><span class="v2-room-name">Webcam en direct</span></a><button type="button" class="v2-room-favorite" data-favorite="webcam" aria-label="Ajouter Webcam en direct aux favoris" aria-pressed="false">☆</button></div>
           </details>
           <details class="v2-room-group" open><summary>Espace adulte</summary>
-            <div class="v2-room-row" data-room-row="entraide"><a href="#salon-entraide" class="room adult-room-link" data-room="entraide" title="Salon réservé aux adultes"><span class="v2-room-icon" aria-hidden="true">18+</span><span class="v2-room-name">XXX</span></a></div>
+            <div class="v2-room-row" data-room-row="entraide"><a href="#salon-entraide" class="room adult-room-link" data-room="entraide" title="Salon réservé aux adultes"><span class="v2-room-icon" aria-hidden="true">18+</span><span class="v2-room-name">XXX</span></a><button type="button" class="v2-room-favorite" data-favorite="entraide" aria-label="Ajouter XXX aux favoris" aria-pressed="false">☆</button></div>
           </details>
         </div>
+        <p id="roomSearchEmpty" class="v2-empty hidden" role="status">Aucun salon trouvé. Essayez un autre mot ou désactivez le filtre favoris.</p>
         <div class="account">
           <img id="mePhoto" />
           <div><strong id="meName"></strong><small>En ligne</small></div>
@@ -377,7 +375,7 @@
                 >0</span
               ></button
             ><button id="adminBtn" class="hidden admin-button">
-              Administration <span id="adminPendingBadge" class="admin-pending-badge hidden" aria-live="polite"></span></button
+              Administration</button
             ><button id="reportBtn" class="hidden report-button">
               Signaler</button
             ><button id="blockBtn" class="hidden danger-button">Bloquer</button
@@ -397,15 +395,8 @@
        data-ad-slot="2581560090"
        data-ad-format="auto"
        data-full-width-responsive="true"></ins>
-</aside> <script>
-  (adsbygoogle = window.adsbygoogle || []).push({});
-</script>
+</aside>
         <section id="roomFeature" class="room-feature hidden"></section>
-        <section id="roomExtras" class="room-extras hidden" aria-label="Fonctions du salon">
-          <div class="room-extras-line"><span id="slowModeInfo" role="status"></span><label id="slowModeEditor" class="hidden">Mode lent <select id="slowModeSelect" aria-label="Mode lent pour ce salon"><option value="0">Désactivé</option><option value="10">10 secondes</option><option value="30">30 secondes</option><option value="60">60 secondes</option></select></label><button id="createPoll" type="button">＋ Sondage</button></div>
-          <form id="pollCreator" class="poll-creator hidden"><label>Question<input id="pollQuestion" maxlength="160" required placeholder="Votre question"></label><div class="poll-creator-options"><input id="pollOption1" maxlength="80" required placeholder="Réponse 1"><input id="pollOption2" maxlength="80" required placeholder="Réponse 2"><input id="pollOption3" maxlength="80" placeholder="Réponse 3 (facultatif)"><input id="pollOption4" maxlength="80" placeholder="Réponse 4 (facultatif)"></div><div><button id="submitPoll" type="submit">Publier</button><button id="cancelPoll" type="button">Annuler</button></div></form>
-          <div id="roomPoll" role="region" aria-label="Sondage du salon"></div>
-        </section>
         <div id="messages" class="messages">
           <div class="empty">
             <b>☀</b>
@@ -571,32 +562,29 @@
           <h3>Utilisateurs bloqués</h3>
           <div id="blockedUsers"></div>
         </section>
-        <section class="premium-box">
-          <h3>Letchat Premium</h3>
-          <p id="premiumState">Vérification de votre abonnement…</p>
+        <section class="premium-box" aria-labelledby="premiumTitle">
+          <div class="premium-heading"><span class="premium-icon" aria-hidden="true">✦</span><div><h3 id="premiumTitle">Letchat Premium</h3><small>Un espace de discussion plus confortable</small></div></div>
+          <p id="premiumState" role="status">Vérification de votre abonnement…</p>
+          <p id="premiumRenewal" class="premium-renewal hidden"></p>
+          <ul class="premium-benefits"><li>Navigation sans publicité sur Letchat</li><li>Tous les salons, messages et appels restent accessibles avec un compte gratuit</li></ul>
           <div id="premiumChoices" class="premium-choices">
-            <button id="subscribePremium" type="button">
-              <strong>Premium</strong><span>10 € / mois</span>
+            <button id="subscribePremium" type="button" disabled>
+              <strong>Premium mensuel</strong><span id="premiumPrice">Chargement du tarif…</span><small>Facturation mensuelle</small>
             </button>
-            <button id="subscribePremiumPlus" type="button">
-              <strong>Premium+</strong><span>30 € / 6 mois</span>
+            <button id="subscribePremiumPlus" type="button" disabled>
+              <strong>Premium+ longue durée</strong><span id="premiumPlusPrice">Chargement du tarif…</span><small>Mêmes avantages, tarif longue durée</small>
             </button>
           </div>
           <button id="managePremium" type="button" class="hidden">
-            Gérer mon abonnement</button
-          ><small
-            >Sans publicité. Paiement et résiliation sécurisés par
-            Stripe.</small
-          >
+            Gérer ou résilier mon abonnement</button>
+          <small id="premiumFootnote">Prix et périodicité confirmés avant paiement. Gestion sécurisée avec Stripe.</small>
         </section>
         <section class="account-data">
           <h3>Application et notifications</h3>
           <p id="appFeatureStatus">Installation et notifications disponibles sur les appareils compatibles.</p>
           <button id="installApp" type="button" class="account-export hidden">Installer Letchat</button>
           <button id="enablePush" type="button" class="account-export">Activer les notifications</button>
-          <fieldset class="notification-preferences"><legend>Quelles alertes recevoir ?</legend><label><input id="notifyPrivate" type="checkbox" checked> Messages privés</label><label><input id="notifyFriends" type="checkbox" checked> Demandes et réponses d’amis</label><label><input id="notifyReports" type="checkbox" checked> Suivi de mes signalements</label><button id="saveNotificationPreferences" type="button">Enregistrer mes préférences</button><small id="notificationPreferencesStatus" role="status"></small></fieldset>
         </section>
-        <section class="account-data"><h3>Mes signalements</h3><button id="myReportsButton" type="button" class="account-export">Voir le suivi de mes signalements</button></section>
         <section class="account-data">
           <h3>Mes données et mon compte</h3>
           <p>Contact officiel : <a id="contactEmail">Chargement…</a></p>
@@ -631,7 +619,6 @@
         <div id="publicProfileError" class="profile-error"></div>
       </div>
     </section>
-    <section id="myReportsModal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-labelledby="myReportsTitle"><div class="profile-card my-reports-card"><button id="closeMyReports" type="button" class="profile-close" aria-label="Fermer">×</button><h2 id="myReportsTitle">Mes signalements</h2><p>Le statut de vos 50 signalements les plus récents.</p><div id="myReportsList" class="my-reports-list"></div></div></section>
     <section id="reportModal" class="profile-modal hidden">
       <form id="reportForm" class="profile-card report-card">
         <button type="button" id="closeReport" class="profile-close">×</button>
@@ -824,7 +811,8 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
-    <script type="module" src="app-v4-cafe-v2.js?v=20260927-poll-draft"></script>
-    <script src="v4-interface.js?v=20260927-five-features" defer></script>
+    <script type="module" src="app-v4-cafe-v2.js?v=20260927-premium-refonte"></script>
+      <script src="v2-community.js?v=1" defer></script>
+    <script src="v4-interface.js?v=20260927-premium-refonte" defer></script>
 </body>
 </html>

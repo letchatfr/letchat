@@ -134,6 +134,7 @@
     ['searchBtn', 'Rechercher', '⌕'],
     ['notificationsBtn', 'Notifications', '🔔'],
     ['profileBtn', 'Mon profil', '◎'],
+    ['premiumShortcut', 'Letchat Premium', '✦'],
     ['themeBtn', 'Changer de thème', '☾'],
     ['callBtn', 'Appeler un membre', '▣'],
     ['adminBtn', 'Administration', '⚙'],
@@ -153,7 +154,7 @@
       const text = document.createElement('span'); text.textContent = label;
       if (targetId === 'themeBtn') text.textContent = document.documentElement.dataset.theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre';
       button.append(symbol, text); button.disabled = target.disabled;
-      const badge = targetId === 'privateMessagesLink' ? $('#privateMessagesNavBadge') : targetId === 'notificationsBtn' ? $('#notificationsBadge') : targetId === 'adminBtn' ? $('#adminPendingBadge') : null;
+      const badge = targetId === 'privateMessagesLink' ? $('#privateMessagesNavBadge') : targetId === 'notificationsBtn' ? $('#notificationsBadge') : null;
       if (badge && !badge.classList.contains('hidden')) { const amount = document.createElement('b'); amount.textContent = badge.textContent; button.append(amount); }
       button.addEventListener('click', () => { closeOptions(); target.click(); }); list.append(button);
     });
@@ -163,9 +164,9 @@
   $('#mobileNavMembers').addEventListener('click', () => $('#onlineMembersLink').click());
   function syncMobileCounts() {
     $('#mobileOnlineCount').textContent = $('#onlineMembersBadge').textContent;
-    $('#mobileUnreadDot').classList.toggle('hidden', $('#privateMessagesNavBadge').classList.contains('hidden') && $('#notificationsBadge').classList.contains('hidden') && $('#adminPendingBadge').classList.contains('hidden'));
+    $('#mobileUnreadDot').classList.toggle('hidden', $('#privateMessagesNavBadge').classList.contains('hidden') && $('#notificationsBadge').classList.contains('hidden'));
   }
-  ['#onlineMembersBadge', '#privateMessagesNavBadge', '#notificationsBadge', '#adminPendingBadge'].forEach(selector => new MutationObserver(syncMobileCounts).observe($(selector), {attributes:true, attributeFilter:['class'], childList:true, characterData:true, subtree:true}));
+  ['#onlineMembersBadge', '#privateMessagesNavBadge', '#notificationsBadge'].forEach(selector => new MutationObserver(syncMobileCounts).observe($(selector), {attributes:true, attributeFilter:['class'], childList:true, characterData:true, subtree:true}));
   syncMobileCounts();
   Object.entries({attach:'Fichier', cameraBtn:'Photo', voiceBtn:'Vocal', emoji:'Emojis', viewOnceBtn:'Vue unique'}).forEach(([id,label]) => document.getElementById(id).dataset.mobileLabel = label);
   const composer = $('.composer'), mediaToggle = $('#mobileComposerToggle');
@@ -216,63 +217,4 @@
     root.style.setProperty('--composer-footer-height', `${Math.ceil(height)}px`);
   }).observe($('.chat > footer'));
   fitMobileViewport();
-})();
-
-
-/* Navigation de modération : réutiliser les contrôles et autorisations existants. */
-(() => {
-  const status = document.getElementById('adminStatus');
-  const list = document.getElementById('reportList');
-  if (!status || !list) return;
-  const toolbar = status.closest('.admin-toolbar');
-  const nav = document.createElement('nav');
-  nav.className = 'admin-section-nav';
-  nav.setAttribute('aria-label', 'Sections de l’administration');
-  const buttons = [...status.options].map(option => {
-    const button = document.createElement('button');
-    button.type = 'button'; button.textContent = option.textContent;
-    button.dataset.section = option.value;
-    button.addEventListener('click', () => {
-      if (status.value === option.value) return;
-      status.value = option.value;
-      status.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    nav.append(button); return button;
-  });
-  toolbar.before(nav);
-  // Conserver le select original comme contrôleur de l’application.
-  status.closest('label').hidden = true;
-  const searchLabel = document.createElement('label');
-  searchLabel.className = 'admin-local-search';
-  searchLabel.append(document.createTextNode('Filtrer les éléments chargés'));
-  const search = document.createElement('input');
-  search.type = 'search'; search.maxLength = 100;
-  search.placeholder = 'Nom, motif ou texte…';
-  searchLabel.append(search); toolbar.prepend(searchLabel);
-  const summary = document.createElement('p');
-  summary.className = 'admin-filter-summary'; summary.setAttribute('role', 'status');
-  toolbar.after(summary);
-  const normalize = text => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-  function update() {
-    buttons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.section === status.value)));
-    const enabled = !['stats', 'profiles'].includes(status.value);
-    searchLabel.hidden = !enabled;
-    const cards = [...list.querySelectorAll('.report-item')];
-    const query = enabled ? normalize(search.value) : '';
-    cards.forEach(card => { card.hidden = Boolean(query && !normalize(card.textContent).includes(query)); });
-    const loading = Boolean(list.querySelector('.admin-loading'));
-    buttons.forEach(button => { button.disabled = loading; });
-    document.getElementById('refreshReports').disabled = loading;
-    list.setAttribute('aria-busy', String(loading));
-    summary.hidden = !enabled || loading || cards.length === 0;
-    if (!summary.hidden) {
-      const shown = cards.filter(card => !card.hidden).length;
-      summary.textContent = shown ? `${shown} élément(s) affiché(s) sur ${cards.length} chargé(s).` : 'Aucun résultat dans les éléments chargés. Effacez la recherche pour tout afficher.';
-    }
-  }
-  search.addEventListener('input', update);
-  status.addEventListener('change', () => { search.value = ''; update(); });
-  new MutationObserver(update).observe(list, {childList: true, subtree: true});
-  document.getElementById('closeAdmin').setAttribute('aria-label', 'Fermer l’administration');
-  update();
 })();
