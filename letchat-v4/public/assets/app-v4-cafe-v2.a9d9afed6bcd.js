@@ -1,6 +1,6 @@
-import { installSocial } from "./social.js";
-import { rooms } from "./room-catalog.js?v=20260927-premium-xxx";
-import { messageDayInfo, shouldSendOnEnter } from "./chat-comfort.js";
+import { installSocial } from "./social.2abf854b8324.js";
+import { rooms } from "./room-catalog.2ef7971ebb04.js";
+import { messageDayInfo, shouldSendOnEnter } from "./chat-comfort.bbaf8a24a95b.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
 import {
   getAuth,

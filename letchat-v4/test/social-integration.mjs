@@ -99,6 +99,7 @@ try {
   await request(`/api/blocks/${b.user.id}`,a.token,'DELETE');
   for(const s of ss)s.emit('live-leave');
   if(process.env.LETCHAT_BROWSER_QA==='1') { const {runBrowserQA}=await import('./social-browser.mjs');await runBrowserQA({origin,users,request,pool,check}); }
+  if(process.argv.includes('--premium-room')) { const {runPremiumRoomQA}=await import('./premium-room.mjs');await runPremiumRoomQA({origin,users,request,pool,check,sockets:ss,connect}); }
   await request('/api/account',a.token,'DELETE',{confirmation:'SUPPRIMER'});
   check(!(await pool.query('SELECT 1 FROM letchat_profile_extras WHERE user_id=$1',[a.user.id])).rowCount,"account deletion removes rich media");
   check(!(await pool.query('SELECT 1 FROM letchat_groups WHERE id=$1',[gid])).rowCount,"owner deletion removes group and child data");

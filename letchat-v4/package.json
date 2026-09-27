@@ -10,7 +10,8 @@
     "prestart": "npm run build",
     "test": "node --test test/*.test.mjs",
     "test:integration": "node test/integration.mjs",
-    "test:social": "node test/social-integration.mjs"
+    "test:social": "node test/social-integration.mjs",
+    "test:premium": "node test/social-integration.mjs --premium-room"
   },
   "engines": {
     "node": ">=20.9.0"

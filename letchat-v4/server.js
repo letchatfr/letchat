@@ -1641,7 +1641,7 @@ app.delete("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, n
 
 const allowedRooms = new Set(Object.keys(roomCatalog));
 const getRoom = value => allowedRooms.has(String(value)) ? String(value) : "cafe";
-const premiumRoom = "entraide";
+const isPremiumRoom = room => roomCatalog[room]?.premium === true;
 async function hasPremiumAccess(userId) {
   const result = await pool.query(
     `SELECT 1 FROM letchat_subscriptions
@@ -1653,22 +1653,21 @@ async function hasPremiumAccess(userId) {
 }
 async function moveExpiredPremiumSockets(userId) {
   if (await hasPremiumAccess(userId)) return;
-  let moved = false;
+  const movedRooms = new Set();
   for (const socket of io.sockets.sockets.values()) {
-    if (socket.user?.id !== userId || socket.room !== premiumRoom) continue;
+    if (socket.user?.id !== userId || !isPremiumRoom(socket.room)) continue;
+    const previousRoom = socket.room;
     calls.end(socket.id, "premium-expired");
-    social.live.removeUser(userId, `room:${premiumRoom}`);
-    socket.leave(premiumRoom);
+    social.live.removeUser(userId, `room:${previousRoom}`);
+    socket.leave(previousRoom);
     socket.room = "cafe";
     socket.join("cafe");
     online.set(socket.id, { user: socket.user, room: "cafe" });
     socket.emit("premium-room-revoked");
-    moved = true;
+    movedRooms.add(previousRoom);
   }
-  if (moved) {
-    emitPresence(premiumRoom);
-    emitPresence("cafe");
-  }
+  for (const room of movedRooms) emitPresence(room);
+  if (movedRooms.size) emitPresence("cafe");
 }
 
 let meteredTurnCredential = null;
@@ -1740,8 +1739,8 @@ app.get("/api/turn-credentials", auth, requireAdult, async (_req, res, next) => 
 app.get("/api/messages", auth, requireAdult, async (req, res, next) => {
   try {
     const room = getRoom(req.query.room);
-    if (room === premiumRoom && !await hasPremiumAccess(req.user.id))
-      return res.status(403).json({ error: "Le salon XXX est réservé aux membres Premium." });
+    if (isPremiumRoom(room) && !await hasPremiumAccess(req.user.id))
+      return res.status(403).json({ error: "Ce salon est réservé aux membres Premium." });
     const { rows } = await pool.query(`
       SELECT m.id, m.user_id, m.author, m.room, m.photo, m.body, m.media_type, m.pinned,
              m.created_at, m.expires_at, m.reply_to_id,
@@ -1780,8 +1779,8 @@ app.get("/api/media/:id", auth, requireAdult, async (req, res, next) => {
          )`,
       [req.params.id, req.user.id]
     );
-    if (rows[0]?.room === premiumRoom && !await hasPremiumAccess(req.user.id))
-      return res.status(403).json({ error: "Le salon XXX est réservé aux membres Premium." });
+    if (isPremiumRoom(rows[0]?.room) && !await hasPremiumAccess(req.user.id))
+      return res.status(403).json({ error: "Ce salon est réservé aux membres Premium." });
     if (!rows[0]?.media_data) return res.sendStatus(404);
     serveMedia(res, rows[0].media_data, rows[0].media_type);
   } catch (error) {
@@ -1812,8 +1811,8 @@ app.post("/api/messages", auth, requireAdult, requireRules,
   try {
     const body = String(req.body.body || "").trim().slice(0, 4000);
     const room = getRoom(req.body.room);
-    if (room === premiumRoom && !await hasPremiumAccess(req.user.id))
-      return res.status(403).json({ error: "Le salon XXX est réservé aux membres Premium." });
+    if (isPremiumRoom(room) && !await hasPremiumAccess(req.user.id))
+      return res.status(403).json({ error: "Ce salon est réservé aux membres Premium." });
     const replyToId = req.body.replyToId ? String(req.body.replyToId) : null;
     const { media, mediaType } = await validateMedia(req.body.mediaBase64, req.body.mediaType);
 
@@ -1838,13 +1837,13 @@ app.post("/api/messages", auth, requireAdult, requireRules,
       [req.user.id, req.user.name, room, req.user.photo, body, media, mediaType || null, reply?.id || null]
     );
     const message = { ...query.rows[0], reply_author: reply?.author || null, reply_user_id: reply?.user_id || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
-    if (room === premiumRoom) {
+    if (isPremiumRoom(room)) {
       const occupants = new Set([...io.sockets.sockets.values()]
-        .filter(socket => socket.room === premiumRoom).map(socket => socket.user.id));
+        .filter(socket => isPremiumRoom(socket.room)).map(socket => socket.user.id));
       for (const userId of occupants) await moveExpiredPremiumSockets(userId);
     }
     io.to(room).emit("message", message);
-    if (room === premiumRoom) {
+    if (isPremiumRoom(room)) {
       const { rows: members } = await pool.query(
         `SELECT user_id FROM letchat_subscriptions
          WHERE status IN ('active','trialing')
@@ -2193,7 +2192,7 @@ async function getMessageAccess(kind, id, userId) {
       "SELECT id, user_id, room FROM letchat_messages WHERE id=$1 AND expires_at > NOW()",
       [id]
     );
-    if (result.rows[0]?.room === premiumRoom && !await hasPremiumAccess(userId)) return null;
+    if (isPremiumRoom(result.rows[0]?.room) && !await hasPremiumAccess(userId)) return null;
     return result.rows[0] || null;
   }
   if (kind === "private") {
@@ -2393,7 +2392,7 @@ io.use(async (socket, next) => {
 
 const calls = new CallRegistry({ sockets: io.sockets.sockets, permitted: async (a, b) => {
   if (!await socketSessionValid(a) || !await socketSessionValid(b)) return false;
-  if (a.room === premiumRoom && (!await hasPremiumAccess(a.user.id) || !await hasPremiumAccess(b.user.id))) return false;
+  if (isPremiumRoom(a.room) && (!await hasPremiumAccess(a.user.id) || !await hasPremiumAccess(b.user.id))) return false;
   const blocked = await pool.query(`SELECT 1 FROM letchat_blocks
     WHERE (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1) LIMIT 1`, [a.user.id, b.user.id]);
   return !blocked.rowCount;
@@ -2440,7 +2439,7 @@ io.on("connection", socket => {
 
   socket.on("join-room", async value => {
     const nextRoom = getRoom(value);
-    if (nextRoom === premiumRoom) {
+    if (isPremiumRoom(nextRoom)) {
       try {
         if (!await hasPremiumAccess(socket.user.id)) {
           await moveExpiredPremiumSockets(socket.user.id);
@@ -2465,7 +2464,7 @@ io.on("connection", socket => {
   });
 
   socket.on("typing", async value => {
-    if (socket.room === premiumRoom && !await hasPremiumAccess(socket.user.id).catch(() => false)) return;
+    if (isPremiumRoom(socket.room) && !await hasPremiumAccess(socket.user.id).catch(() => false)) return;
     socket.to(socket.room).emit("typing", { userId: socket.user.id, name: socket.user.name, active: Boolean(value) });
   });
 
@@ -2523,7 +2522,7 @@ io.on("connection", socket => {
 async function deleteExpiredMessages() {
   try {
     const premiumOccupants = new Set([...io.sockets.sockets.values()]
-      .filter(socket => socket.room === premiumRoom).map(socket => socket.user.id));
+      .filter(socket => isPremiumRoom(socket.room)).map(socket => socket.user.id));
     for (const userId of premiumOccupants) await moveExpiredPremiumSockets(userId);
     calls.prune();
     await social.prune();
@@ -2589,4 +2588,3 @@ app.use((_req, res) => {
 });
 
 server.listen(port, () => console.log(`Letchat prêt sur le port ${port}`));
-

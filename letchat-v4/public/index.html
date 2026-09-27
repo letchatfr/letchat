@@ -356,6 +356,7 @@
           </details>
           <details class="v2-room-group" open><summary>Espace adulte</summary>
             <div class="v2-room-row" data-room-row="entraide"><a href="#salon-entraide" class="room adult-room-link" data-room="entraide" title="Salon réservé aux membres Premium majeurs"><span class="v2-room-icon" aria-hidden="true">18+</span><span class="v2-room-name">XXX · Premium</span></a></div>
+            <div class="v2-room-row" data-room-row="rencontres-premium"><a href="#salon-rencontres-premium" class="room adult-room-link" data-room="rencontres-premium" title="Rencontres entre membres Premium majeurs"><span class="v2-room-icon" aria-hidden="true">✦</span><span class="v2-room-name">Rencontres privées · Premium</span></a></div>
           </details>
         </div>
         <div class="account">
@@ -571,7 +572,7 @@
           <div class="premium-heading"><span class="premium-icon" aria-hidden="true">✦</span><div><h3 id="premiumTitle">Letchat Premium</h3><small>Un espace de discussion plus confortable</small></div></div>
           <p id="premiumState" role="status">Vérification de votre abonnement…</p>
           <p id="premiumRenewal" class="premium-renewal hidden"></p>
-          <ul class="premium-benefits"><li>Navigation sans publicité sur Letchat</li><li>Accès au salon XXX réservé aux membres Premium majeurs</li><li>Les autres salons, messages et appels restent accessibles gratuitement</li></ul>
+          <ul class="premium-benefits"><li>Navigation sans publicité sur Letchat</li><li>Accès aux salons XXX et Rencontres privées, réservés aux membres Premium majeurs</li><li>Les salons hors espace adulte, les messages privés et les appels restent accessibles gratuitement</li></ul>
           <div id="premiumChoices" class="premium-choices">
             <button id="subscribePremium" type="button" disabled>
               <strong>Premium mensuel</strong><span id="premiumPrice">Chargement du tarif…</span><small>Facturation mensuelle</small>
@@ -810,7 +811,7 @@
     <section id="premiumRoomGate" class="premium-room-gate hidden" role="dialog" aria-modal="true" aria-labelledby="premiumRoomGateTitle">
       <div class="premium-room-gate-card">
         <span aria-hidden="true">✦</span>
-        <h2 id="premiumRoomGateTitle">Le salon XXX est réservé aux membres Premium</h2>
+        <h2 id="premiumRoomGateTitle">Ce salon est réservé aux membres Premium</h2>
         <p>Abonnez-vous à Premium ou Premium+ pour accéder à ce salon. L'accès est réservé aux personnes majeures.</p>
         <div><button id="closePremiumRoomGate" type="button">Plus tard</button><button id="openPremiumRoomGate" type="button">Voir les formules</button></div>
       </div>
@@ -819,7 +820,7 @@
       <div class="adult-room-card">
         <div class="adult-room-icon">18+</div>
         <h2 id="adultRoomTitle">Salon réservé aux adultes</h2>
-        <p>Le salon XXX peut contenir des discussions sensibles. Les contenus illégaux, non consentis ou impliquant des mineurs sont strictement interdits.</p>
+        <p>Les salons de l’espace adulte peuvent contenir des discussions sensibles. Les contenus illégaux, non consentis ou impliquant des mineurs sont strictement interdits.</p>
         <div class="adult-room-actions"><button id="leaveAdultRoom" type="button">Annuler</button><button id="enterAdultRoom" type="button">J’ai 18 ans, entrer</button></div>
       </div>
     </section> <!-- Pied de page légal Letchat -->
@@ -851,10 +852,9 @@
     </dialog>
     <script src="/socket.io/socket.io.js"></script>
     <script src="/assets/v3-theme.1814c6a88724.js"></script>
-    <script type="module" src="/assets/app-v4-cafe-v2.6c904e5776e7.js"></script>
+    <script type="module" src="/assets/app-v4-cafe-v2.a9d9afed6bcd.js"></script>
     <script src="/assets/v4-interface.0155a0cc7ee9.js" defer></script>
 </body>
 </html>
-
 
 

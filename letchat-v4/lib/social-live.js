@@ -9,7 +9,7 @@ export function installLive({ io, pool, blocked, member, hasPremiumAccess, roomC
     if (scope.startsWith("group:")) { try { await member(scope.slice(6), s.user.id); return true; } catch { return false; } }
     const room = scope.slice(5);
     return scope.startsWith("room:") && Object.hasOwn(roomCatalog, room) && room !== "messages" && s.room === room
-      && (room !== "entraide" || await hasPremiumAccess(s.user.id));
+      && (roomCatalog[room].premium !== true || await hasPremiumAccess(s.user.id));
   }
   const participants = scope => [...(scopes.get(scope) || [])].map(id => io.sockets.sockets.get(id)).filter(Boolean);
   function leave(s, reason = "left") {
