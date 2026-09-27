@@ -35,6 +35,7 @@ export async function runSurpriseBrowserQA({ origin, users, request, check }) {
     await a.locator("[data-start]").click();
     await a.locator(".surprise-status").filter({ hasText: "Recherche en cours" }).waitFor();
     check(await a.locator(".surprise-bar").isVisible(), "waiting state remains visible outside the dialog");
+    check((await a.locator(".surprise-status").textContent()).includes("seule personne"), "waiting state explains that only one account is searching");
     await a.locator(".surprise-dialog [data-close]").click();
     await b.locator("#mobileNavRooms").click();
     await b.locator("#surpriseLink").click();
@@ -54,6 +55,19 @@ export async function runSurpriseBrowserQA({ origin, users, request, check }) {
     }
     await a.screenshot({ path: output + "/desktop-matched.png" });
     await b.screenshot({ path: output + "/mobile-dark-matched.png" });
+    for (let round=0; round<3; round++) {
+      await a.locator(".surprise-bar [data-leave]").click();
+      await a.locator(".surprise-bar").waitFor({state:"hidden"});
+      await b.locator(".surprise-bar").waitFor({state:"hidden"});
+      await a.locator("#surpriseLink").click();
+      await a.locator("[data-start]").click();
+      await b.locator("#mobileNavRooms").click();
+      await b.locator("#surpriseLink").click();
+      await b.locator("[data-start]").click();
+      await a.locator(".surprise-bar [data-status]").filter({hasText:users[1].user.name}).waitFor();
+      await b.locator(".surprise-bar [data-status]").filter({hasText:users[0].user.name}).waitFor();
+      check(true,`same two browser accounts can start a new encounter immediately, round ${round+1}`);
+    }
     await b.locator(".surprise-bar [data-report]").click();
     await b.locator("#reportModal").waitFor({ state: "visible" });
     check((await b.locator("#reportTarget").textContent()).includes(users[0].user.name), "report form targets the matched member");

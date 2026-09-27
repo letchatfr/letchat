@@ -1,6 +1,8 @@
 # Letchat — Rencontre Surprise
 
-Mise à jour préparée le 27 septembre 2026 à partir de `letchat-main-SEO.zip`.
+Version corrigée (révision 2), préparée le 27 septembre 2026 à partir de `letchat-main-SEO.zip`.
+
+Cette version corrige une attente reproductible après une première rencontre : le délai global de 15 minutes a été supprimé. Une nouvelle recherche volontaire après « Quitter » peut réunir immédiatement les mêmes deux comptes. La file réessaie automatiquement toutes les 5 secondes ; le client resynchronise son état en cas de notification manquée. Le nombre de membres réellement en recherche est affiché.
 Cette archive contient uniquement les fichiers ajoutés ou modifiés pour cette fonction.
 
 ## Installation sur le dépôt existant
@@ -27,11 +29,11 @@ Aucune nouvelle dépendance, clé, variable Render ou migration manuelle n’est
 - Il faut deux comptes différents pour tester. Deux onglets du même compte ne peuvent pas être mis en relation.
 - Si personne n’attend, la recherche reste en attente, sans faux membre. Elle s’arrête après environ 10 minutes. Une déconnexion nécessite de relancer volontairement la recherche.
 - Les blocages, la majorité, les règles acceptées et les réglages de messages privés sont vérifiés côté serveur. Les messages privés doivent être autorisés pour « Tout le monde ».
-- Deux personnes mises en relation ne sont pas remises ensemble pendant les 15 minutes suivant la fin de leur rencontre.
+- « Passer » exclut les partenaires précédents de la recherche en cours. Pour recommencer volontairement une recherche avec eux, quitter puis relancer. Les blocages permanents restent toujours respectés.
 
 ## Vérifications réalisées
 
-47 contrôles d’intégration et de navigation : volontariat, appariements simultanés, exclusion des comptes déjà occupés, onglets multiples, passage au suivant, blocage, messages privés, règles, confidentialité, reconnexion, annulation, signalement et rendu ordinateur / téléphone sombre.
+55 contrôles d’intégration et de navigation, dont trois nouvelles rencontres successives avec les mêmes deux sessions de navigateur : volontariat, appariements simultanés, exclusion des comptes déjà occupés, onglets multiples, passage au suivant, blocage, messages privés, règles, confidentialité, reconnexion, annulation, signalement et rendu ordinateur / téléphone sombre.
 
 26 tests existants réussis ; contrôle syntaxique de 26 fichiers JavaScript ; génération de 21 ressources publiques versionnées. Les essais ont utilisé un serveur et une base de données locaux isolés, avec deux sessions de navigateur distinctes. Aucun compte de test ni message n’a été créé sur le site public.
 

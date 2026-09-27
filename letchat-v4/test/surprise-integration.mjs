@@ -45,6 +45,12 @@ try {
   check(paired.status==='matched'&&paired.partner.id===a.user.id,'second volunteer is paired with first');
   check((await status(sa)).partner.id===b.user.id,'pair is reciprocal');
   check(!JSON.stringify(paired).includes('token')&&!JSON.stringify(paired).includes('email'),'matching only exposes public identity');
+  const firstId=paired.matchId;
+  await act(sa,'next',{matchId:firstId}); await act(sb,'join');
+  check((await status(sa)).status==='waiting'&&(await status(sa)).skipped===true,'passing still excludes the previous person for the ongoing search');
+  check((await status(sb)).status==='waiting','a passed person is not immediately paired back');
+  await act(sa,'leave'); await act(sa,'join');
+  check((await status(sa)).status==='matched','explicit restart clears only the temporary passed-person exclusion');
   const message=await request('/api/private',a.token,'POST',{recipientId:b.user.id,body:'Bonjour depuis Rencontre Surprise'});
   check(message.status===201,'matched people can use the existing private chat');
   check((await request(`/api/private/${a.user.id}`,b.token)).data.some(m=>m.body==='Bonjour depuis Rencontre Surprise'),'private message reaches the matched recipient');
@@ -56,11 +62,11 @@ try {
   await Promise.all(ss.map(s=>act(s,'leave')));
   check((await status(sa)).status==='idle','leave removes participation');
   await act(sa,'join');await act(sb,'join');
-  check((await status(sa)).status==='waiting'&&(await status(sb)).status==='waiting','recent partners cannot immediately rematch');
+  check((await status(sa)).status==='matched'&&(await status(sb)).status==='matched','two accounts can restart an explicit search immediately after leaving');
   const secondA=await connect(a);
   check(!(await act(secondA,'join')).ok,'second tab cannot duplicate the same participant');
   secondA.disconnect();
-  check((await status(sa)).status==='waiting','closing an unrelated tab preserves the search');
+  check((await status(sa)).status==='matched','closing an unrelated tab preserves the active match');
   await act(sc,'join');
   states=await Promise.all(ss.map(status));
   let i=states.findIndex(x=>x.status==='matched'), j=users.findIndex(u=>u.user.id===states[i].partner.id);
@@ -71,8 +77,10 @@ try {
   await Promise.all(ss.map(s=>act(s,'leave')));
   await act(sl,'join');await act(sr,'join');
   check((await status(sl)).status==='waiting'&&(await status(sr)).status==='waiting','blocked users are excluded from matching');
-  await Promise.all(ss.map(s=>act(s,'leave')));
   await request(`/api/blocks/${right.user.id}`,left.token,'DELETE');
+  await wait(6000);
+  check((await status(sl)).status==='matched'&&(await status(sr)).status==='matched','queued users are matched automatically after a block is removed, without another click');
+  await Promise.all(ss.map(s=>act(s,'leave')));
   await pool.query("UPDATE profiles SET private_message_policy='nobody' WHERE user_id=$1",[c.user.id]);
   check(!(await act(sc,'join')).ok,'disabled private messages prevent participation');
   await pool.query("UPDATE profiles SET private_message_policy='everyone' WHERE user_id=$1",[c.user.id]);
