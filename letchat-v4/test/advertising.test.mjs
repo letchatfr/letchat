@@ -113,6 +113,62 @@ test("Premium member can explicitly reopen consent without receiving an ad", asy
   assert.equal(s.w.adsbygoogle.pauseAdRequests, 1);
 });
 
+test("missing Google message times out, releases the button and keeps ads paused", async t => {
+  const s = setup(t); await s.controller.start(); s.ready();
+  const timers = [];
+  s.w.setTimeout = (callback, delay) => { timers.push({ callback, delay }); return timers.length; };
+  const button = s.w.document.getElementById("manageConsent");
+  button.click(); button.click();
+  assert.equal(s.revocations, 1, "double clicks cannot queue multiple Google messages");
+  assert.equal(button.disabled, true);
+  const timeout = timers.find(timer => timer.delay === 8000);
+  assert.ok(timeout); timeout.callback();
+  assert.equal(button.disabled, false);
+  assert.match(s.w.document.getElementById("consentStatus").textContent, /ne s’est pas ouvert/);
+  s.emit({ ...accepted, eventStatus: "tcloaded" });
+  assert.equal(s.ads.length, 0, "stale stored consent cannot resume ads after timeout");
+  assert.equal(s.w.adsbygoogle.pauseAdRequests, 1);
+  button.click(); assert.equal(s.revocations, 2, "retry is available");
+});
+
+test("Google dialog event clears loading and valid refusal keeps ads blocked", async t => {
+  const s = setup(t); await s.controller.start(); s.ready();
+  const button = s.w.document.getElementById("manageConsent");
+  button.click();
+  s.emit({ ...accepted, eventStatus: "cmpuishown" });
+  assert.equal(button.disabled, false);
+  assert.equal(button.hasAttribute("aria-busy"), false);
+  assert.match(s.w.document.getElementById("consentStatus").textContent, /Choisissez/);
+  s.emit({ ...accepted, purpose: { consents: { 1: false } } });
+  assert.equal(s.ads.length, 0);
+  assert.equal(s.w.adsbygoogle.pauseAdRequests, 1);
+});
+
+test("a late Google API ignores expired attempts when the user retries", async t => {
+  const s = setup(t); await s.controller.start();
+  const timers = [];
+  s.w.setTimeout = (callback, delay) => { timers.push({ callback, delay }); return timers.length; };
+  const button = s.w.document.getElementById("manageConsent");
+  button.click();
+  timers.find(timer => timer.delay === 8000).callback();
+  button.click();
+  s.ready();
+  assert.equal(s.revocations, 1, "only the current attempt can open a dialog");
+  assert.equal(s.ads.length, 0);
+});
+
+test("revocation exceptions and unavailable API do not leave the button busy", async t => {
+  for (const handler of [undefined, () => { throw new Error("unavailable"); }]) {
+    const s = setup(t); await s.controller.start(); s.ready();
+    s.w.googlefc.showRevocationMessage = handler;
+    const button = s.w.document.getElementById("manageConsent"); button.click();
+    assert.equal(button.disabled, false);
+    assert.match(s.w.document.getElementById("consentStatus").textContent, /ne s’est pas ouvert/);
+    assert.equal(s.ads.length, 0);
+    assert.equal(s.w.adsbygoogle.pauseAdRequests, 1);
+  }
+});
+
 test("unfilled ads and blocked Google collapse the advertising panel", async t => {
   const s = setup(t); await s.controller.start(); s.ready(); s.emit();
   s.ads[0].dataset.adStatus = "unfilled";
