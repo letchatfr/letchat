@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-const files = ["server.js", "public/app-v4-cafe-v2.js", "public/room-catalog.js", "public/v4-interface.js", "public/v3-theme.js", "public/service-worker.js", "public/adsense-public.js", "public/discovery-page.js", "public/social.js", "public/social-live.js", "public/social-voice.js"];
+const files = ["server.js", "public/app-v4-cafe-v2.js", "public/room-catalog.js", "public/v4-interface.js", "public/v3-theme.js", "public/service-worker.js", "public/adsense-public.js", "public/discovery-page.js", "public/social.js", "public/social-live.js", "public/social-voice.js", "public/social-album.js"];
 for (const dir of ["lib", "scripts"]) for (const name of await readdir(dir)) if (/\.(js|mjs)$/.test(name)) files.push(`${dir}/${name}`);
 for (const file of files) execFileSync(process.execPath, ["--check", file], { stdio: "inherit" });
 console.log(`${files.length} JavaScript files checked.`);

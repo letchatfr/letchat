@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { validateMedia, serveMedia } from "./media.js";
 import { installLive } from "./social-live.js";
+import { installAlbums } from "./albums.js";
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status, expose: true }); };
 const clean = (s, max) => String(s || "").trim().slice(0, max);
@@ -254,6 +255,7 @@ export async function installSocial({ app, pool, io, auth, requireAdult, require
     });
     res.json({ ok: true });
   }));
+  await installAlbums({ app, pool, base, write, wrap, blocked, transaction, rateLimitAction });
   const live = installLive({ io, pool, blocked, member, hasPremiumAccess, roomCatalog, socketSessionValid });
   return {
     live,
@@ -268,7 +270,8 @@ export async function installSocial({ app, pool, io, auth, requireAdult, require
       const groups = (await pool.query("SELECT g.id,g.name,m.status FROM letchat_groups g JOIN letchat_group_members m ON m.group_id=g.id WHERE m.user_id=$1", [id])).rows;
       const messages = (await pool.query("SELECT id,group_id,body,media_type,created_at FROM letchat_group_messages WHERE sender_id=$1", [id])).rows;
       const games = (await pool.query("SELECT * FROM letchat_games WHERE creator_id=$1 OR opponent_id=$1", [id])).rows;
-      return { profile, groups, messages, games };
+      const album = (await pool.query("SELECT id,media_type,created_at FROM letchat_album_photos WHERE user_id=$1 ORDER BY created_at,id", [id])).rows;
+      return { profile, groups, messages, games, album };
     }
   };
 }

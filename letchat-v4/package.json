@@ -11,7 +11,8 @@
     "test": "node --test test/*.test.mjs",
     "test:integration": "node test/integration.mjs",
     "test:social": "node test/social-integration.mjs",
-    "test:premium": "node test/social-integration.mjs --premium-room"
+    "test:premium": "node test/social-integration.mjs --premium-room",
+    "test:albums": "node test/social-integration.mjs --albums"
   },
   "engines": {
     "node": ">=20.9.0"

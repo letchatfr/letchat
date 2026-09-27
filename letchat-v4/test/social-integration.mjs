@@ -100,8 +100,10 @@ try {
   for(const s of ss)s.emit('live-leave');
   if(process.env.LETCHAT_BROWSER_QA==='1') { const {runBrowserQA}=await import('./social-browser.mjs');await runBrowserQA({origin,users,request,pool,check}); }
   if(process.argv.includes('--premium-room')) { const {runPremiumRoomQA}=await import('./premium-room.mjs');await runPremiumRoomQA({origin,users,request,pool,check,sockets:ss,connect}); }
+  if(process.argv.includes('--albums')) { const {runAlbumQA}=await import('./albums.mjs');await runAlbumQA({origin,users,request,pool,check}); }
   await request('/api/account',a.token,'DELETE',{confirmation:'SUPPRIMER'});
   check(!(await pool.query('SELECT 1 FROM letchat_profile_extras WHERE user_id=$1',[a.user.id])).rowCount,"account deletion removes rich media");
+  if(process.argv.includes('--albums')) check(!(await pool.query('SELECT 1 FROM letchat_album_photos WHERE user_id=$1',[a.user.id])).rowCount,"account deletion removes album photos and thumbnails");
   check(!(await pool.query('SELECT 1 FROM letchat_groups WHERE id=$1',[gid])).rowCount,"owner deletion removes group and child data");
   check(!logs.includes('Erreur serveur'),"no unhandled server errors");
   console.log(`\n${count} social integration checks passed.`);
