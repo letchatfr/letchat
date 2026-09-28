@@ -40,300 +40,116 @@
   <link rel="stylesheet" href="social.css">
   <link rel="stylesheet" href="surprise.css">
   <link rel="stylesheet" href="city-autocomplete.css">
+  <link rel="stylesheet" href="welcome.css">
 </head>
 
 <body>
-    <section id="login" class="login">
-      <div class="login-card">
-        <div class="logo">◒</div>
-        <h1>Bienvenue sur Letchat</h1>
-        <p>Discutez, partagez et appelez vos proches en toute simplicité.</p>
-        <button id="googleLogin"><span>G</span> Continuer avec Google</button>
-        <button id="googleRedirect" type="button" class="hidden">Ouvrir Google dans cet onglet</button>
-        <div class="login-separator"><span>ou</span></div>
-        <div class="login-tabs"><button type="button" data-auth-tab="login" class="active">Pseudonyme</button><button type="button" data-auth-tab="register">Créer un compte</button><button type="button" data-auth-tab="guest">Invité</button></div>
-        <form id="localLoginForm" class="local-auth-form">
-          <input id="localLoginName" required minlength="3" maxlength="40" placeholder="Pseudonyme" autocomplete="username">
-          <input id="localLoginPassword" required minlength="8" maxlength="200" type="password" placeholder="Mot de passe" autocomplete="current-password">
-          <button type="submit">Se connecter</button><button id="forgotPassword" type="button" class="secondary-action">Mot de passe oublié ?</button>
-        </form>
-        <form id="localRegisterForm" class="local-auth-form hidden">
-          <input id="localRegisterName" required minlength="3" maxlength="40" placeholder="Choisir un pseudonyme" autocomplete="username">
-          <input id="localRegisterPassword" required minlength="8" maxlength="200" type="password" placeholder="Mot de passe (8 caractères minimum)" autocomplete="new-password">
-          <input id="localRegisterAge" required min="18" max="120" type="number" placeholder="Âge">
-          <select id="localRegisterGender" required><option value="">Sexe / couleur du profil</option><option value="female">Femme — rose</option><option value="male">Homme — bleu</option><option value="neutral">Neutre</option></select>
-          <input id="localRegisterCity" data-city-autocomplete required minlength="2" maxlength="100" placeholder="Ville (2 lettres ou code postal)" aria-label="Ville">
-          <button type="submit">Créer mon compte</button>
-        </form>
-        <form id="guestLoginForm" class="local-auth-form hidden">
-          <input id="guestName" required minlength="3" maxlength="40" placeholder="Pseudonyme temporaire">
-          <input id="guestAge" required min="18" max="120" type="number" placeholder="Âge">
-          <select id="guestGender" required><option value="">Sexe / couleur du profil</option><option value="female">Femme — rose</option><option value="male">Homme — bleu</option><option value="neutral">Neutre</option></select>
-          <input id="guestCity" data-city-autocomplete required minlength="2" maxlength="100" placeholder="Ville (2 lettres ou code postal)" aria-label="Ville">
-          <button type="submit">Entrer comme invité</button>
-          <small>Le compte invité expire après 24 heures et ne peut pas être récupéré.</small>
-        </form>
-        <div id="loginError" class="login-error hidden"></div>
-        <small
-          >En continuant, vous acceptez les
-          <a href="cgu.html" target="_blank">conditions d’utilisation</a> et les
-          <a href="regles.html" target="_blank">règles de la communauté</a
-          >.</small
-        >
-       <nav class="legal-links" aria-label="Informations légales">
-  <a href="/decouvrir.html">Découvrir Letchat</a>
-  <a href="confidentialite.html" target="_blank">Confidentialité</a>
-  <a href="mentions-legales.html" target="_blank">Mentions légales</a>
-  <a href="cgu.html" target="_blank">CGU</a>
-  <a href="regles.html" target="_blank">Règles</a>
-  <a href="contact.html" target="_blank">Contact et droits</a>
-</nav>
-      </div>
-    </section><!-- =====================================================
-     PRÉSENTATION PUBLIQUE DE LETCHAT
-     Visible avant connexion
-====================================================== -->
-
-<section class="public-home" aria-labelledby="publicHomeTitle">
-
-  <div class="public-home-inner">
-
-    <div class="public-intro">
-
-      <span class="public-badge">Letchat.fr</span>
-
-      <h2 id="publicHomeTitle">
-        Discutez, rencontrez et partagez simplement
-      </h2>
-
-      <p>
-        Letchat est un espace de discussion en ligne conçu pour
-        permettre à chacun d'échanger simplement avec d'autres
-        utilisateurs, de découvrir de nouvelles personnes et de
-        participer à différents espaces de discussion.
-      </p>
-
-    </div>
-
-
-    <div class="public-features">
-
-      <article class="public-feature">
-        <div class="public-feature-icon">💬</div>
-
-        <h3>Discussion en direct</h3>
-
-        <p>
-          Rejoignez les espaces Letchat et échangez en temps réel
-          avec les utilisateurs connectés.
-        </p>
-      </article>
-
-
-      <article class="public-feature">
-        <div class="public-feature-icon">👥</div>
-
-        <h3>Rencontres</h3>
-
-        <p>
-          Découvrez de nouvelles personnes et commencez facilement
-          une conversation privée.
-        </p>
-      </article>
-
-
-      <article class="public-feature">
-        <div class="public-feature-icon">📹</div>
-
-        <h3>Webcam et appels</h3>
-
-        <p>
-          Lorsque vous le souhaitez, utilisez les fonctions
-          d'appel et de webcam pour communiquer autrement.
-        </p>
-      </article>
-
-
-      <article class="public-feature">
-        <div class="public-feature-icon">📷</div>
-
-        <h3>Photos et vidéos</h3>
-
-        <p>
-          Partagez et découvrez des contenus dans les espaces
-          prévus à cet effet, dans le respect des règles
-          de la communauté.
-        </p>
-      </article>
-
-    </div>
-
-
-    <div class="public-section">
-
-      <div class="public-section-text">
-
-        <span class="public-eyebrow">
-          Plusieurs espaces, plusieurs ambiances
-        </span>
-
-        <h2>Choisissez votre espace</h2>
-
-        <p>
-          Letchat propose plusieurs espaces afin que chacun puisse
-          rejoindre les conversations qui lui correspondent.
-        </p>
-
-        <div class="public-room-list">
-
-          <div class="public-room">
-            <strong>☀ Le Café</strong>
-            <span>
-              L'espace général pour discuter librement et faire connaissance.
-            </span>
+    <section id="login" class="login welcome-login" aria-label="Bienvenue sur Letchat">
+      <div class="welcome-wrap">
+        <header class="welcome-header">
+          <a class="welcome-brand" href="/" aria-label="Letchat, accueil"><span aria-hidden="true">◒</span> Letchat<span class="welcome-brand-dot">.</span></a>
+          <span class="welcome-adults">18 ans et plus</span>
+        </header>
+        <div class="welcome-grid">
+          <div class="welcome-intro">
+            <span class="welcome-eyebrow">LE TCHAT FRANCOPHONE</span>
+            <h1>Une rencontre commence par un <em>bonjour.</em></h1>
+            <p>Un salon, un sujet, une nouvelle personne. Entrez et commencez la conversation.</p>
+            <div class="welcome-entry-actions">
+              <button type="button" class="welcome-primary" data-auth-entry="guest">Découvrir en invité <span aria-hidden="true">↗</span></button>
+              <button type="button" class="welcome-secondary" data-auth-entry="register">Créer un compte</button>
+            </div>
+            <p class="welcome-entry-note">Accès invité sans mot de passe · Compte temporaire de 24 h</p>
+            <ul class="welcome-highlights" aria-label="À découvrir sur Letchat">
+              <li><span aria-hidden="true">☀</span><div><strong>Des salons pour échanger</strong><span>Le Café, Actualités, Débats… À chacun son sujet.</span></div></li>
+              <li><span aria-hidden="true">◌</span><div><strong>Des conversations à deux</strong><span>Retrouvez les membres en ligne et écrivez-leur en privé.</span></div></li>
+              <li><span aria-hidden="true">✦</span><div><strong>Une rencontre au hasard</strong><span>Rencontre Surprise vous met en relation avec un autre volontaire.</span></div></li>
+            </ul>
+            <a class="welcome-how-link" href="#premiers-pas">Comment commencer ? <span aria-hidden="true">↓</span></a>
           </div>
-
-          <div class="public-room">
-            <strong>✦ Rencontres</strong>
-            <span>
-              Un espace pour découvrir de nouvelles personnes et échanger.
-            </span>
+          <div id="welcomeAccess" class="login-card welcome-card">
+            <h2 id="authTitle">Content de vous retrouver</h2>
+            <p id="authDescription">Connectez-vous avec votre pseudonyme et votre mot de passe.</p>
+            <div class="login-tabs" role="tablist" aria-label="Choisir un accès">
+              <button id="authTabLogin" type="button" role="tab" data-auth-tab="login" class="active" aria-selected="true" aria-controls="localLoginForm">Connexion</button>
+              <button id="authTabRegister" type="button" role="tab" data-auth-tab="register" aria-selected="false" aria-controls="localRegisterForm" tabindex="-1">Inscription</button>
+              <button id="authTabGuest" type="button" role="tab" data-auth-tab="guest" aria-selected="false" aria-controls="guestLoginForm" tabindex="-1">Invité</button>
+            </div>
+            <form method="post" id="localLoginForm" class="local-auth-form" role="tabpanel" aria-labelledby="authTabLogin">
+              <label for="localLoginName">Pseudonyme</label>
+              <input id="localLoginName" name="username" required minlength="3" maxlength="40" placeholder="Votre pseudonyme" autocomplete="username" autocapitalize="none" spellcheck="false">
+              <label for="localLoginPassword">Mot de passe</label>
+              <div class="welcome-password">
+                <input id="localLoginPassword" name="password" required minlength="8" maxlength="200" type="password" placeholder="Votre mot de passe" autocomplete="current-password">
+                <button type="button" data-password-toggle="localLoginPassword" aria-controls="localLoginPassword" aria-label="Afficher le mot de passe" aria-pressed="false">Afficher</button>
+              </div>
+              <button type="submit">Se connecter</button>
+              <button id="forgotPassword" type="button" class="secondary-action">Mot de passe oublié ?</button>
+            </form>
+            <form method="post" id="localRegisterForm" class="local-auth-form hidden" role="tabpanel" aria-labelledby="authTabRegister">
+              <label for="localRegisterName">Votre pseudonyme</label>
+              <input id="localRegisterName" name="username" required minlength="3" maxlength="40" placeholder="Au moins 3 caractères" autocomplete="username" autocapitalize="none" spellcheck="false">
+              <label for="localRegisterPassword">Votre mot de passe</label>
+              <div class="welcome-password">
+                <input id="localRegisterPassword" name="password" required minlength="8" maxlength="200" type="password" placeholder="Au moins 8 caractères" autocomplete="new-password" aria-describedby="welcomeRecoveryHint">
+                <button type="button" data-password-toggle="localRegisterPassword" aria-controls="localRegisterPassword" aria-label="Afficher le mot de passe" aria-pressed="false">Afficher</button>
+              </div>
+              <p id="welcomeRecoveryHint" class="welcome-field-hint">À l’inscription, enregistrez votre code de récupération : il vous servira en cas d’oubli.</p>
+              <div class="welcome-form-row">
+                <div><label for="localRegisterAge">Âge</label><input id="localRegisterAge" name="age" required min="18" max="120" type="number" inputmode="numeric" placeholder="18+"></div>
+                <div><label for="localRegisterGender">Sexe du profil</label><select id="localRegisterGender" name="gender" required><option value="">Choisir</option><option value="female">Femme — rose</option><option value="male">Homme — bleu</option><option value="neutral">Neutre</option></select></div>
+              </div>
+              <label for="localRegisterCity">Ville</label>
+              <input id="localRegisterCity" name="city" data-city-autocomplete required minlength="2" maxlength="100" placeholder="2 lettres ou code postal" aria-describedby="welcomeRegisterCityHint">
+              <p id="welcomeRegisterCityHint" class="welcome-field-hint">Choisissez une suggestion ou saisissez votre ville.</p>
+              <button type="submit">Créer mon compte</button>
+            </form>
+            <form method="post" id="guestLoginForm" class="local-auth-form hidden" role="tabpanel" aria-labelledby="authTabGuest">
+              <label for="guestName">Pseudonyme temporaire</label>
+              <input id="guestName" name="username" required minlength="3" maxlength="40" placeholder="Au moins 3 caractères" autocomplete="off" autocapitalize="none" spellcheck="false">
+              <div class="welcome-form-row">
+                <div><label for="guestAge">Âge</label><input id="guestAge" name="age" required min="18" max="120" type="number" inputmode="numeric" placeholder="18+"></div>
+                <div><label for="guestGender">Sexe du profil</label><select id="guestGender" name="gender" required><option value="">Choisir</option><option value="female">Femme — rose</option><option value="male">Homme — bleu</option><option value="neutral">Neutre</option></select></div>
+              </div>
+              <label for="guestCity">Ville</label>
+              <input id="guestCity" name="city" data-city-autocomplete required minlength="2" maxlength="100" placeholder="2 lettres ou code postal" aria-describedby="welcomeGuestHint">
+              <p id="welcomeGuestHint" class="welcome-field-hint">Votre compte invité expire après 24 heures et ne peut pas être récupéré. Pour revenir avec le même profil, créez un compte.</p>
+              <button type="submit">Entrer dans le tchat</button>
+            </form>
+            <div id="loginError" class="login-error hidden" role="alert" tabindex="-1"></div>
+            <div class="login-separator"><span>ou</span></div>
+            <button id="googleLogin" type="button"><span aria-hidden="true">G</span> Continuer avec Google</button>
+            <button id="googleRedirect" type="button" class="hidden">Ouvrir Google dans cet onglet</button>
+            <p class="welcome-terms">Réservé aux personnes majeures. En continuant, vous acceptez les <a href="cgu.html" target="_blank" rel="noopener">conditions d’utilisation</a> et les <a href="regles.html" target="_blank" rel="noopener">règles de la communauté</a>.</p>
+            <noscript><p>Activez JavaScript dans votre navigateur pour vous connecter au tchat.</p></noscript>
           </div>
-
-          <div class="public-room">
-            <strong>♡ Webcam</strong>
-            <span>
-              Retrouvez les fonctionnalités vidéo et les appels entre utilisateurs.
-            </span>
-          </div>
-
-          <div class="public-room">
-            <strong>◇ Photos / Vidéos</strong>
-            <span>
-              Un espace dédié au partage de contenus entre membres.
-            </span>
-          </div>
-
         </div>
-
       </div>
-
-    </div>
-
-
-    <div class="public-safety">
-
-      <div class="public-safety-content">
-
-        <span class="public-eyebrow">Votre sécurité compte</span>
-
-        <h2>Un espace fondé sur le respect</h2>
-
-        <p>
-          Letchat souhaite proposer un environnement agréable
-          dans lequel les utilisateurs peuvent communiquer
-          tout en respectant les autres membres.
-        </p>
-
-        <div class="public-safety-grid">
-
-          <div>
-            <strong>🛡️ Signalement</strong>
-            <p>
-              Les comportements ou contenus problématiques
-              peuvent être signalés.
-            </p>
-          </div>
-
-          <div>
-            <strong>🚫 Blocage</strong>
-            <p>
-              Les utilisateurs disposent de moyens pour limiter
-              les interactions indésirables.
-            </p>
-          </div>
-
-          <div>
-            <strong>📜 Règles</strong>
-            <p>
-              Des règles communautaires encadrent l'utilisation
-              des espaces Letchat.
-            </p>
-          </div>
-
+    </section>
+    <section class="public-home welcome-public" aria-labelledby="welcomeStepsTitle">
+      <div class="welcome-content">
+        <div id="premiers-pas" class="welcome-section-heading">
+          <span class="welcome-eyebrow">VOS PREMIERS PAS</span>
+          <h2 id="welcomeStepsTitle">Entrez. Dites bonjour. Faites connaissance.</h2>
+          <p>Vous choisissez votre rythme, vos sujets et vos conversations.</p>
         </div>
-
+        <ol class="welcome-steps">
+          <li><span class="welcome-step-number">01</span><h3>Choisissez votre accès</h3><p>Invité pour découvrir, compte pour retrouver votre profil, ou connexion avec Google.</p><button type="button" data-auth-entry="guest">Découvrir le tchat <span aria-hidden="true">↗</span></button></li>
+          <li><span class="welcome-step-number">02</span><h3>Passez au Café</h3><p>Après avoir accepté les règles, vous pouvez écrire votre premier message dans ce salon général.</p><span class="welcome-step-example">Un simple « Bonjour tout le monde ! » suffit.</span></li>
+          <li><span class="welcome-step-number">03</span><h3>Poursuivez en privé</h3><p>Ouvrez « Membres en ligne », choisissez une personne et commencez une conversation privée.</p><span class="welcome-step-example">Sur téléphone, les salons sont dans le menu ☰.</span></li>
+        </ol>
+        <div class="welcome-faq">
+          <div><span class="welcome-eyebrow">BON À SAVOIR</span><h2>Avant de vous lancer</h2><a href="/decouvrir.html">En savoir plus sur Letchat ↗</a></div>
+          <div class="welcome-questions">
+            <details><summary>Quelle différence entre invité et compte ?</summary><p>Un invité entre sans mot de passe avec un profil temporaire de 24 heures. Un compte avec pseudonyme et mot de passe vous permet de retrouver votre profil à vos prochaines visites. Conservez le code de récupération remis à l’inscription.</p></details>
+            <details><summary>Faut-il un abonnement pour discuter ?</summary><p>Vous pouvez commencer à discuter dans les salons publics et en messages privés sans abonnement. Certaines fonctions et certains salons sont réservés aux membres Premium.</p></details>
+            <details><summary>Comment garder la maîtrise de mes échanges ?</summary><p>Vous pouvez bloquer un membre et signaler un contenu ou un comportement depuis le tchat. Consultez les <a href="/regles.html">règles de la communauté</a> avant votre première discussion.</p></details>
+          </div>
+        </div>
+        <div class="welcome-bottom-action"><p>Votre prochaine conversation commence ici.</p><button type="button" id="backToLogin" data-auth-entry="login">Rejoindre Letchat <span aria-hidden="true">↑</span></button></div>
+        <footer class="welcome-footer"><span><strong>Letchat.</strong> © 2026 · 18 ans et plus</span><nav aria-label="Informations légales"><a href="/decouvrir.html">Découvrir</a><a href="/confidentialite.html">Confidentialité</a><a href="/mentions-legales.html">Mentions légales</a><a href="/cgu.html">CGU</a><a href="/regles.html">Règles</a><a href="/contact.html">Contact</a></nav></footer>
       </div>
-
-    </div>
-
-
-    <div class="public-access">
-
-      <span class="public-eyebrow">
-        Rejoindre Letchat
-      </span>
-
-      <h2>Commencez à discuter</h2>
-
-      <p>
-        Connectez-vous avec votre compte, créez un profil ou
-        utilisez l'accès invité lorsque celui-ci est disponible.
-      </p>
-
-      <button
-        type="button"
-        class="public-access-button"
-        id="backToLogin"
-      >
-        Accéder à Letchat ↑
-      </button>
-
-    </div>
-
-
-    <footer class="public-footer">
-
-      <div class="public-footer-brand">
-        <strong>Letchat.fr</strong>
-        <span>Discutez simplement.</span>
-      </div>
-
-      <nav aria-label="Informations légales">
-
-        <a href="/decouvrir.html">Découvrir Letchat</a>
-
-        <a href="/confidentialite.html">
-          Confidentialité
-        </a>
-
-        <a href="/mentions-legales.html">
-          Mentions légales
-        </a>
-
-        <a href="/cgu.html">
-          CGU
-        </a>
-
-        <a href="/regles.html">
-          Règles
-        </a>
-
-        <a href="/contact.html">
-          Contact
-        </a>
-
-      </nav>
-
-      <p class="public-copyright">
-        © 2026 Letchat.fr
-      </p>
-
-    </footer>
-
-  </div>
-
-</section>
+    </section>
     <main id="app" class="app hidden">
       <aside class="side">
         <button id="closeSide" class="close-side" type="button" aria-label="Fermer les salons">×</button>
@@ -363,6 +179,7 @@
             <div class="v2-room-row" data-room-row="rencontres-premium"><a href="#salon-rencontres-premium" class="room adult-room-link" data-room="rencontres-premium" title="Rencontres entre membres Premium majeurs"><span class="v2-room-icon" aria-hidden="true">✦</span><span class="v2-room-name">Rencontres privées · Premium</span></a></div>
           </details>
         </div>
+        <button id="welcomeGuideButton" class="welcome-help-link" type="button" aria-haspopup="dialog" aria-controls="welcomeGuide"><span aria-hidden="true">?</span> Bien démarrer</button>
         <div class="account">
           <button id="mePhotoLink" class="member-link member-avatar-link" type="button" aria-label="Ouvrir mon profil"><img id="mePhoto" alt="Mon avatar" /></button>
           <div><button id="meName" class="member-link" type="button" title="Ouvrir mon profil"></button><small>En ligne</small></div>
@@ -855,6 +672,19 @@
       <button id="downloadRecoveryCode" type="button">Télécharger mon code</button>
       <button id="closeRecoveryCode" type="button">J’ai enregistré mon code</button>
     </dialog>
+    <dialog id="welcomeGuide" class="welcome-guide" aria-labelledby="welcomeGuideTitle">
+      <form method="dialog"><button class="welcome-guide-close" aria-label="Fermer le guide">×</button></form>
+      <span class="welcome-eyebrow">BIENVENUE SUR LETCHAT</span>
+      <h2 id="welcomeGuideTitle">Par où commencer ?</h2>
+      <p>Choisissez une première étape. Vous retrouverez ce guide dans le menu « Bien démarrer ».</p>
+      <div class="welcome-guide-actions">
+        <button type="button" data-welcome-action="cafe"><span aria-hidden="true">☀</span><span><strong>Dire bonjour au Café</strong><small>Ouvrir le salon général et écrire un message.</small></span><span aria-hidden="true">→</span></button>
+        <button type="button" data-welcome-action="members"><span aria-hidden="true">◌</span><span><strong>Découvrir les membres en ligne</strong><small>Choisir une personne pour discuter en privé.</small></span><span aria-hidden="true">→</span></button>
+        <button type="button" data-welcome-action="profile"><span aria-hidden="true">◎</span><span><strong>Personnaliser mon profil</strong><small>Ajouter une photo et quelques mots sur moi.</small></span><span aria-hidden="true">→</span></button>
+      </div>
+      <p class="welcome-guide-note">Les salons se trouvent dans le menu ☰ sur téléphone. Gardez vos échanges respectueux : le blocage et le signalement sont accessibles dans le tchat.</p>
+    </dialog>
+    <script src="welcome.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="v3-theme.js?v=interface-finitions-v31"></script>
     <script type="module" src="city-autocomplete.js"></script>

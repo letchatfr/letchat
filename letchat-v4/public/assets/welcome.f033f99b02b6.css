@@ -1,0 +1,145 @@
+/* Accueil et guide : tous les styles sont limités à ces composants. */
+#login.welcome-login:not(.hidden) {
+  min-height: 0 !important;
+  display: block;
+  padding: 0 28px 54px;
+  background: radial-gradient(ellipse at 10% 32%, #ed806012, transparent 54%), var(--v3-bg);
+}
+.welcome-wrap, .welcome-content { width: min(1120px, 100%); margin: 0 auto; }
+.welcome-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 26px 0 32px; }
+.welcome-brand { display: inline-flex; align-items: center; gap: 9px; color: var(--v3-text); font-size: 27px; font-weight: 800; letter-spacing: -1px; text-decoration: none; }
+.welcome-brand > span:first-child { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 12px; background: #c44934; color: white; font-size: 25px; }
+.welcome-brand-dot { margin-left: -9px; color: #bc4833; }
+.welcome-adults { padding: 7px 11px; border: 1px solid var(--v3-border); border-radius: 30px; color: var(--v3-text-soft); font-size: 12px; font-weight: 600; }
+.welcome-grid { display: grid; grid-template-columns: minmax(0, 1.13fr) minmax(0, 1fr); align-items: center; gap: 72px; }
+.welcome-eyebrow { color: #a54130; font-size: 10px; font-weight: 800; letter-spacing: .14em; }
+.welcome-intro h1 { max-width: 570px; margin: 18px 0 18px; font-size: clamp(38px, 4.6vw, 57px); line-height: 1.08; letter-spacing: -2px; font-weight: 800; text-wrap: balance; }
+.welcome-intro h1 em { color: #b84430; font-style: normal; }
+#login .welcome-intro > p { max-width: 410px; color: var(--v3-text-soft); font-size: 16px; line-height: 1.7; }
+.welcome-entry-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 25px; }
+#login .welcome-entry-actions button { width: auto; height: auto; min-height: 46px; margin: 0; padding: 12px 18px; border-radius: 12px; font-size: 13px; }
+#login .welcome-entry-actions .welcome-primary { background: #b84430; border-color: #b84430; color: white; }
+#login .welcome-entry-actions .welcome-secondary { background: var(--v3-surface); border-color: var(--v3-border); color: var(--v3-text); }
+#login .welcome-entry-actions button span { color: inherit; font-size: 15px; margin: 0 0 0 8px; }
+#login .welcome-intro .welcome-entry-note { margin: 10px 0 0; font-size: 11px; line-height: 1.5; }
+.welcome-highlights { display: grid; gap: 20px; list-style: none; padding: 0; margin: 35px 0 25px; }
+.welcome-highlights li { display: flex; align-items: center; gap: 14px; }
+.welcome-highlights li > span { display: grid; flex: 0 0 40px; place-items: center; height: 40px; border: 1px solid var(--v3-border); border-radius: 13px; font-size: 19px; background: var(--v3-surface); color: #a54130; }
+.welcome-highlights strong { display: block; font-size: 13px; margin-bottom: 5px; }
+.welcome-highlights div > span { display: block; color: var(--v3-text-soft); font-size: 12px; line-height: 1.5; }
+.welcome-how-link { color: var(--v3-text); text-underline-offset: 4px; font-size: 12px; font-weight: 600; }
+.welcome-how-link span { margin-left: 8px; }
+#login .welcome-card { width: 100%; max-height: none; overflow: visible; padding: 29px; text-align: left; background: var(--v3-surface); border: 1px solid var(--v3-border); border-radius: 22px; box-shadow: 0 18px 65px #2331450a; scroll-margin-top: 16px; backdrop-filter: none; }
+.welcome-card h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: -.6px; line-height: 1.2; }
+#login .welcome-card #authDescription { margin: 0 0 20px; min-height: 38px; color: var(--v3-text-soft); font-size: 12px; line-height: 1.6; }
+#login .welcome-card .login-tabs { margin: 0 0 21px; padding: 4px; gap: 2px; border-radius: 11px; }
+#login .welcome-card .login-tabs button { height: auto !important; min-height: 40px; padding: 9px 6px !important; border: 0; border-radius: 8px; color: var(--v3-text-soft); background: transparent; font-size: 12px; }
+#login .welcome-card .login-tabs button.active { color: var(--v3-text); background: var(--v3-surface); box-shadow: 0 2px 5px #0000000d; }
+#login .welcome-card .local-auth-form { gap: 8px; }
+.welcome-card label { display: block; font-size: 12px; font-weight: 650; color: var(--v3-text); margin-top: 5px; }
+#login .welcome-card input, #login .welcome-card select { min-width: 0; min-height: 46px; height: 46px; border: 1px solid var(--v3-border); border-radius: 10px; background: var(--v3-surface-soft); color: var(--v3-text); font-size: 14px; }
+#login .welcome-card input::placeholder { color: var(--v3-text-soft); opacity: 1; }
+.welcome-password { display: flex; align-items: center; position: relative; min-width: 0; }
+#login .welcome-password input { padding-right: 84px; }
+#login .welcome-password button { position: absolute; right: 5px; width: 75px; height: 38px; min-height: 0; margin: 0 !important; padding: 0 5px; border-radius: 7px; background: transparent !important; color: var(--v3-accent) !important; font-size: 11px; }
+#login .welcome-card .local-auth-form > button[type="submit"] { min-height: 46px; height: auto; margin: 11px 0 0 !important; padding: 13px; border-radius: 11px; background: #b84430 !important; color: #fff !important; font-size: 13px; }
+#login .welcome-card #forgotPassword { height: auto; min-height: 35px; margin: 0 !important; background: transparent !important; color: var(--v3-accent) !important; font-size: 11px; }
+.welcome-form-row { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.4fr); gap: 12px; }
+.welcome-form-row > div { min-width: 0; }
+.welcome-form-row label { margin-bottom: 8px; }
+#login .welcome-card .welcome-field-hint { margin: 0; color: var(--v3-text-soft); font-size: 11px; line-height: 1.6; }
+.welcome-card .login-separator { margin: 16px 0 12px; font-size: 11px; color: var(--v3-text-soft); }
+.welcome-card .login-separator::before, .welcome-card .login-separator::after { background: var(--v3-border); }
+#login .welcome-card #googleLogin, #login .welcome-card #googleRedirect { display: flex; align-items: center; justify-content: center; min-height: 46px; height: auto; margin: 0 0 8px; padding: 11px; background: var(--v3-surface); border: 1px solid var(--v3-border); color: var(--v3-text); border-radius: 11px; font-size: 13px; }
+#login .welcome-card .welcome-terms { margin: 16px 0 0; font-size: 10px; line-height: 1.65; color: var(--v3-text-soft); text-align: center; }
+.welcome-terms a { color: var(--v3-accent); text-underline-offset: 2px; }
+.welcome-card .login-error { margin: 12px 0 0; border: 1px solid #db9a8f; font-size: 12px; overflow-wrap: anywhere; }
+body:has(#login:not(.hidden)) .welcome-public { background: var(--v3-surface); border-top: 1px solid var(--v3-border); padding: 50px 28px 0; }
+.welcome-section-heading { scroll-margin-top: 24px; }
+.welcome-section-heading h2, .welcome-faq h2 { margin: 11px 0; color: var(--v3-text); font-size: 27px; line-height: 1.2; letter-spacing: -.7px; text-wrap: balance; }
+.welcome-section-heading > p { margin: 0; color: var(--v3-text-soft); font-size: 14px; line-height: 1.6; }
+.welcome-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; list-style: none; padding: 0; margin: 28px 0 45px; }
+.welcome-steps li { padding: 23px; border: 1px solid var(--v3-border); border-radius: 16px; background: var(--v3-surface-soft); }
+.welcome-step-number { display: block; color: #a54130; font-size: 12px; font-weight: 800; letter-spacing: .04em; margin-bottom: 20px; }
+.welcome-steps h3 { margin: 0 0 10px; color: var(--v3-text); font-size: 16px; }
+.welcome-steps p { margin: 0 0 18px; color: var(--v3-text-soft); font-size: 13px; line-height: 1.7; }
+.welcome-steps button { padding: 0; min-height: 32px; border: 0; background: transparent; color: var(--v3-accent); font-size: 12px; font-weight: 700; cursor: pointer; text-align: left; }
+.welcome-step-example { color: var(--v3-text-soft); font-size: 11px; line-height: 1.6; display: block; }
+.welcome-faq { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr); gap: 50px; padding: 35px 0 30px; border-top: 1px solid var(--v3-border); }
+.welcome-faq h2 { font-size: 24px; }
+.welcome-faq a { color: var(--v3-accent); font-size: 12px; text-underline-offset: 3px; }
+.welcome-questions details { border-bottom: 1px solid var(--v3-border); }
+.welcome-questions summary { padding: 18px 6px; color: var(--v3-text); font-weight: 600; font-size: 13px; line-height: 1.5; cursor: pointer; }
+.welcome-questions p { margin: 0 6px 18px; color: var(--v3-text-soft); font-size: 13px; line-height: 1.75; }
+.welcome-bottom-action { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 18px 0 36px; padding: 20px 24px; background: var(--v3-surface-soft); border: 1px solid var(--v3-border); border-radius: 14px; }
+.welcome-bottom-action p { color: var(--v3-text); font-size: 14px; font-weight: 600; line-height: 1.5; margin: 0; }
+.welcome-bottom-action button { background: #b84430; color: white; border: 0; border-radius: 10px; padding: 13px 18px; min-height: 44px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.welcome-bottom-action button span { margin-left: 9px; }
+.welcome-footer { display: flex; justify-content: space-between; gap: 25px; padding: 24px 0; border-top: 1px solid var(--v3-border); color: var(--v3-text-soft); font-size: 11px; line-height: 1.8; }
+.welcome-footer strong { color: var(--v3-text); font-size: 15px; margin-right: 7px; }
+.welcome-footer nav { display: flex; flex-wrap: wrap; gap: 10px 18px; }
+.welcome-footer a { color: var(--v3-text-soft); text-decoration: none; }
+.welcome-footer a:hover { text-decoration: underline; }
+.side .welcome-help-link { display: flex; align-items: center; gap: 9px; min-height: 40px; flex-shrink: 0; margin: 10px 0; padding: 8px 10px; border: 0; border-radius: 10px; color: var(--v3-text-soft); background: transparent; font-size: 12px; text-align: left; cursor: pointer; }
+.welcome-help-link > span { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid currentColor; border-radius: 50%; font-size: 11px; }
+.welcome-help-link:hover { background: var(--v3-surface-strong); }
+.welcome-guide { width: min(510px, calc(100vw - 28px)); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 29px; border: 1px solid var(--v3-border); border-radius: 22px; color: var(--v3-text); background: var(--v3-surface); box-shadow: var(--v3-shadow); }
+.welcome-guide::backdrop { background: #10182899; }
+.welcome-guide > form { display: flex; justify-content: flex-end; margin: -10px -10px 2px 0; }
+.welcome-guide-close { width: 36px; height: 36px; border: 0; border-radius: 10px; color: var(--v3-text); background: var(--v3-surface-strong); font-size: 24px; cursor: pointer; }
+.welcome-guide h2 { font-size: 25px; margin: 12px 0; letter-spacing: -.6px; }
+.welcome-guide p { color: var(--v3-text-soft); font-size: 13px; line-height: 1.7; }
+.welcome-guide-actions { display: grid; gap: 10px; margin: 22px 0; }
+.welcome-guide-actions button { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 16px; border: 1px solid var(--v3-border); border-radius: 13px; color: var(--v3-text); background: var(--v3-surface-soft); text-align: left; cursor: pointer; }
+.welcome-guide-actions button > span:first-child { font-size: 23px; color: var(--v3-accent); }
+.welcome-guide-actions button > span:nth-child(2) { flex: 1; }
+.welcome-guide-actions strong { display: block; font-size: 13px; line-height: 1.5; }
+.welcome-guide-actions small { display: block; margin-top: 5px; color: var(--v3-text-soft); font-size: 11px; line-height: 1.6; }
+.welcome-guide .welcome-guide-note { font-size: 11px; margin-bottom: 0; }
+html[data-theme="dark"] .welcome-eyebrow, html[data-theme="dark"] .welcome-step-number, html[data-theme="dark"] .welcome-highlights li > span, html[data-theme="dark"] .welcome-intro h1 em, html[data-theme="dark"] .welcome-brand-dot { color: #ffac99; }
+html[data-theme="dark"] .welcome-card .login-error { background: #422721; border-color: #985c4e; color: #ffd1c5; }
+@media (max-width: 960px) {
+  .welcome-grid { gap: 35px; }
+  .welcome-intro h1 { font-size: 42px; }
+  #login .welcome-card { padding: 23px; }
+  .welcome-entry-actions { flex-direction: column; align-items: stretch; }
+}
+@media (max-width: 760px) {
+  #login.welcome-login:not(.hidden) { padding: 0 18px 30px; }
+  .welcome-wrap { max-width: 510px; }
+  .welcome-header { padding: 20px 0 27px; }
+  .welcome-brand { font-size: 23px; }
+  .welcome-brand > span:first-child { width: 31px; height: 31px; font-size: 22px; border-radius: 10px; }
+  .welcome-adults { font-size: 10px; }
+  .welcome-grid { grid-template-columns: minmax(0, 1fr); gap: 25px; }
+  .welcome-eyebrow { font-size: 9px; }
+  .welcome-intro h1 { max-width: 420px; font-size: 35px; line-height: 1.1; letter-spacing: -1.1px; margin: 12px 0 12px; }
+  #login .welcome-intro > p { font-size: 13px; line-height: 1.65; margin: 0; max-width: 410px; }
+  .welcome-entry-actions { flex-direction: row; flex-wrap: nowrap; gap: 8px; margin-top: 18px; }
+  #login .welcome-entry-actions button { flex: 1; font-size: 11px; padding: 10px 8px; }
+  #login .welcome-entry-actions button span { margin-left: 2px; }
+  #login .welcome-intro .welcome-entry-note { font-size: 10px; }
+  .welcome-highlights { display: none; }
+  .welcome-how-link { display: inline-block; padding: 10px 0 0; font-size: 11px; }
+  #login .welcome-card { padding: 23px 19px; border-radius: 19px; }
+  #login .welcome-card input, #login .welcome-card select { font-size: 16px; }
+  .welcome-card h2 { font-size: 21px; }
+  body:has(#login:not(.hidden)) .welcome-public { padding: 30px 18px 0; }
+  .welcome-section-heading h2 { font-size: 25px; }
+  .welcome-section-heading > p { font-size: 12px; }
+  .welcome-steps { grid-template-columns: minmax(0, 1fr); margin: 23px 0 28px; gap: 12px; }
+  .welcome-steps li { padding: 20px; }
+  .welcome-step-number { margin-bottom: 12px; }
+  .welcome-steps p { margin-bottom: 10px; }
+  .welcome-faq { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 26px 0 20px; }
+  .welcome-bottom-action { flex-direction: column; align-items: stretch; padding: 20px; gap: 14px; }
+  .welcome-bottom-action p { text-align: center; }
+  .welcome-footer { flex-direction: column; gap: 13px; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  .welcome-guide { padding: 23px 20px; }
+}
+@media (max-width: 360px) {
+  #login.welcome-login:not(.hidden) { padding-left: 12px; padding-right: 12px; }
+  #login .welcome-card { padding: 22px 15px; }
+  .welcome-intro h1 { font-size: 31px; }
+  .welcome-form-row { gap: 8px; }
+}
