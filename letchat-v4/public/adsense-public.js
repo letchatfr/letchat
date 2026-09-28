@@ -1,5 +1,7 @@
 const CLIENT = "ca-pub-3317597986908171";
 const SLOT = "1411415827";
+const CMP_URL = `https://fundingchoicesmessages.google.com/i/${CLIENT.replace(/^ca-/, "")}?ers=1`;
+const OPEN_TIMEOUT = 20000;
 
 // We request only non-personalized ads. Google also validates the full TCF
 // string; refusal of storage or Google as a vendor never produces a request.
@@ -18,11 +20,12 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
   const button = d.getElementById("manageConsent");
   let eligible = false, consent = false, loaded = false, requested = false;
   let editing = false, revision = 0, stopped = false, observer, timer, timedOut = false;
-  let opening = false, openingTimer, openingAttempt = 0, consentApi;
+  let opening = false, openingTimer, openingPoll, openingAttempt = 0, consentApi, listenerId;
+  let cmpLoaded = false, cmpReady = false, uiShown = false;
   const allowedPage = w.location.pathname === "/decouvrir.html";
   const queue = () => (w.adsbygoogle = w.adsbygoogle || []);
   const message = text => { if (status) status.textContent = text; };
-  const unavailable = "Le formulaire Google ne s’est pas ouvert. Les publicités restent bloquées. Vous pouvez réessayer ou consulter notre politique de confidentialité.";
+  const unavailable = "Le formulaire Google n’est pas disponible pour le moment. Aucune publicité n’est affichée. Réessayez dans quelques instants ou consultez notre politique de confidentialité.";
   const debug = (event, details = {}) => {
     if (new URLSearchParams(w.location.search).get("fc") === "alwaysshow")
       w.console.info("[Letchat consentement]", event, details);
@@ -31,20 +34,36 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
   function finishOpening(text) {
     opening = false;
     w.clearTimeout(openingTimer);
+    w.clearInterval(openingPoll);
     if (button) { button.disabled = false; button.removeAttribute("aria-busy"); }
     if (text) message(text);
   }
 
   function listenForConsent() {
     if (stopped || typeof w.__tcfapi !== "function" || consentApi === w.__tcfapi) return;
+    removeConsentListener();
     consentApi = w.__tcfapi;
-    try { consentApi("addEventListener", 2, onConsent); }
+    const api = consentApi;
+    try { api("addEventListener", 2, (data, success) => {
+      // Revocation can replace the TCF API. Ignore events from its old instance.
+      if (stopped || api !== w.__tcfapi) return;
+      if (data?.listenerId != null) listenerId = data.listenerId;
+      onConsent(data, success);
+    }); }
     catch {
       consentApi = undefined;
       pause();
       finishOpening(unavailable);
       debug("TCF_API_ERROR");
     }
+  }
+
+  function removeConsentListener() {
+    if (consentApi && listenerId != null) {
+      try { consentApi("removeEventListener", 2, () => {}, listenerId); } catch {}
+    }
+    consentApi = undefined;
+    listenerId = undefined;
   }
 
   function pause() {
@@ -57,6 +76,7 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
 
   function requestAd() {
     if (!eligible || !consent || requested || stopped || !allowedPage || !container) return;
+    loadAdSense();
     requested = true; // One ad request per document, with no automatic refresh.
     const label = d.createElement("p");
     label.className = "advertising-label";
@@ -101,6 +121,7 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
       return;
     }
     if (data?.eventStatus === "cmpuishown") {
+      uiShown = true;
       pause();
       finishOpening("Choisissez vos préférences dans le message de confidentialité Google.");
       return;
@@ -108,7 +129,7 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
     // Opening settings revokes the permission to request/display an ad until
     // an explicit new user choice, even if an old tcloaded callback arrives.
     if (editing && data?.eventStatus !== "useractioncomplete") { pause(); return; }
-    if (data?.eventStatus === "useractioncomplete") { editing = false; finishOpening(); }
+    if (data?.eventStatus === "useractioncomplete") { uiShown = false; editing = false; finishOpening(); }
     const allowed = consentAllowsAds(data, success);
     if (!allowed) {
       pause();
@@ -120,20 +141,50 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
     requestAd();
   }
 
-  function loadGoogle() {
-    if (loaded || stopped || !allowedPage || !nonce) return;
-    loaded = true;
+  function loadConsent() {
+    if (stopped || !allowedPage || !nonce) return;
     queue().pauseAdRequests = 1;
     w.googlefc = w.googlefc || {};
     w.googlefc.callbackQueue = w.googlefc.callbackQueue || [];
+    if (cmpLoaded) return;
+    cmpLoaded = true;
+    // Load consent independently: a paused/unavailable AdSense tag must not
+    // be the only route to the preferences form. Register callbacks first.
     w.googlefc.callbackQueue.push({ CONSENT_API_READY: () => {
       if (stopped) return;
-      if (typeof w.__tcfapi !== "function") {
-        message("Le service de consentement est indisponible. Aucune annonce n’est demandée.");
-        return;
-      }
+      cmpReady = true;
       listenForConsent();
     } });
+    const script = d.createElement("script");
+    script.id = "letchatConsent";
+    script.async = true;
+    script.nonce = nonce;
+    script.referrerPolicy = "strict-origin-when-cross-origin";
+    script.src = CMP_URL;
+    script.onerror = () => {
+      if (stopped || cmpReady) return;
+      cmpLoaded = false;
+      script.remove();
+      pause();
+      finishOpening("Le service de confidentialité Google ne peut pas être chargé. Vérifiez votre connexion, puis réessayez. Aucune publicité n’est affichée.");
+      debug("CONSENT_SCRIPT_ERROR");
+    };
+    // Standard Funding Choices marker prevents another Google tag from
+    // bootstrapping a second copy once advertising is allowed.
+    if (!w.frames.googlefcPresent) {
+      const frame = d.createElement("iframe");
+      frame.name = "googlefcPresent";
+      frame.title = "Service de confidentialité";
+      frame.hidden = true;
+      frame.setAttribute("aria-hidden", "true");
+      d.body.append(frame);
+    }
+    d.head.append(script);
+  }
+
+  function loadAdSense() {
+    if (loaded || stopped || !eligible || !consent || !allowedPage || !nonce) return;
+    loaded = true;
     const script = d.createElement("script");
     script.id = "letchatAdSense";
     script.async = true;
@@ -145,7 +196,7 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
       pause();
       loaded = false;
       script.remove();
-      finishOpening("Le service de confidentialité est indisponible ou bloqué. Aucune annonce n’est affichée. Vous pouvez réessayer.");
+      message("Publicité indisponible. Vos choix de confidentialité restent accessibles.");
       debug("GOOGLE_SCRIPT_ERROR");
     };
     d.head.append(script);
@@ -155,6 +206,10 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
     if (!allowedPage || stopped || opening) return;
     editing = true;
     pause();
+    if (uiShown) {
+      message("Choisissez vos préférences dans le message de confidentialité Google.");
+      return;
+    }
     opening = true;
     const attempt = ++openingAttempt;
     if (button) { button.disabled = true; button.setAttribute("aria-busy", "true"); }
@@ -163,9 +218,12 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
       if (!opening || stopped || attempt !== openingAttempt) return;
       pause();
       finishOpening(unavailable);
-      debug("GOOGLE_MESSAGE_TIMEOUT");
-    }, 8000);
-    loadGoogle(); // Also permits a Premium member to revoke a previous choice.
+      debug("GOOGLE_MESSAGE_TIMEOUT", { cmpReady });
+    }, OPEN_TIMEOUT);
+    // showRevocationMessage reloads Google. Reattach if __tcfapi changes
+    // during that reload, including on slower mobile connections.
+    openingPoll = w.setInterval(listenForConsent, 250);
+    loadConsent(); // Also permits a Premium member to revoke a previous choice.
     w.googlefc?.callbackQueue.push({ CONSENT_API_READY: () => {
       if (stopped || !opening || attempt !== openingAttempt) return;
       if (typeof w.googlefc.showRevocationMessage !== "function") {
@@ -175,8 +233,10 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
       }
       try {
         listenForConsent();
+        if (!opening || stopped || attempt !== openingAttempt) return;
         debug("OPEN_GOOGLE_MESSAGE");
         w.googlefc.showRevocationMessage();
+        listenForConsent();
       } catch {
         pause();
         finishOpening(unavailable);
@@ -208,7 +268,7 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
     if (current !== revision || stopped) return;
     eligible = result;
     if (eligible) {
-      loadGoogle();
+      loadConsent();
       if (consent) {
         if (!requested) requestAd();
         else {
@@ -231,6 +291,7 @@ export function createPublicAdvertising({ window: w, checkEligibility, nonce }) 
     eligible = false;
     pause();
     finishOpening();
+    removeConsentListener();
     button?.removeEventListener("click", manageConsent);
   }
 
