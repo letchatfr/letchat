@@ -15,6 +15,7 @@ import { SignJWT } from "jose";
 import { createCheckout } from "../lib/checkout.js";
 import { purgeExpiredGuests } from "../lib/accounts.js";
 import { CITY_DATA_URL } from "../public/city-autocomplete.js";
+import { runGuestJourney } from "./guest-journey.mjs";
 
 
 const freePort = async () => { const s = net.createServer(); await new Promise(r => s.listen(0,"127.0.0.1",r)); const p=s.address().port; await new Promise(r=>s.close(r)); return p; };
@@ -98,6 +99,7 @@ try {
   const guest=(await request("/api/auth/guest",null,"POST",{username:"Temporary audit",age:30,gender:"neutral",city:"Testville"})).json;
   check((await request("/api/stripe/checkout",guest.token,"POST",{plan:"premium"})).status===403,"guest cannot open a payment");
   const sa=await openSocket(a.token), sb=await openSocket(b.token), sc=await openSocket(c.token);
+  await runGuestJourney({ request, openSocket, guest, member:a, memberSocket:sa, check });
   const signalsA=[],signalsB=[];sa.on("webrtc",d=>signalsA.push(d));sb.on("webrtc",d=>signalsB.push(d));
   const callId=randomUUID();
   sa.emit("webrtc",{target:sb.id,data:{type:"invite",callId}});await wait(180);

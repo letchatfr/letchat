@@ -31,6 +31,7 @@ async function setup(t) {
     disconnect() { this.connected = false; events.get("disconnect")?.(); } };
   w.io = () => socket;
   let profile = { user_id: "self", display_name: "Test Letchat", photo: "", city: "Test", gender: "neutral" };
+  const serverResponses = new Map();
   w.fetch = async (url, options = {}) => {
     let data = [];
     if (url === "/api/age-status") data = { accepted: false };
@@ -40,7 +41,7 @@ async function setup(t) {
       if (options.method === "PUT") profile = { ...profile, display_name: JSON.parse(options.body).displayName };
       data = profile;
     }
-    return { ok: true, json: async () => data };
+    return { ok: true, json: async () => serverResponses.has(url) ? serverResponses.get(url) : data };
   };
   let code = await readFile("public/app-v4-cafe-v2.js", "utf8");
   code = code.replace(/^import\s+[\s\S]*?from\s+["'][^"']+["'];\s*/gm, "");
@@ -65,6 +66,7 @@ async function setup(t) {
     w, document: w.document, fixture: w.fixture,
     emit: (name, data) => events.get(name)(data),
     disconnect: () => socket.disconnect(),
+    respond: (url, data) => serverResponses.set(url, data),
   };
 }
 
@@ -72,6 +74,32 @@ const member = (id, extra = {}) => ({ id, name: `Membre ${id}`, photo: "", gende
 const conversation = id => ({ user_id: id, display_name: `Membre ${id}`, last_body: "Bonjour", last_message_at: "2026-09-28T10:00:00Z" });
 const card = (doc, id) => doc.querySelector(`[data-home-private="${id}"]`);
 const avatarSvg = img => decodeURIComponent(img.src.slice(img.src.indexOf(",") + 1));
+
+test("reconnection catches up missed private messages and notifications without losing a draft", async t => {
+  const s = await setup(t);
+  s.document.querySelector("#input").value = "Mon brouillon avant la coupure";
+  s.disconnect();
+  s.respond("/api/private-conversations", [{ ...conversation("other"), unread_count: 2, last_body: "Message reçu pendant la coupure" }]);
+  s.respond("/api/notifications", [{ id: "n1", type: "private_message", actor_id: "other", actor_name: "Membre other", body: "Message reçu pendant la coupure", created_at: "2026-09-28T12:00:00Z" }]);
+  s.emit("connect");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(s.document.querySelector("#conversationTotal").textContent, "2");
+  assert.equal(s.document.querySelector("#notificationsBadge").textContent, "1");
+  assert.match(s.document.querySelector("#conversationList").textContent, /Message reçu pendant la coupure/);
+  assert.match(s.document.querySelector("#notificationsList").textContent, /Message reçu pendant la coupure/);
+  assert.equal(s.document.querySelector("#input").value, "Mon brouillon avant la coupure");
+});
+
+test("reconnection refreshes an already open private-message home", async t => {
+  const s = await setup(t);
+  s.fixture.home();
+  s.disconnect();
+  s.respond("/api/private-conversations", [{ ...conversation("new"), unread_count: 1, last_body: "Première discussion" }]);
+  s.emit("connect");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(s.document.querySelector("#messages").textContent, /Première discussion/);
+  assert.equal(s.document.querySelector('[data-home-private="new"] b').textContent, "1");
+});
 
 test("choosing a suggested city filters the real online directory and still allows pseudonym searches", async t => {
   const s = await setup(t);
