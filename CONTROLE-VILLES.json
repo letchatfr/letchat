@@ -1,0 +1,34 @@
+{
+  "base": "letchat-main(9).zip",
+  "date": "2026-09-28",
+  "files": {
+    "letchat-v4/templates/index.html": "ea3c661d0021c2fe8561c2d921255dc174f4a5100d4f38cf22f982b87856ff7f",
+    "letchat-v4/public/app-v4-cafe-v2.js": "0821207df1603c634ba8450ba6a0afb818791bb5c5151dbb83b34edd1e66228c",
+    "letchat-v4/public/premium-benefits.js": "2025742d7f1f073d2b7471bb43ca0d092bf7bf33b10f10c7f96d003d6c9c4786",
+    "letchat-v4/public/city-autocomplete.js": "70b3ef284931ce9e9b496ec60affc31163180602dfb8e866539d49cc8a8f839e",
+    "letchat-v4/public/city-search.js": "2f699b0bbb74458056655af1a2cd3b8b76b8dd106e0970a1f0840a57f0331e0e",
+    "letchat-v4/public/city-autocomplete.css": "98fa969cb0e1060abcf7eb2b7e350097e19a7a338d1d7b9a44d4dfad5fd7f96f",
+    "letchat-v4/public/cities-fr.f51b6d69480c.json": "f51b6d69480cbb3009a9282d5ca630d35c0842bb5436104156003ac6b14fa64e",
+    "letchat-v4/public/cities-source.txt": "1886ace60f15de4d89eb45ea61e4d5aa064b56888f8b19129dc4aae955293556",
+    "letchat-v4/public/index.html": "cce625d447a3883c2d9f3f9f432ad6039f611360682cc451ada9bb6cac41812c",
+    "letchat-v4/public/service-worker.js": "431b59665eee54e3d60e991f6e3e8cebfd547f964f3aa237b776b934654d5d89",
+    "letchat-v4/scripts/check.mjs": "8c4b427765d521e6989156fcade23a3df6904c84b0c1b56bf61d1de10332f12a",
+    "letchat-v4/test/cities.test.mjs": "b49d26bc13a73ffa02ef2642351fd4dc2e93adf2b5b62788fd13ccccd4d1fc1c",
+    "letchat-v4/test/avatar-presence.test.mjs": "ebb75851faffb00a6d7b1ff2093045318d1ba7512d1530af42fcf405e075cf2a",
+    "letchat-v4/test/integration.mjs": "2a3054fdf5885a6f1122f06ec2bb9e4b7dc5cb735491733c09404b0b7ccda408",
+    "letchat-v4/public/assets/app-v4-cafe-v2.a6aff80fa117.js": "a6aff80fa117fb454a74540e5ef34879d9a517f4cc16eb35de84349df6a4c383",
+    "letchat-v4/public/assets/city-autocomplete.98fa969cb0e1.css": "98fa969cb0e1060abcf7eb2b7e350097e19a7a338d1d7b9a44d4dfad5fd7f96f",
+    "letchat-v4/public/assets/city-autocomplete.d623e16ad894.js": "d623e16ad89479c9d076e6c069ad85e46b4b0e40b6439005a86313fb1f91be1e",
+    "letchat-v4/public/assets/city-search.2f699b0bbb74.js": "2f699b0bbb74458056655af1a2cd3b8b76b8dd106e0970a1f0840a57f0331e0e",
+    "letchat-v4/public/assets/premium-benefits.2025742d7f1f.js": "2025742d7f1f073d2b7471bb43ca0d092bf7bf33b10f10c7f96d003d6c9c4786"
+  },
+  "validation": {
+    "built_assets": 24,
+    "syntax_files": 28,
+    "unit_tests_passed": 44,
+    "final_targeted_tests_passed": 18,
+    "integration_checks_passed": 49,
+    "visual_browser_verified": false,
+    "production_verified": false
+  }
+}

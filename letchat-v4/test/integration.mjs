@@ -14,6 +14,7 @@ import sharp from "sharp";
 import { SignJWT } from "jose";
 import { createCheckout } from "../lib/checkout.js";
 import { purgeExpiredGuests } from "../lib/accounts.js";
+import { CITY_DATA_URL } from "../public/city-autocomplete.js";
 
 
 const freePort = async () => { const s = net.createServer(); await new Promise(r => s.listen(0,"127.0.0.1",r)); const p=s.address().port; await new Promise(r=>s.close(r)); return p; };
@@ -64,6 +65,11 @@ try {
   check(root.data.includes('name="description"') && root.data.includes('rel="canonical"'),"SEO metadata present");
   const asset=root.data.match(/\/assets\/app-v4-cafe-v2\.[a-f0-9]+\.js/)[0];
   check((await request(asset)).headers.get("cache-control").includes("immutable"),"fingerprinted assets use immutable cache");
+  const cityScript=root.data.match(/\/assets\/city-autocomplete\.[a-f0-9]+\.js/)?.[0];
+  const cityScriptResponse=cityScript && await request(cityScript);
+  check(cityScriptResponse?.status===200 && cityScriptResponse.data.includes(CITY_DATA_URL),"delivered page serves the fingerprinted city module and its catalogue URL");
+  const cityCatalogue=await request(CITY_DATA_URL);
+  check(cityCatalogue.status===200 && cityCatalogue.headers.get("content-type").includes("application/json") && cityCatalogue.json.some(row=>row[0]==="Montpellier"),"city catalogue is available before sign-in as same-origin JSON");
   check((await request("/api/auth/me")).status===401,"sensitive API rejects anonymous requests");
   check((await request("/does-not-exist.html")).status===404,"unknown public page returns 404");
   const privacy=await request("/privacy.html");

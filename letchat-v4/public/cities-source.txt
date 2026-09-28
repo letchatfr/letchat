@@ -1,0 +1,26 @@
+Catalogue des communes utilisé par Letchat
+
+Source : API Découpage administratif, geo.api.gouv.fr / data.gouv.fr.
+Téléchargement : 28 septembre 2026.
+34 969 communes renvoyées par l’API à cette date, dont les communes des DROM.
+
+URL de téléchargement :
+https://geo.api.gouv.fr/communes?fields=nom,codeDepartement,codesPostaux,population&format=json
+
+Documentation :
+https://geo.api.gouv.fr/decoupage-administratif/communes
+
+Données sources et licence :
+https://www.data.gouv.fr/datasets/decoupage-administratif-1
+https://github.com/datagouv/decoupage-administratif
+Licence Ouverte / Open Licence 2.0 (Etalab).
+Sources d’origine : INSEE pour le découpage administratif et les populations,
+La Poste pour les codes postaux.
+
+Transformation : tri par population décroissante, conservation du nom,
+du département et des codes postaux. Format compact JSON :
+[nom, codeDepartement, codesPostaux séparés par des virgules].
+
+Le fichier cities-fr.f51b6d69480c.json est un instantané local.
+La recherche s’effectue dans le navigateur et n’envoie pas les caractères
+saisis à l’API. Le nom reste modifiable, notamment pour les villes étrangères.

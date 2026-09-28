@@ -39,6 +39,7 @@
   <meta name="twitter:description" content="Tchat francophone, messages privés et appels pour les adultes.">
   <link rel="stylesheet" href="/assets/social.929753caaeb3.css">
   <link rel="stylesheet" href="/assets/surprise.6083d28eb42f.css">
+  <link rel="stylesheet" href="/assets/city-autocomplete.98fa969cb0e1.css">
 </head>
 
 <body>
@@ -61,14 +62,14 @@
           <input id="localRegisterPassword" required minlength="8" maxlength="200" type="password" placeholder="Mot de passe (8 caractères minimum)" autocomplete="new-password">
           <input id="localRegisterAge" required min="18" max="120" type="number" placeholder="Âge">
           <select id="localRegisterGender" required><option value="">Sexe / couleur du profil</option><option value="female">Femme — rose</option><option value="male">Homme — bleu</option><option value="neutral">Neutre</option></select>
-          <input id="localRegisterCity" required minlength="2" maxlength="100" placeholder="Ville" autocomplete="address-level2">
+          <input id="localRegisterCity" data-city-autocomplete required minlength="2" maxlength="100" placeholder="Ville (2 lettres ou code postal)" aria-label="Ville">
           <button type="submit">Créer mon compte</button>
         </form>
         <form id="guestLoginForm" class="local-auth-form hidden">
           <input id="guestName" required minlength="3" maxlength="40" placeholder="Pseudonyme temporaire">
           <input id="guestAge" required min="18" max="120" type="number" placeholder="Âge">
           <select id="guestGender" required><option value="">Sexe / couleur du profil</option><option value="female">Femme — rose</option><option value="male">Homme — bleu</option><option value="neutral">Neutre</option></select>
-          <input id="guestCity" required minlength="2" maxlength="100" placeholder="Ville">
+          <input id="guestCity" data-city-autocomplete required minlength="2" maxlength="100" placeholder="Ville (2 lettres ou code postal)" aria-label="Ville">
           <button type="submit">Entrer comme invité</button>
           <small>Le compte invité expire après 24 heures et ne peut pas être récupéré.</small>
         </form>
@@ -503,7 +504,7 @@
         <span class="online-members-eyebrow">LA COMMUNAUTÉ EN DIRECT</span>
         <h2 id="onlineMembersTitle">Membres en ligne</h2>
         <p id="onlineMembersCount" role="status">En attente de la connexion en direct…</p>
-        <label class="online-members-search"><span class="v2-sr-only">Rechercher un membre en ligne</span><input id="onlineMembersSearch" type="search" placeholder="Rechercher un pseudonyme ou une ville…" autocomplete="off"></label>
+        <label class="online-members-search"><span class="v2-sr-only">Rechercher un membre en ligne</span><input id="onlineMembersSearch" data-city-autocomplete type="search" placeholder="Rechercher un pseudonyme ou une ville…" autocomplete="off"></label>
         <div id="onlineMembersGrid" class="online-members-grid"></div>
       </div>
     </section>
@@ -533,6 +534,7 @@
         ><label
           >Ville<input
             id="profileCity"
+            data-city-autocomplete
             maxlength="100"
             required
             placeholder="Ex. Montpellier" /></label
@@ -855,8 +857,8 @@
     </dialog>
     <script src="/socket.io/socket.io.js"></script>
     <script src="/assets/v3-theme.1814c6a88724.js"></script>
-    <script type="module" src="/assets/app-v4-cafe-v2.00e33be1e9d9.js"></script>
+    <script type="module" src="/assets/city-autocomplete.d623e16ad894.js"></script>
+    <script type="module" src="/assets/app-v4-cafe-v2.a6aff80fa117.js"></script>
     <script src="/assets/v4-interface.0155a0cc7ee9.js" defer></script>
 </body>
 </html>
-

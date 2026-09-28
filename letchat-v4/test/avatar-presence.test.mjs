@@ -35,6 +35,7 @@ async function setup(t) {
     let data = [];
     if (url === "/api/age-status") data = { accepted: false };
     if (url === "/api/public-config") data = { contactEmail: "test@example.invalid" };
+    if (/^\/cities-fr\.[a-f0-9]+\.json$/.test(url)) data = JSON.parse(await readFile(`public${url}`, "utf8"));
     if (url === "/api/profile") {
       if (options.method === "PUT") profile = { ...profile, display_name: JSON.parse(options.body).displayName };
       data = profile;
@@ -43,9 +44,12 @@ async function setup(t) {
   };
   let code = await readFile("public/app-v4-cafe-v2.js", "utf8");
   code = code.replace(/^import\s+[\s\S]*?from\s+["'][^"']+["'];\s*/gm, "");
+  const cityCode = (await Promise.all(["city-search.js", "city-autocomplete.js"].map(file => readFile(`public/${file}`, "utf8"))))
+    .map(source => source.replace(/^import .*;\s*$/gm, "").replace(/^export /gm, "")).join("\n");
+  w.eval(cityCode);
   w.eval(code + `\nwindow.fixture = {
     activate: data => activateLocalSession(data, "local-test-token", true),
-    openProfile, showPrivateMessagesHome, openContactPicker,
+    openProfile, showPrivateMessagesHome, openContactPicker, openOnlineMembers, renderMeetingProfiles,
     setData: data => {
       user = localUser({ id: "self", name: "Test Letchat", guest: true }, "local-test-token");
       privateConversations = data.conversations || [];
@@ -68,6 +72,39 @@ const member = (id, extra = {}) => ({ id, name: `Membre ${id}`, photo: "", gende
 const conversation = id => ({ user_id: id, display_name: `Membre ${id}`, last_body: "Bonjour", last_message_at: "2026-09-28T10:00:00Z" });
 const card = (doc, id) => doc.querySelector(`[data-home-private="${id}"]`);
 const avatarSvg = img => decodeURIComponent(img.src.slice(img.src.indexOf(",") + 1));
+
+test("choosing a suggested city filters the real online directory and still allows pseudonym searches", async t => {
+  const s = await setup(t);
+  s.emit("online-members", [member("mont", {name:"Camille", city:"Montpellier"}), member("paris", {name:"Alex", city:"Paris"}), member("hidden", {name:"Noa", city:""})]);
+  s.fixture.openOnlineMembers();
+  const input = s.document.querySelector("#onlineMembersSearch");
+  input.value = "Mont"; input.dispatchEvent(new s.w.Event("input", {bubbles:true}));
+  await new Promise(resolve=>setTimeout(resolve,160));
+  s.document.querySelector('.city-suggestions [role="option"]').click();
+  assert.equal(input.value,"Montpellier");
+  assert.equal(s.document.querySelectorAll(".online-member-card").length,1);
+  assert.match(s.document.querySelector("#onlineMembersGrid").textContent,/Camille/);
+  input.value="Alex";input.dispatchEvent(new s.w.Event("input",{bubbles:true}));
+  assert.match(s.document.querySelector("#onlineMembersGrid").textContent,/Alex/);
+  input.value="";input.dispatchEvent(new s.w.Event("input",{bubbles:true}));
+  assert.equal(s.document.querySelectorAll(".online-member-card").length,3);
+});
+
+test("profile discovery accepts a suggested city and restores all profiles when cleared", async t => {
+  const s = await setup(t);
+  s.emit("presence", [member("mont", {location:{city:"Montpellier"}}),member("paris", {location:{city:"Paris"}})]);
+  const panel=s.document.createElement("div");s.document.body.append(panel);
+  s.fixture.renderMeetingProfiles(panel);
+  await new Promise(resolve=>setTimeout(resolve,0));
+  const input=panel.querySelector("#meetingCity");input.focus();input.value="340";
+  input.dispatchEvent(new s.w.Event("input",{bubbles:true}));
+  await new Promise(resolve=>setTimeout(resolve,160));
+  s.document.querySelector('.city-suggestions [role="option"]').click();
+  assert.equal(panel.querySelectorAll(".meeting-profile").length,1);
+  assert.match(panel.querySelector("#meetingProfiles").textContent,/Montpellier/);
+  input.value="";input.dispatchEvent(new s.w.Event("input",{bubbles:true}));
+  assert.equal(panel.querySelectorAll(".meeting-profile").length,2);
+});
 
 test("guest without a photo gets a renderable avatar in the sidebar and profile", async t => {
   const s = await setup(t);
