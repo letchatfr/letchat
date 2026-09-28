@@ -1,0 +1,15 @@
+{
+  "date": "2026-09-28",
+  "correction": "Nom de l’expéditeur dans les notifications en direct",
+  "files": {
+    "letchat-v4/server.js": "3fb88e0cc43a236dfe43bcccf14afcb39eba7ab05aebefa42e29d1301b9e0bde",
+    "letchat-v4/test/integration.mjs": "cdfd85b9b4e2d56e65bf97c58aee57c989f9e01f60181fa92a3641e8cbe51a19"
+  },
+  "validation": {
+    "syntax_files": 26,
+    "unit_tests_passed": 34,
+    "integration_checks_passed": 47,
+    "database": "PGlite isolée",
+    "production_verified": false
+  }
+}

@@ -549,10 +549,15 @@ function adminAuth(req, res, next) {
 
 async function createNotification(userId, type, title, body = "", actorId = null, referenceId = null) {
   const { rows } = await pool.query(
-    `INSERT INTO letchat_notifications
-     (user_id, type, title, body, actor_id, reference_id)
-     VALUES ($1,$2,$3,$4,$5,$6)
-     RETURNING id, type, title, body, actor_id, reference_id, read_at, created_at`,
+    `WITH inserted AS (
+       INSERT INTO letchat_notifications
+       (user_id, type, title, body, actor_id, reference_id)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, type, title, body, actor_id, reference_id, read_at, created_at
+     )
+     SELECT n.*, COALESCE(p.display_name, '') AS actor_name, p.photo AS actor_photo
+     FROM inserted n
+     LEFT JOIN profiles p ON p.user_id = n.actor_id`,
     [userId, type, title, body, actorId, referenceId]
   );
   io.to(`user:${userId}`).emit("notification", rows[0]);

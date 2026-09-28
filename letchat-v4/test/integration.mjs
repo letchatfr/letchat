@@ -112,8 +112,15 @@ try {
   const media=await request(`/api/media/${photo.json.id}`,b.token);
   check(media.status===200&&media.headers.get("content-security-policy").includes("sandbox"),"media is authenticated and sandboxed");
   check((await request(`/api/media/${photo.json.id}?t=${encodeURIComponent(b.token)}`)).status===401,"session tokens in media URLs are rejected");
+  const incomingNotification=once(sb,"notification",{signal:AbortSignal.timeout(5000)});
   const pm=await request("/api/private",a.token,"POST",{recipientId:b.user.id,mediaBase64:png.toString("base64"),mediaType:"image/png",viewOnce:true});
   check(pm.status===201,"private view-once photo created");
+  const [liveNotification]=await incomingNotification;
+  check(liveNotification.type==="private_message" && liveNotification.actor_id===a.user.id && liveNotification.actor_name==="Audit A","live private-message notification includes the sender's display name");
+  const inbox=await request("/api/notifications",b.token);
+  check(inbox.status===200,"recipient can reload their notifications");
+  assert.deepEqual(liveNotification,inbox.json.find(item=>item.id===liveNotification.id));
+  check(true,"live and reloaded notifications expose the same public sender identity");
   check((await request(`/api/private-media/${pm.json.id}`,c.token)).status===404,"third account cannot fetch private media");
   const readings=await Promise.all([request(`/api/private-media/${pm.json.id}`,b.token),request(`/api/private-media/${pm.json.id}`,b.token)]);
   check(readings.filter(r=>r.status===200).length===1&&readings.filter(r=>r.status===410).length===1,"concurrent view-once reads consume the photo once");
