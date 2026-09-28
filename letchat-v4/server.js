@@ -914,9 +914,11 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
       pool.query(`SELECT id,sender_id,recipient_id,sender_name,body,media_type,view_once,opened_at,created_at,expires_at
                   FROM letchat_private_messages WHERE sender_id=$1 OR recipient_id=$1 ORDER BY created_at`, [uid]),
       pool.query("SELECT id,requester_id,addressee_id,status,created_at,updated_at FROM letchat_friends WHERE requester_id=$1 OR addressee_id=$1", [uid]),
-      pool.query("SELECT blocker_id,blocked_id,created_at FROM letchat_blocks WHERE blocker_id=$1 OR blocked_id=$1", [uid]),
+      // Export only blocks created by this member; never reveal who blocked them.
+      pool.query("SELECT blocker_id,blocked_id,created_at FROM letchat_blocks WHERE blocker_id=$1", [uid]),
       pool.query("SELECT id,type,title,body,actor_id,reference_id,read_at,created_at FROM letchat_notifications WHERE user_id=$1 ORDER BY created_at", [uid]),
-      pool.query("SELECT id,reporter_id,reported_id,reason,details,status,created_at FROM letchat_reports WHERE reporter_id=$1 OR reported_id=$1 ORDER BY created_at", [uid]),
+      // Incoming reports and reporters' identities remain in the admin-only moderation view.
+      pool.query("SELECT id,reporter_id,reported_id,reason,details,status,created_at FROM letchat_reports WHERE reporter_id=$1 ORDER BY created_at", [uid]),
       pool.query(`SELECT 'rules' AS type,rules_version AS version,accepted_at FROM letchat_consents WHERE user_id=$1
                   UNION ALL SELECT 'age','18+',accepted_at FROM letchat_age_consents WHERE user_id=$1`, [uid]),
       pool.query("SELECT other_id,archived,muted,hidden_before,updated_at FROM letchat_conversation_preferences WHERE user_id=$1", [uid])
