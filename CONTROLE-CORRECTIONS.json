@@ -1,0 +1,37 @@
+{
+  "source": "letchat-main(8).zip",
+  "date": "2026-09-28",
+  "checks": {
+    "existing_tests": 26,
+    "regression_tests": 8,
+    "all_tests_passed": 34,
+    "javascript_syntax_checks": 26
+  },
+  "files": [
+    {
+      "path": "letchat-v4/public/app-v4-cafe-v2.js",
+      "sha256": "f85a28a8f2a0d1eec5977b58b07c1c811eea68b270aeb516b83fa886ba71d948",
+      "size": 151484
+    },
+    {
+      "path": "letchat-v4/public/index.html",
+      "sha256": "9b21a94e27512d6fe0c5f2f08560689c6d120ca06720754b0dc54cf66781ab47",
+      "size": 44519
+    },
+    {
+      "path": "letchat-v4/public/service-worker.js",
+      "sha256": "2df0a975caf7fb9f4fefe76f78a4b6c8bc138e2334308b6ad69bf8512f639607",
+      "size": 3254
+    },
+    {
+      "path": "letchat-v4/public/assets/app-v4-cafe-v2.00e33be1e9d9.js",
+      "sha256": "00e33be1e9d9b9b9be45945dc5a34d20761a28677b3b2eb47ff97a839e9b117c",
+      "size": 151526
+    },
+    {
+      "path": "letchat-v4/test/avatar-presence.test.mjs",
+      "sha256": "8597112946a5229817d863f84f7c65a440f6d92b8e5320a92fa9b847900a16ab",
+      "size": 10058
+    }
+  ]
+}
