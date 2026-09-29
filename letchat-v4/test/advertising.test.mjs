@@ -50,17 +50,20 @@ test("TCF failures, unknown scope, refusal and missing Google consent fail close
 test("no ad request before consent; acceptance uses the correct slot once", async t => {
   const s = setup(t);
   await s.controller.start();
-  assert.equal(s.scripts, 1);
+  assert.equal(s.scripts, 0);
+  assert.ok(s.w.document.getElementById("letchatConsent"), "consent loader starts first");
   assert.equal(s.ads.length, 0);
   assert.equal(s.w.adsbygoogle.pauseAdRequests, 1);
   assert.equal(s.w.adsbygoogle.length, 0);
-  const loader = s.w.document.getElementById("letchatAdSense");
-  assert.equal(loader.nonce, "test-nonce");
-  assert.equal(loader.dataset.privacyTreatments, "disablePersonalization");
+  assert.equal(s.w.document.getElementById("letchatConsent").nonce, "test-nonce");
   s.ready();
   s.emit({ ...accepted, purpose: { consents: {} } });
   assert.equal(s.ads.length, 0);
   s.emit(); s.emit();
+  assert.equal(s.scripts, 1);
+  const loader = s.w.document.getElementById("letchatAdSense");
+  assert.equal(loader.nonce, "test-nonce");
+  assert.equal(loader.dataset.privacyTreatments, "disablePersonalization");
   assert.equal(s.ads.length, 1);
   assert.equal(s.ads[0].dataset.adClient, "ca-pub-3317597986908171");
   assert.equal(s.ads[0].dataset.adSlot, "1411415827");
@@ -106,7 +109,10 @@ test("Premium member can explicitly reopen consent without receiving an ad", asy
   const s = setup(t, async () => false);
   await s.controller.start();
   s.w.document.getElementById("manageConsent").click();
-  assert.equal(s.scripts, 1); s.ready(); s.emit();
+  assert.equal(s.scripts, 0);
+  assert.ok(s.w.document.getElementById("letchatConsent"));
+  s.ready(); s.emit();
+  assert.equal(s.scripts, 0, "Premium never loads the ad script");
   assert.equal(s.revocations, 1);
   assert.equal(s.ads.length, 0);
   assert.equal(s.w.adsbygoogle.length, 0);
@@ -121,10 +127,10 @@ test("missing Google message times out, releases the button and keeps ads paused
   button.click(); button.click();
   assert.equal(s.revocations, 1, "double clicks cannot queue multiple Google messages");
   assert.equal(button.disabled, true);
-  const timeout = timers.find(timer => timer.delay === 8000);
+  const timeout = timers.find(timer => timer.delay === 20000);
   assert.ok(timeout); timeout.callback();
   assert.equal(button.disabled, false);
-  assert.match(s.w.document.getElementById("consentStatus").textContent, /ne s’est pas ouvert/);
+  assert.match(s.w.document.getElementById("consentStatus").textContent, /n’est pas disponible/);
   s.emit({ ...accepted, eventStatus: "tcloaded" });
   assert.equal(s.ads.length, 0, "stale stored consent cannot resume ads after timeout");
   assert.equal(s.w.adsbygoogle.pauseAdRequests, 1);
@@ -150,7 +156,7 @@ test("a late Google API ignores expired attempts when the user retries", async t
   s.w.setTimeout = (callback, delay) => { timers.push({ callback, delay }); return timers.length; };
   const button = s.w.document.getElementById("manageConsent");
   button.click();
-  timers.find(timer => timer.delay === 8000).callback();
+  timers.find(timer => timer.delay === 20000).callback();
   button.click();
   s.ready();
   assert.equal(s.revocations, 1, "only the current attempt can open a dialog");
@@ -163,7 +169,7 @@ test("revocation exceptions and unavailable API do not leave the button busy", a
     s.w.googlefc.showRevocationMessage = handler;
     const button = s.w.document.getElementById("manageConsent"); button.click();
     assert.equal(button.disabled, false);
-    assert.match(s.w.document.getElementById("consentStatus").textContent, /ne s’est pas ouvert/);
+    assert.match(s.w.document.getElementById("consentStatus").textContent, /n’est pas disponible/);
     assert.equal(s.ads.length, 0);
     assert.equal(s.w.adsbygoogle.pauseAdRequests, 1);
   }

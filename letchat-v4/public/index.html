@@ -69,15 +69,15 @@
           </div>
           <div id="welcomeAccess" class="login-card welcome-card">
             <h2 id="authTitle">Content de vous retrouver</h2>
-            <p id="authDescription">Connectez-vous avec votre pseudonyme et votre mot de passe.</p>
+            <p id="authDescription">Connectez-vous avec l’identifiant choisi à l’inscription et votre mot de passe.</p>
             <div class="login-tabs" role="tablist" aria-label="Choisir un accès">
               <button id="authTabLogin" type="button" role="tab" data-auth-tab="login" class="active" aria-selected="true" aria-controls="localLoginForm">Connexion</button>
               <button id="authTabRegister" type="button" role="tab" data-auth-tab="register" aria-selected="false" aria-controls="localRegisterForm" tabindex="-1">Inscription</button>
               <button id="authTabGuest" type="button" role="tab" data-auth-tab="guest" aria-selected="false" aria-controls="guestLoginForm" tabindex="-1">Invité</button>
             </div>
             <form method="post" id="localLoginForm" class="local-auth-form" role="tabpanel" aria-labelledby="authTabLogin">
-              <label for="localLoginName">Pseudonyme</label>
-              <input id="localLoginName" name="username" required minlength="3" maxlength="40" placeholder="Votre pseudonyme" autocomplete="username" autocapitalize="none" spellcheck="false">
+              <label for="localLoginName">Identifiant de connexion</label>
+              <input id="localLoginName" name="username" required minlength="3" maxlength="40" placeholder="Votre identifiant de connexion" autocomplete="username" autocapitalize="none" spellcheck="false">
               <label for="localLoginPassword">Mot de passe</label>
               <div class="welcome-password">
                 <input id="localLoginPassword" name="password" required minlength="8" maxlength="200" type="password" placeholder="Votre mot de passe" autocomplete="current-password">
@@ -87,7 +87,7 @@
               <button id="forgotPassword" type="button" class="secondary-action">Mot de passe oublié ?</button>
             </form>
             <form method="post" id="localRegisterForm" class="local-auth-form hidden" role="tabpanel" aria-labelledby="authTabRegister">
-              <label for="localRegisterName">Votre pseudonyme</label>
+              <label for="localRegisterName">Votre identifiant de connexion</label>
               <input id="localRegisterName" name="username" required minlength="3" maxlength="40" placeholder="Au moins 3 caractères" autocomplete="username" autocapitalize="none" spellcheck="false">
               <label for="localRegisterPassword">Votre mot de passe</label>
               <div class="welcome-password">
@@ -342,12 +342,18 @@
           <div><button id="chooseProfilePhoto" type="button">Choisir une photo</button><small>JPG, PNG ou WebP · recadrage automatique</small></div>
           <input id="profilePhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden />
         </div>
+        <div id="profileLoginIdentity" hidden>
+          <label for="profileLoginUsername">Identifiant de connexion
+            <input id="profileLoginUsername" readonly aria-describedby="profileLoginHelp" autocomplete="off" />
+          </label>
+          <small id="profileLoginHelp">Utilisez cet identifiant pour vous connecter ou récupérer votre compte. Modifier votre nom affiché ne change pas cet identifiant.</small>
+        </div>
         <label
-          >Pseudonyme<input
+          >Nom affiché<input
             id="profileName"
             maxlength="100"
             required
-            placeholder="Votre pseudonyme" /></label
+            placeholder="Votre nom affiché" /></label
         ><label
           >Ville<input
             id="profileCity"
@@ -647,10 +653,10 @@
       </div>
     </section> <!-- Pied de page légal Letchat -->
 
-    <dialog id="recoverDialog" class="recovery-dialog">
+    <dialog id="recoverDialog" class="recovery-dialog" aria-labelledby="recoverTitle">
       <form id="recoverForm" class="local-auth-form">
-        <h2>Récupérer mon compte</h2><p>Utilisez le code de récupération enregistré lors de l’inscription ou depuis votre profil. Pour Google, utilisez « Continuer avec Google ».</p>
-        <label>Pseudonyme<input id="recoverUsername" required minlength="3" maxlength="40" autocomplete="username"></label>
+        <h2 id="recoverTitle">Récupérer mon compte</h2><p>Utilisez le code de récupération enregistré lors de l’inscription ou depuis votre profil. Pour Google, utilisez « Continuer avec Google ».</p>
+        <label>Identifiant de connexion<input id="recoverUsername" required minlength="3" maxlength="40" autocomplete="username"></label>
         <label>Code de récupération<input id="recoverCode" required maxlength="64" autocomplete="off" spellcheck="false"></label>
         <label>Nouveau mot de passe<input id="recoverPassword" required minlength="8" maxlength="200" type="password" autocomplete="new-password"></label>
         <p id="recoverError" role="alert"></p><button type="submit">Changer mon mot de passe</button>
@@ -658,16 +664,16 @@
         <small>Sans code préalablement enregistré, la récupération automatique est impossible. Contact : <a href="/contact.html">assistance Letchat</a>.</small>
       </form>
     </dialog>
-    <dialog id="recoverySettingsDialog" class="recovery-dialog">
-      <form id="recoverySettingsForm" class="local-auth-form"><h2>Code de récupération</h2>
+    <dialog id="recoverySettingsDialog" class="recovery-dialog" aria-labelledby="recoverySettingsTitle">
+      <form id="recoverySettingsForm" class="local-auth-form"><h2 id="recoverySettingsTitle">Code de récupération</h2>
         <p>Le nouveau code remplacera votre ancien code.</p>
         <label>Mot de passe actuel<input id="recoveryCurrentPassword" type="password" required maxlength="200" autocomplete="current-password"></label>
         <p id="recoverySettingsError" role="alert"></p><button type="submit">Créer mon code</button>
         <button type="button" data-close-dialog="recoverySettingsDialog">Annuler</button>
       </form>
     </dialog>
-    <dialog id="recoveryCodeDialog" class="recovery-dialog">
-      <h2>Enregistrez votre code de récupération</h2><p>Ce code permet de changer votre mot de passe. Conservez-le en lieu sûr et ne le partagez pas. Il ne sera plus affiché après fermeture.</p>
+    <dialog id="recoveryCodeDialog" class="recovery-dialog" aria-labelledby="recoveryCodeTitle">
+      <h2 id="recoveryCodeTitle">Enregistrez votre code de récupération</h2><p>Ce code permet de changer votre mot de passe. Conservez-le en lieu sûr et ne le partagez pas. Il ne sera plus affiché après fermeture.</p>
       <label>Votre code<textarea id="recoveryCodeValue" readonly spellcheck="false" rows="3"></textarea></label>
       <button id="downloadRecoveryCode" type="button">Télécharger mon code</button>
       <button id="closeRecoveryCode" type="button">J’ai enregistré mon code</button>
@@ -684,11 +690,11 @@
       </div>
       <p class="welcome-guide-note">Les salons se trouvent dans le menu ☰ sur téléphone. Gardez vos échanges respectueux : le blocage et le signalement sont accessibles dans le tchat.</p>
     </dialog>
-    <script src="/assets/welcome.dfc23a1af193.js"></script>
+    <script src="/assets/welcome.39986725ae1a.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="/assets/v3-theme.1814c6a88724.js"></script>
     <script type="module" src="/assets/city-autocomplete.d623e16ad894.js"></script>
-    <script type="module" src="/assets/app-v4-cafe-v2.cc38f301b183.js"></script>
+    <script type="module" src="/assets/app-v4-cafe-v2.2ee27ce3c3f0.js"></script>
     <script src="/assets/v4-interface.b84a1edaf319.js" defer></script>
 </body>
 </html>

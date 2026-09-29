@@ -19,23 +19,23 @@ export function installRecoveryRoutes({ app, pool, io, auth, rateLimitPublicActi
       // Single atomic consume: concurrent resets cannot both use the same code.
       const result = await pool.query(`UPDATE letchat_local_accounts
         SET password_hash=$3,password_salt=$4,recovery_hash=$5,session_version=session_version+1
-        WHERE username_key=$1 AND recovery_hash=$2 AND is_guest=FALSE RETURNING user_id`,
+        WHERE username_key=$1 AND recovery_hash=$2 AND is_guest=FALSE RETURNING user_id,username`,
       [key, recoveryHash(code), scryptSync(password, salt, 64).toString("hex"), salt, recoveryHash(recoveryCode)]);
       if (!result.rowCount) return res.status(400).json({ error: "Pseudonyme ou code de récupération incorrect" });
       io.to(`user:${result.rows[0].user_id}`).emit("session-revoked");
       io.in(`user:${result.rows[0].user_id}`).disconnectSockets(true);
-      res.json({ ok: true, recoveryCode });
+      res.json({ ok: true, recoveryCode, loginUsername: result.rows[0].username });
     } catch (error) { next(error); }
   });
   app.post("/api/account/recovery-code", auth, rateLimitAction("recovery-code", 5, 3600000), async (req, res, next) => {
     try {
       if (!req.user.local || req.user.guest) return res.status(400).json({ error: "Cette option est réservée aux comptes avec pseudonyme et mot de passe" });
-      const row = (await pool.query("SELECT password_hash,password_salt,session_version FROM letchat_local_accounts WHERE user_id=$1 AND is_guest=FALSE", [req.user.id])).rows[0];
+      const row = (await pool.query("SELECT username,password_hash,password_salt,session_version FROM letchat_local_accounts WHERE user_id=$1 AND is_guest=FALSE", [req.user.id])).rows[0];
       if (!matchesPassword(String(req.body?.password || ""), row)) return res.status(403).json({ error: "Mot de passe incorrect" });
       const recoveryCode = newRecoveryCode();
       const result = await pool.query("UPDATE letchat_local_accounts SET recovery_hash=$2 WHERE user_id=$1 AND session_version=$3", [req.user.id, recoveryHash(recoveryCode), row.session_version]);
       if (!result.rowCount) return res.status(409).json({ error: "La session a changé. Reconnectez-vous." });
-      res.json({ recoveryCode });
+      res.json({ recoveryCode, loginUsername: row.username });
     } catch (error) { next(error); }
   });
 }

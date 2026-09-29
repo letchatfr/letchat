@@ -25,7 +25,12 @@ test("client initializes against the delivered HTML and recovery dialogs are rea
     code=code.replace(/^import\s+[\s\S]*?from\s+["'][^"']+["'];\s*/gm,"");
     const socialModules = await Promise.all(["social-voice.js", "social-live.js", "social-album.js", "social.js", "premium-benefits.js", "surprise.js"].map(file => readFile(`public/${file}`, "utf8")));
     const socialCode = socialModules.map(source => source.replace(/^import\s+.*?;\s*$/gm, "").replace(/^export\s+/gm, "")).join("\n");
-    w.eval(socialCode + "\n" + code);
+    w.eval(socialCode + "\n" + code + `
+      window.testAccount = {
+        setUser(data) { user = localUser(data, "test-token"); localSessionToken = "test-token"; },
+        openProfile
+      };
+    `);
     w.document.querySelector("#forgotPassword").click();
     assert.equal(w.document.querySelector("#recoverDialog").open,true);
     w.document.querySelector('[data-close-dialog="recoverDialog"]').click();
@@ -35,5 +40,36 @@ test("client initializes against the delivered HTML and recovery dialogs are rea
     assert.ok(w.document.querySelector("#recoverForm").onsubmit,"password recovery form is bound");
     assert.ok(w.document.querySelector("#recoverySettingsForm").onsubmit,"recovery rotation form is bound");
     assert.equal(code.includes("?t=${encodeURIComponent(token)}"),false);
+    for (const id of ["recoverDialog", "recoverySettingsDialog", "recoveryCodeDialog"]) {
+      const dialog = w.document.getElementById(id);
+      assert.ok(w.document.getElementById(dialog.getAttribute("aria-labelledby"))?.textContent);
+    }
+    w.testAccount.setUser({id:"local:test",name:"Nouveau Nom",loginUsername:"Identifiant Original",guest:false});
+    w.testAccount.openProfile({display_name:"Nouveau Nom",loginUsername:"Identifiant Original"});
+    assert.equal(w.document.getElementById("profileName").value,"Nouveau Nom");
+    assert.equal(w.document.getElementById("profileLoginUsername").value,"Identifiant Original");
+    assert.equal(w.document.getElementById("profileLoginIdentity").hidden,false);
+    let downloaded;
+    w.URL.createObjectURL = blob => { downloaded = blob; return "blob:local-test"; };
+    w.URL.revokeObjectURL = () => {};
+    w.HTMLAnchorElement.prototype.click = () => {};
+    w.fetch = async route => {
+      assert.equal(route,"/api/account/recovery-code");
+      return {ok:true,json:async()=>({recoveryCode:"RECOVERY-TEST",loginUsername:"Identifiant Original"})};
+    };
+    w.document.getElementById("recoveryCurrentPassword").value="password-test";
+    await w.document.getElementById("recoverySettingsForm").onsubmit({preventDefault(){},submitter:{}});
+    assert.equal(w.document.getElementById("recoveryCodeDialog").open,true);
+    w.document.getElementById("downloadRecoveryCode").click();
+    const fileText = await new Promise((resolve,reject)=>{
+      const reader = new w.FileReader(); reader.onload=()=>resolve(reader.result); reader.onerror=reject; reader.readAsText(downloaded);
+    });
+    assert.match(fileText,/Identifiant de connexion : Identifiant Original/);
+    assert.match(fileText,/Code : RECOVERY-TEST/);
+    assert.equal(fileText.includes("Nouveau Nom"),false);
+    w.testAccount.setUser({id:"guest:test",name:"Invité",guest:true});
+    w.testAccount.openProfile(null);
+    assert.equal(w.document.getElementById("profileLoginIdentity").hidden,true);
+
   } finally { w.close(); }
 });

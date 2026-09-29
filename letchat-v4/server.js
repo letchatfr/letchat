@@ -16,6 +16,7 @@ import { Server } from "socket.io";
 import { createRemoteJWKSet, jwtVerify, SignJWT } from "jose";
 import Stripe from "stripe";
 import webpush from "web-push";
+import { validatePushSubscription, sendValidatedPush, MAX_PUSH_SUBSCRIPTIONS } from "./lib/push-security.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -479,7 +480,7 @@ async function verify(token) {
        WHERE user_id=$1 AND (expires_at IS NULL OR expires_at > NOW())`, [String(payload.sub)]
     );
     if (!account.rowCount || Number(payload.ver || 0) !== account.rows[0].session_version) throw new Error("Session locale expirée");
-    return { id: String(payload.sub), email: "", name: account.rows[0].username, photo: null, local: true, guest: account.rows[0].is_guest, expiresAt: Math.min(Number(payload.exp) * 1000, account.rows[0].expires_at ? new Date(account.rows[0].expires_at).getTime() : Infinity) };
+    return { id: String(payload.sub), email: "", name: account.rows[0].username, loginUsername: account.rows[0].username, photo: null, local: true, guest: account.rows[0].is_guest, expiresAt: Math.min(Number(payload.exp) * 1000, account.rows[0].expires_at ? new Date(account.rows[0].expires_at).getTime() : Infinity) };
   } catch (localError) {
     if (localError.message === "Session locale expirée") throw localError;
   }
@@ -570,19 +571,19 @@ async function createNotification(userId, type, title, body = "", actorId = null
 async function sendPushNotification(userId, payload) {
   if (!pushConfigured) return;
   const { rows } = await pool.query(
-    "SELECT endpoint,p256dh,auth FROM letchat_push_subscriptions WHERE user_id=$1",
+    `SELECT endpoint,p256dh,auth FROM letchat_push_subscriptions WHERE user_id=$1
+     ORDER BY updated_at DESC LIMIT ${MAX_PUSH_SUBSCRIPTIONS}`,
     [userId]
   );
   await Promise.all(rows.map(async row => {
     try {
-      await webpush.sendNotification(
+      await sendValidatedPush(webpush,
         { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
-        JSON.stringify({ ...payload, url: "/" }),
-        { TTL: 60 * 60 }
+        { ...payload, url: "/" }
       );
     } catch (error) {
-      if ([404, 410].includes(error.statusCode)) {
-        await pool.query("DELETE FROM letchat_push_subscriptions WHERE endpoint=$1", [row.endpoint]);
+      if (error.status === 400 || [404, 410].includes(error.statusCode)) {
+        await pool.query("DELETE FROM letchat_push_subscriptions WHERE endpoint=$1 AND user_id=$2", [row.endpoint, userId]);
         return;
       }
       throw error;
@@ -764,7 +765,7 @@ app.post("/api/auth/register", rateLimitPublicAction("register", 10, 60 * 60 * 1
       await client.query("COMMIT");
     } catch (error) { await client.query("ROLLBACK"); if (error.code === "23505") return res.status(409).json({ error: "Ce pseudonyme est déjà utilisé" }); throw error; }
     finally { client.release(); }
-    res.status(201).json({ recoveryCode, token: await issueLocalToken(userId), user: { id:userId, name:username, guest:false } });
+    res.status(201).json({ recoveryCode, token: await issueLocalToken(userId), user: { id:userId, name:username, loginUsername:username, guest:false } });
   } catch (error) { next(error); }
 });
 
@@ -772,12 +773,12 @@ app.post("/api/auth/login", rateLimitPublicAction("login", 12, 15 * 60 * 1000), 
   try {
     const key = normalizeUsername(req.body?.username).toLocaleLowerCase("fr"), password = String(req.body?.password || "");
     if (password.length > 200) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
-    const { rows } = await pool.query(`SELECT user_id,username,password_hash,password_salt FROM letchat_local_accounts WHERE username_key=$1 AND is_guest=FALSE`, [key]);
+    const { rows } = await pool.query(`SELECT a.user_id,a.username,a.password_hash,a.password_salt,COALESCE(p.display_name,a.username) AS display_name,p.photo FROM letchat_local_accounts a LEFT JOIN profiles p ON p.user_id=a.user_id WHERE a.username_key=$1 AND a.is_guest=FALSE`, [key]);
     const row = rows[0];
     if (!row?.password_hash || !row.password_salt) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
     const supplied = Buffer.from(passwordDigest(password,row.password_salt), "hex"), expected = Buffer.from(row.password_hash,"hex");
     if (supplied.length !== expected.length || !timingSafeEqual(supplied,expected)) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
-    res.json({ token: await issueLocalToken(row.user_id), user: { id:row.user_id, name:row.username, guest:false } });
+    res.json({ token: await issueLocalToken(row.user_id), user: { id:row.user_id, name:row.display_name, loginUsername:row.username, photo:row.photo, guest:false } });
   } catch (error) { next(error); }
 });
 
@@ -797,7 +798,7 @@ app.post("/api/auth/guest", rateLimitPublicAction("guest", 15, 60 * 60 * 1000), 
   } catch(error){next(error);}
 });
 
-app.get("/api/auth/me", auth, (req,res) => res.json({ user:{ id:req.user.id,name:req.user.name,photo:req.user.photo,guest:Boolean(req.user.guest) } }));
+app.get("/api/auth/me", auth, (req,res) => res.json({ user:{ id:req.user.id,name:req.user.name,loginUsername:req.user.local && !req.user.guest ? req.user.loginUsername : null,photo:req.user.photo,guest:Boolean(req.user.guest) } }));
 
 app.get("/api/subscription", auth, requireAdult, async (req, res, next) => {
   try {
@@ -1045,7 +1046,7 @@ app.get("/api/profile", auth, async (req, res, next) => {
       "SELECT display_name, photo, city, bio, gender, availability, last_seen, location_visible, private_message_policy, verified FROM profiles WHERE user_id = $1",
       [req.user.id]
     );
-    res.json(rows[0] || null);
+    res.json(rows[0] ? { ...rows[0], loginUsername: req.user.local && !req.user.guest ? req.user.loginUsername : null } : null);
   } catch (error) {
     next(error);
   }
@@ -1196,25 +1197,37 @@ app.get("/api/notifications", auth, async (req, res, next) => {
   }
 });
 
-app.post("/api/push/subscribe", auth, async (req, res, next) => {
+app.post("/api/push/subscribe", auth, rateLimitAction("push-subscribe", 60, 60 * 60 * 1000), async (req, res, next) => {
+  let client;
   try {
     if (!pushConfigured) return res.status(503).json({ error: "Notifications mobiles non configurées" });
-    const endpoint = String(req.body?.endpoint || "").trim().slice(0, 2000);
-    const p256dh = String(req.body?.keys?.p256dh || "").trim().slice(0, 500);
-    const authKey = String(req.body?.keys?.auth || "").trim().slice(0, 500);
-    if (!endpoint.startsWith("https://") || !p256dh || !authKey) {
-      return res.status(400).json({ error: "Abonnement aux notifications incorrect" });
-    }
-    await pool.query(
+    const subscription = validatePushSubscription(req.body);
+    client = await pool.connect();
+    await client.query("BEGIN");
+    // Lock the member row so concurrent subscriptions cannot exceed the cap.
+    const profile = await client.query("SELECT user_id FROM profiles WHERE user_id=$1 FOR UPDATE", [req.user.id]);
+    if (!profile.rowCount) throw Object.assign(new Error("Profil introuvable"), { status: 404, expose: true });
+    const count = await client.query(
+      "SELECT COUNT(*)::int AS total FROM letchat_push_subscriptions WHERE user_id=$1 AND endpoint<>$2",
+      [req.user.id, subscription.endpoint]
+    );
+    if (count.rows[0].total >= MAX_PUSH_SUBSCRIPTIONS)
+      throw Object.assign(new Error("Vous avez déjà activé les notifications sur 10 appareils. Désactivez-les sur un ancien appareil avant d’en ajouter un."), { status: 409, expose: true });
+    await client.query(
       `INSERT INTO letchat_push_subscriptions (endpoint,user_id,p256dh,auth,user_agent,updated_at)
        VALUES($1,$2,$3,$4,$5,NOW())
        ON CONFLICT(endpoint) DO UPDATE SET user_id=EXCLUDED.user_id,
          p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,user_agent=EXCLUDED.user_agent,updated_at=NOW()`,
-      [endpoint, req.user.id, p256dh, authKey, String(req.headers["user-agent"] || "").slice(0, 500)]
+      [subscription.endpoint, req.user.id, subscription.keys.p256dh, subscription.keys.auth,
+        String(req.headers["user-agent"] || "").slice(0, 500)]
     );
+    await client.query("COMMIT");
     res.json({ ok: true });
   } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => {});
     next(error);
+  } finally {
+    client?.release();
   }
 });
 
