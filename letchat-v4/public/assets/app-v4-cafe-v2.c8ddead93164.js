@@ -1,9 +1,9 @@
-import { installAdminUI } from "./admin.js";
-import { installSurpriseUI } from "./surprise.js";
-import { installSocial } from "./social.js";
-import { installPremiumBenefitsUI } from "./premium-benefits.js";
-import { rooms } from "./room-catalog.js?v=20260927-premium-xxx";
-import { messageDayInfo, shouldSendOnEnter } from "./chat-comfort.js";
+import { installAdminUI } from "./admin.f4d609af6a65.js";
+import { installSurpriseUI } from "./surprise.2309b5900f8a.js";
+import { installSocial } from "./social.54f7fd62b615.js";
+import { installPremiumBenefitsUI } from "./premium-benefits.2025742d7f1f.js";
+import { rooms } from "./room-catalog.2ef7971ebb04.js";
+import { messageDayInfo, shouldSendOnEnter } from "./chat-comfort.bbaf8a24a95b.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
 import {
   getAuth,

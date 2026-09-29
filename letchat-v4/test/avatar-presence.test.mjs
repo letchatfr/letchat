@@ -24,6 +24,7 @@ async function setup(t) {
   w.CSS = { escape: s => s };
   w.HTMLElement.prototype.scrollIntoView = () => {};
   w.HTMLMediaElement.prototype.pause = () => {};
+  w.installAdminUI = () => ({ reset() {} });
   w.installSocial = () => ({ live: { leave() {} } });
   w.installPremiumBenefitsUI = () => ({ refresh: async () => {} });
   w.installSurpriseUI = () => ({ bind() {} });

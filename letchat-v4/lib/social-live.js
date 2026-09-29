@@ -6,7 +6,7 @@ export function installLive({ io, pool, blocked, member, hasPremiumAccess, roomC
   const identity = s => ({ socketId: s.id, userId: s.user.id, name: s.user.name, camera: Boolean(s.liveCamera), mic: Boolean(s.liveMic) });
   async function allowed(s, scope) {
     if (!await socketSessionValid(s)) return false;
-    if (scope.startsWith("group:")) { try { await member(scope.slice(6), s.user.id); return true; } catch { return false; } }
+    if (scope.startsWith("group:")) { try { const group = await member(scope.slice(6), s.user.id); return !group.paused; } catch { return false; } }
     const room = scope.slice(5);
     return scope.startsWith("room:") && Object.hasOwn(roomCatalog, room) && room !== "messages" && s.room === room
       && (roomCatalog[room].premium !== true || await hasPremiumAccess(s.user.id));

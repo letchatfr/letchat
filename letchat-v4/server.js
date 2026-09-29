@@ -1,3 +1,4 @@
+import { installAdmin } from "./lib/admin.js";
 import { installSurprise } from "./lib/surprise.js";
 import { installSocial } from "./lib/social.js";
 import { installPremiumBenefits } from "./lib/premium-benefits.js";
@@ -1389,27 +1390,35 @@ app.post("/api/reports", auth, requireAdult, requireRules, rateLimitAction("repo
     let reportedId = String(req.body.reportedId || "").slice(0, 200);
     const reason = String(req.body.reason || "");
     const details = String(req.body.details || "").trim().slice(0, 1000);
-    const messageKind = ["public", "private"].includes(String(req.body.messageKind))
-      ? String(req.body.messageKind) : null;
-    const messageId = /^\d+$/.test(String(req.body.messageId || ""))
-      ? String(req.body.messageId) : null;
-    let evidenceBody = "";
+    const rawKind = req.body.messageKind;
+    const messageKind = ["public", "private", "group"].includes(rawKind) ? rawKind : null;
+    const messageId = /^[1-9]\d{0,17}$/.test(String(req.body.messageId || "")) ? String(req.body.messageId) : null;
+    if ((rawKind && !messageKind) || Boolean(messageKind) !== Boolean(messageId))
+      return res.status(400).json({ error: "Référence du message incorrecte" });
+    let evidenceBody = "", contextLabel = "";
     const allowedReasons = new Set(["harassment", "spam", "inappropriate", "fake", "other"]);
-    if (messageKind && messageId) {
-      const evidence = messageKind === "public"
-        ? await pool.query(
-            `SELECT user_id AS author_id, LEFT(COALESCE(NULLIF(body,''), '[Média]'), 2000) AS body
-             FROM letchat_messages WHERE id=$1 AND expires_at > NOW()`, [messageId]
-          )
-        : await pool.query(
-            `SELECT sender_id AS author_id, LEFT(COALESCE(NULLIF(body,''), '[Média]'), 2000) AS body
-             FROM letchat_private_messages
-             WHERE id=$1 AND expires_at > NOW() AND (sender_id=$2 OR recipient_id=$2)`,
-            [messageId, req.user.id]
-          );
+    if (messageKind) {
+      let evidence;
+      if (messageKind === "public") {
+        evidence = await pool.query(`SELECT user_id AS author_id,LEFT(COALESCE(NULLIF(body,''),'[Média]'),2000) AS body,room AS context
+          FROM letchat_messages WHERE id=$1 AND expires_at>NOW()`, [messageId]);
+        if (evidence.rows[0] && isPremiumRoom(evidence.rows[0].context) && !await hasPremiumAccess(req.user.id))
+          return res.status(403).json({ error: "Ce message appartient à un salon Premium." });
+      } else if (messageKind === "private") {
+        evidence = await pool.query(`SELECT sender_id AS author_id,LEFT(COALESCE(NULLIF(body,''),'[Média]'),2000) AS body,'Conversation privée' AS context
+          FROM letchat_private_messages WHERE id=$1 AND expires_at>NOW() AND (sender_id=$2 OR recipient_id=$2)`, [messageId, req.user.id]);
+      } else {
+        evidence = await pool.query(`SELECT m.sender_id AS author_id,LEFT(COALESCE(NULLIF(m.body,''),'[Média]'),2000) AS body,g.name AS context
+          FROM letchat_group_messages m JOIN letchat_groups g ON g.id=m.group_id
+          JOIN letchat_group_members gm ON gm.group_id=m.group_id AND gm.user_id=$2 AND gm.status='accepted'
+          WHERE m.id=$1 AND m.expires_at>NOW() AND m.created_at>=gm.joined_at
+          AND NOT EXISTS(SELECT 1 FROM letchat_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=m.sender_id) OR (b.blocked_id=$2 AND b.blocker_id=m.sender_id))`, [messageId,req.user.id]);
+      }
       if (!evidence.rowCount) return res.status(404).json({ error: "Message à signaler introuvable" });
-      reportedId = evidence.rows[0].author_id;
-      evidenceBody = evidence.rows[0].body;
+      reportedId = evidence.rows[0].author_id; evidenceBody = evidence.rows[0].body;
+      contextLabel = evidence.rows[0].context;
+    } else if (!(await pool.query("SELECT 1 FROM profiles WHERE user_id=$1", [reportedId])).rowCount) {
+      return res.status(404).json({ error: "Membre introuvable" });
     }
     if (!reportedId || reportedId === req.user.id) {
       return res.status(400).json({ error: "Utilisateur incorrect" });
@@ -1420,19 +1429,19 @@ app.post("/api/reports", auth, requireAdult, requireRules, rateLimitAction("repo
     const recent = await pool.query(
       `SELECT 1 FROM letchat_reports
        WHERE reporter_id=$1 AND reported_id=$2
-         AND (($3::bigint IS NULL AND message_id IS NULL) OR message_id=$3)
+         AND (($3::bigint IS NULL AND message_id IS NULL) OR (message_id=$3 AND message_kind=$4))
          AND created_at > NOW() - INTERVAL '24 hours'
        LIMIT 1`,
-      [req.user.id, reportedId, messageId]
+      [req.user.id, reportedId, messageId, messageKind]
     );
     if (recent.rowCount) {
       return res.status(429).json({ error: "Vous avez déjà signalé cet utilisateur récemment" });
     }
     await pool.query(
       `INSERT INTO letchat_reports
-         (reporter_id, reported_id, reason, details, message_kind, message_id, evidence_body)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [req.user.id, reportedId, reason, details, messageKind, messageId, evidenceBody]
+         (reporter_id, reported_id, reason, details, message_kind, message_id, evidence_body, context_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [req.user.id, reportedId, reason, details, messageKind, messageId, evidenceBody, contextLabel]
     );
     res.status(201).json({ ok: true });
   } catch (error) {
@@ -1444,242 +1453,10 @@ app.get("/api/admin/me", auth, (req, res) => {
   res.json({ admin: isAdminUser(req.user) });
 });
 
-async function logModerationAction(req, action, { targetUserId = null, reportId = null, details = "" } = {}) {
-  await pool.query(
-    `INSERT INTO letchat_moderation_log
-       (admin_id, admin_name, action, target_user_id, report_id, details)
-     VALUES ($1,$2,$3,$4,$5,$6)`,
-    [req.user.id, req.user.name || "Administrateur", action, targetUserId, reportId, String(details || "").slice(0, 1000)]
-  );
-}
-
-app.get("/api/admin/moderation-log", auth, adminAuth, async (_req, res, next) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT l.id, l.admin_id, l.admin_name, l.action, l.target_user_id,
-              l.report_id, l.details, l.created_at,
-              COALESCE(p.display_name, CASE WHEN l.target_user_id IS NULL THEN NULL ELSE 'Utilisateur' END) AS target_name
-       FROM letchat_moderation_log l
-       LEFT JOIN profiles p ON p.user_id=l.target_user_id
-       ORDER BY l.created_at DESC
-       LIMIT 300`
-    );
-    res.json(rows);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get("/api/admin/stats", auth, adminAuth, async (_req, res, next) => {
-  try {
-    const [profiles, publicMessages, privateMessages, pendingReports, suspensions, premium] = await Promise.all([
-      pool.query("SELECT COUNT(*)::int AS total FROM profiles"),
-      pool.query("SELECT COUNT(*)::int AS total FROM letchat_messages WHERE created_at > NOW() - INTERVAL '24 hours'"),
-      pool.query("SELECT COUNT(*)::int AS total FROM letchat_private_messages WHERE created_at > NOW() - INTERVAL '24 hours'"),
-      pool.query("SELECT COUNT(*)::int AS total FROM letchat_reports WHERE status='pending'"),
-      pool.query("SELECT COUNT(*)::int AS total FROM letchat_suspensions WHERE suspended_until IS NULL OR suspended_until > NOW()"),
-      pool.query("SELECT COUNT(*)::int AS total FROM letchat_subscriptions WHERE status IN ('active','trialing')")
-    ]);
-    res.json({
-      users: profiles.rows[0].total,
-      online: new Set([...online.values()].map(entry => entry.user.id)).size,
-      messages24h: publicMessages.rows[0].total + privateMessages.rows[0].total,
-      pendingReports: pendingReports.rows[0].total,
-      activeSuspensions: suspensions.rows[0].total,
-      premium: premium.rows[0].total
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get("/api/admin/profiles", auth, adminAuth, async (req, res, next) => {
-  try {
-    const query = String(req.query.q || "").trim().slice(0, 100);
-    const { rows } = await pool.query(
-      `SELECT user_id, display_name, email, city, verified, updated_at
-       FROM profiles
-       WHERE $1='' OR display_name ILIKE '%' || $1 || '%'
-         OR email ILIKE '%' || $1 || '%' OR city ILIKE '%' || $1 || '%'
-       ORDER BY verified DESC, updated_at DESC
-       LIMIT 200`,
-      [query]
-    );
-    res.json(rows);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.patch("/api/admin/profiles/:userId/verification", auth, adminAuth, async (req, res, next) => {
-  try {
-    const userId = String(req.params.userId || "").slice(0, 200);
-    const verified = req.body?.verified === true;
-    const result = await pool.query(
-      `UPDATE profiles SET verified=$1, updated_at=NOW()
-       WHERE user_id=$2 RETURNING user_id, display_name, verified`,
-      [verified, userId]
-    );
-    if (!result.rowCount) return res.status(404).json({ error: "Profil introuvable" });
-    await logModerationAction(req, verified ? "profile_verified" : "profile_unverified", {
-      targetUserId: userId,
-      details: verified ? "Badge de vérification attribué" : "Badge de vérification retiré"
-    });
-    for (const [socketId, entry] of online) {
-      if (entry.user.id === userId) {
-        entry.user.profile = { ...(entry.user.profile || {}), verified };
-        online.set(socketId, entry);
-        emitPresence(entry.room);
-      }
-    }
-    res.json(result.rows[0]);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get("/api/admin/reports", auth, adminAuth, async (req, res, next) => {
-  try {
-    const status = ["pending", "resolved", "dismissed"].includes(String(req.query.status))
-      ? String(req.query.status) : "pending";
-    const { rows } = await pool.query(
-      `SELECT r.id, r.reporter_id, r.reported_id, r.reason, r.details,
-              r.message_kind, r.message_id, r.evidence_body,
-              r.status, r.created_at,
-              COALESCE(reporter.display_name, 'Utilisateur') AS reporter_name,
-              COALESCE(reported.display_name, 'Utilisateur') AS reported_name,
-              s.suspended_until,
-              (s.user_id IS NOT NULL AND (s.suspended_until IS NULL OR s.suspended_until > NOW())) AS suspended
-       FROM letchat_reports r
-       LEFT JOIN profiles reporter ON reporter.user_id = r.reporter_id
-       LEFT JOIN profiles reported ON reported.user_id = r.reported_id
-       LEFT JOIN letchat_suspensions s ON s.user_id = r.reported_id
-       WHERE r.status = $1
-       ORDER BY r.created_at DESC
-       LIMIT 200`,
-      [status]
-    );
-    res.json(rows);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.patch("/api/admin/reports/:id", auth, adminAuth, async (req, res, next) => {
-  try {
-    const status = String(req.body.status || "");
-    if (!["pending", "resolved", "dismissed"].includes(status)) {
-      return res.status(400).json({ error: "Statut incorrect" });
-    }
-    const result = await pool.query(
-      "UPDATE letchat_reports SET status=$1 WHERE id=$2 RETURNING id, status, reporter_id, reported_id",
-      [status, req.params.id]
-    );
-    if (!result.rowCount) return res.status(404).json({ error: "Signalement introuvable" });
-    await logModerationAction(req, status === "resolved" ? "report_resolved" : status === "dismissed" ? "report_dismissed" : "report_reopened", {
-      targetUserId: result.rows[0].reported_id,
-      reportId: result.rows[0].id,
-      details: `Statut du signalement : ${status}`
-    });
-    await createNotification(
-      result.rows[0].reporter_id, "report_update", "Mise à jour de votre signalement",
-      status === "resolved" ? "Votre signalement a été traité par la modération." : "Votre signalement a été examiné et classé.",
-      null, String(result.rows[0].id)
-    );
-    res.json(result.rows[0]);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.delete("/api/admin/reports/:id/message", auth, adminAuth, async (req, res, next) => {
-  try {
-    const report = await pool.query(
-      "SELECT message_kind, message_id, reported_id FROM letchat_reports WHERE id=$1",
-      [req.params.id]
-    );
-    if (!report.rowCount || !report.rows[0].message_kind || !report.rows[0].message_id) {
-      return res.status(404).json({ error: "Message signalé introuvable" });
-    }
-    const { message_kind: kind, message_id: id } = report.rows[0];
-    let deleted;
-    if (kind === "public") {
-      deleted = await pool.query("DELETE FROM letchat_messages WHERE id=$1 RETURNING room", [id]);
-    } else {
-      deleted = await pool.query(
-        `DELETE FROM letchat_private_messages WHERE id=$1
-         RETURNING sender_id AS user_id, recipient_id`, [id]
-      );
-    }
-    await pool.query(
-      "DELETE FROM letchat_message_reactions WHERE message_kind=$1 AND message_id=$2",
-      [kind, id]
-    );
-    if (deleted.rowCount) {
-      const payload = { id: String(id), private: kind === "private" };
-      if (kind === "public") io.to(deleted.rows[0].room).emit("message-deleted", payload);
-      else io.to(`user:${deleted.rows[0].user_id}`).to(`user:${deleted.rows[0].recipient_id}`).emit("message-deleted", payload);
-      await logModerationAction(req, "message_deleted", {
-        targetUserId: report.rows[0].reported_id,
-        reportId: req.params.id,
-        details: `${kind === "private" ? "Message privé" : "Message public"} n°${id} supprimé`
-      });
-    }
-    res.json({ ok: true, alreadyDeleted: !deleted.rowCount });
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.post("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, next) => {
-  try {
-    const userId = String(req.params.userId || "").slice(0, 200);
-    const duration = String(req.body.duration || "24h");
-    const reason = String(req.body.reason || "Signalement traité par la modération").trim().slice(0, 500);
-    if (!userId || userId === req.user.id) {
-      return res.status(400).json({ error: "Compte incorrect" });
-    }
-    const intervals = { "24h": "1 day", "7d": "7 days" };
-    if (!["24h", "7d", "permanent"].includes(duration)) {
-      return res.status(400).json({ error: "Durée incorrecte" });
-    }
-    const until = duration === "permanent" ? null : intervals[duration];
-    await pool.query(
-      `INSERT INTO letchat_suspensions (user_id, suspended_until, reason, updated_by)
-       VALUES ($1, CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() + $2::interval END, $3, $4)
-       ON CONFLICT (user_id) DO UPDATE SET
-         suspended_until=EXCLUDED.suspended_until, reason=EXCLUDED.reason,
-         updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
-      [userId, until, reason, req.user.id]
-    );
-    await logModerationAction(req, "user_suspended", {
-      targetUserId: userId,
-      details: `Durée : ${duration}. Motif : ${reason}`
-    });
-    for (const [socketId, entry] of online) {
-      if (entry.user.id === userId) io.sockets.sockets.get(socketId)?.disconnect(true);
-    }
-    res.json({ ok: true });
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.delete("/api/admin/suspensions/:userId", auth, adminAuth, async (req, res, next) => {
-  try {
-    const userId = String(req.params.userId || "").slice(0, 200);
-    const result = await pool.query("DELETE FROM letchat_suspensions WHERE user_id=$1 RETURNING user_id", [userId]);
-    if (result.rowCount) {
-      await logModerationAction(req, "user_unsuspended", {
-        targetUserId: userId,
-        details: "Suspension levée"
-      });
-    }
-    res.json({ ok: true, alreadyActive: !result.rowCount });
-  } catch (error) {
-    next(error);
-  }
-});
+const adminConsole = await installAdmin({ app, pool, io, auth, adminAuth, isAdminUser,
+  rateLimitAction, roomCatalog, getOnline: () => online, emitPresence,
+  insertNotification, publishNotification, social, pushConfigured,
+  billingConfigured: Boolean(stripe && premiumPrices.premium) });
 
 const allowedRooms = new Set(Object.keys(roomCatalog));
 const getRoom = value => allowedRooms.has(String(value)) ? String(value) : "cafe";
@@ -1830,23 +1607,6 @@ app.get("/api/media/:id", auth, requireAdult, async (req, res, next) => {
   }
 });
 
-app.patch("/api/messages/:id/pin", auth, adminAuth, async (req, res, next) => {
-  try {
-    const pinned = req.body.pinned === true;
-    const { rows } = await pool.query(
-      `UPDATE letchat_messages SET pinned=$1
-       WHERE id=$2 AND room='cafe' AND expires_at > NOW()
-       RETURNING id, pinned`,
-      [pinned, req.params.id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: "Message introuvable" });
-    io.to("cafe").emit("message-pinned", rows[0]);
-    res.json(rows[0]);
-  } catch (error) {
-    next(error);
-  }
-});
-
 app.post("/api/messages", auth, requireAdult, requireRules,
   rateLimitAction("public-message-burst", 8, 10 * 1000),
   rateLimitAction("public-messages", 30, 60 * 1000), async (req, res, next) => {
@@ -1870,14 +1630,14 @@ app.post("/api/messages", auth, requireAdult, requireRules,
       reply = result.rows[0];
     }
 
-    const query = await pool.query(
+    const query = await adminConsole.withRoomWrite(req.user, room, db => db.query(
       `INSERT INTO letchat_messages
        (user_id, author, room, photo, body, media_data, media_type, reply_to_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, user_id, author, room, photo, body, media_type, pinned, created_at, expires_at, reply_to_id,
                  (media_data IS NOT NULL) AS has_media`,
       [req.user.id, req.user.name, room, req.user.photo, body, media, mediaType || null, reply?.id || null]
-    );
+    ));
     const message = { ...query.rows[0], reply_author: reply?.author || null, reply_user_id: reply?.user_id || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
     if (isPremiumRoom(room)) {
       const occupants = new Set([...io.sockets.sockets.values()]

@@ -41,6 +41,7 @@
   <link rel="stylesheet" href="/assets/surprise.6083d28eb42f.css">
   <link rel="stylesheet" href="/assets/city-autocomplete.98fa969cb0e1.css">
   <link rel="stylesheet" href="/assets/welcome.f033f99b02b6.css">
+  <link rel="stylesheet" href="/assets/admin.de0e427a53e8.css">
 </head>
 
 <body>
@@ -234,7 +235,8 @@
         </div>
         <button id="jumpLatest" class="jump-latest hidden" type="button">↓ Derniers messages</button>
         <div id="typing" class="typing"></div>
-        <div id="error" class="error hidden" role="status"></div>
+        <p id="roomModerationNotice" class="room-moderation-notice hidden" role="status"></p>
+          <div id="error" class="error hidden" role="status"></div>
         <footer>
           <input
             id="file"
@@ -566,32 +568,6 @@
         <div id="contactPickerList" class="contact-picker-list"></div>
       </div>
     </section>
-    <section id="adminModal" class="admin-modal hidden">
-      <div class="admin-panel">
-        <header>
-          <div>
-            <h2>Administration</h2>
-            <p>Signalements, suspensions et historique</p>
-          </div>
-          <button type="button" id="closeAdmin">×</button>
-        </header>
-        <div class="admin-toolbar">
-          <label
-            >Afficher
-            <select id="adminStatus">
-              <option value="pending">À traiter</option>
-              <option value="resolved">Traités</option>
-              <option value="dismissed">Rejetés</option>
-              <option value="journal">Journal de modération</option>
-              <option value="profiles">Profils et vérifications</option>
-              <option value="stats">Tableau de bord</option>
-            </select></label
-          ><button type="button" id="refreshReports">Actualiser</button>
-        </div>
-        <div id="adminError" class="profile-error"></div>
-        <div id="reportList" class="report-list"></div>
-      </div>
-    </section>
     <section id="webcamTest" class="webcam-test hidden" role="dialog" aria-modal="true" aria-labelledby="webcamTestTitle">
       <div class="webcam-test-card">
         <button id="closeWebcamTest" class="webcam-test-close" type="button" aria-label="Fermer">×</button>
@@ -694,7 +670,7 @@
     <script src="/socket.io/socket.io.js"></script>
     <script src="/assets/v3-theme.1814c6a88724.js"></script>
     <script type="module" src="/assets/city-autocomplete.d623e16ad894.js"></script>
-    <script type="module" src="/assets/app-v4-cafe-v2.2ee27ce3c3f0.js"></script>
+    <script type="module" src="/assets/app-v4-cafe-v2.c8ddead93164.js"></script>
     <script src="/assets/v4-interface.b84a1edaf319.js" defer></script>
 </body>
 </html>

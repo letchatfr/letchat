@@ -43,6 +43,8 @@ export async function installSocial({ app, pool, io, auth, requireAdult, require
       PRIMARY KEY(group_id,user_id)
     );
     ALTER TABLE letchat_groups ADD COLUMN IF NOT EXISTS member_limit INTEGER NOT NULL DEFAULT 8;
+    ALTER TABLE letchat_groups ADD COLUMN IF NOT EXISTS paused BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE letchat_groups ADD COLUMN IF NOT EXISTS moderation_reason TEXT NOT NULL DEFAULT '';
     CREATE INDEX IF NOT EXISTS idx_group_members_user ON letchat_group_members(user_id);
     CREATE TABLE IF NOT EXISTS letchat_group_messages (
       id BIGSERIAL PRIMARY KEY, group_id TEXT NOT NULL REFERENCES letchat_groups(id) ON DELETE CASCADE,
@@ -170,6 +172,8 @@ export async function installSocial({ app, pool, io, auth, requireAdult, require
     const body = clean(req.body.body, 4000), { media, mediaType } = await validateMedia(req.body.mediaBase64, req.body.mediaType);
     if (!body && !media) fail("Message vide");
     const message = await transaction(async db => {
+      const groupState = (await db.query("SELECT paused, moderation_reason FROM letchat_groups WHERE id=$1 FOR SHARE", [req.params.id])).rows[0];
+      if (!groupState || groupState.paused) fail("Envoi suspendu dans ce groupe par la modération." + (groupState?.moderation_reason ? " " + groupState.moderation_reason : ""), 403);
       const access = await db.query("SELECT 1 FROM letchat_group_members WHERE group_id=$1 AND user_id=$2 AND status='accepted' FOR SHARE", [req.params.id, req.user.id]);
       if (!access.rowCount) fail("Groupe inaccessible", 403);
       return (await db.query(`INSERT INTO letchat_group_messages(group_id,sender_id,sender_name,body,media_data,media_type)
