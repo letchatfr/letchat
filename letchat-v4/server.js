@@ -548,8 +548,8 @@ function adminAuth(req, res, next) {
   next();
 }
 
-async function createNotification(userId, type, title, body = "", actorId = null, referenceId = null) {
-  const { rows } = await pool.query(
+async function insertNotification(db, userId, type, title, body = "", actorId = null, referenceId = null) {
+  const { rows } = await db.query(
     `WITH inserted AS (
        INSERT INTO letchat_notifications
        (user_id, type, title, body, actor_id, reference_id)
@@ -561,11 +561,21 @@ async function createNotification(userId, type, title, body = "", actorId = null
      LEFT JOIN profiles p ON p.user_id = n.actor_id`,
     [userId, type, title, body, actorId, referenceId]
   );
-  io.to(`user:${userId}`).emit("notification", rows[0]);
+  return rows[0];
+}
+
+function publishNotification(userId, notification) {
+  io.to(`user:${userId}`).emit("notification", notification);
+  const { title, body, type, actor_id: actorId } = notification;
   sendPushNotification(userId, { title, body, type, actorId }).catch(error =>
     console.error("Notification push :", error.message)
   );
-  return rows[0];
+}
+
+async function createNotification(userId, type, title, body = "", actorId = null, referenceId = null) {
+  const notification = await insertNotification(pool, userId, type, title, body, actorId, referenceId);
+  publishNotification(userId, notification);
+  return notification;
 }
 
 async function sendPushNotification(userId, payload) {
@@ -686,12 +696,12 @@ function validateMessageContent(body) {
   return null;
 }
 
-async function isRepeatedMessage({ userId, body, recipientId = null }) {
+async function isRepeatedMessage({ userId, body, recipientId = null }, db = pool) {
   const normalized = normalizedMessageBody(body);
   if (normalized.length < 2) return false;
   const intervalSeconds = Math.ceil(MESSAGE_SPAM_WINDOW_MS / 1000);
   const query = recipientId
-    ? await pool.query(
+    ? await db.query(
         `SELECT body FROM letchat_private_messages
          WHERE sender_id=$1 AND recipient_id=$2
            AND created_at > NOW() - ($3 * INTERVAL '1 second')
@@ -699,7 +709,7 @@ async function isRepeatedMessage({ userId, body, recipientId = null }) {
          ORDER BY created_at DESC LIMIT 8`,
         [userId, recipientId, intervalSeconds]
       )
-    : await pool.query(
+    : await db.query(
         `SELECT body FROM letchat_messages
          WHERE user_id=$1
            AND created_at > NOW() - ($2 * INTERVAL '1 second')
@@ -710,13 +720,13 @@ async function isRepeatedMessage({ userId, body, recipientId = null }) {
   return query.rows.filter(row => normalizedMessageBody(row.body) === normalized).length >= 2;
 }
 
-async function rejectSpamMessage(req, res, body, recipientId = null) {
+async function rejectSpamMessage(req, res, body, recipientId = null, db = pool) {
   const contentError = validateMessageContent(body);
   if (contentError) {
     res.status(400).json({ error: contentError });
     return true;
   }
-  if (await isRepeatedMessage({ userId: req.user.id, body, recipientId })) {
+  if (await isRepeatedMessage({ userId: req.user.id, body, recipientId }, db)) {
     res.status(429).json({
       error: "Message répété détecté. Modifiez votre texte ou attendez deux minutes"
     });
@@ -978,6 +988,9 @@ app.delete("/api/account", auth, requireAdult, rateLimitAction("delete-account",
     }
     const anonymousId = `compte-supprime-${createHash("sha256").update(uid).digest("hex").slice(0,24)}`;
     await client.query("BEGIN");
+    // Same account-then-profile lock order as private-message sending and cleanup.
+    await client.query("SELECT user_id FROM letchat_local_accounts WHERE user_id=$1 FOR UPDATE", [uid]);
+    await client.query("SELECT user_id FROM profiles WHERE user_id=$1 FOR UPDATE", [uid]);
     await client.query("DELETE FROM letchat_message_reactions WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_messages WHERE user_id=$1", [uid]);
     await client.query("DELETE FROM letchat_private_messages WHERE sender_id=$1 OR recipient_id=$1", [uid]);
@@ -2093,6 +2106,7 @@ app.get("/api/private-media/:id", auth, requireAdult, async (req, res, next) => 
 app.post("/api/private", auth, requireAdult, requireRules,
   rateLimitAction("private-message-burst", 8, 10 * 1000),
   rateLimitAction("private-messages", 30, 60 * 1000), async (req, res, next) => {
+  let client, inTransaction = false;
   try {
     const recipientId = String(req.body.recipientId || "").slice(0, 200);
     const body = String(req.body.body || "").trim().slice(0, 4000);
@@ -2102,23 +2116,45 @@ app.post("/api/private", auth, requireAdult, requireRules,
     if (!recipientId || recipientId === req.user.id) {
       return res.status(400).json({ error: "Destinataire incorrect" });
     }
-    const blocked = await pool.query(
+    client = await pool.connect();
+    await client.query("BEGIN");
+    inTransaction = true;
+    // Lock accounts before profiles, as deletion and expired-guest cleanup do.
+    // Sorted participants also avoid opposite-direction sends locking in reverse.
+    const accounts = await client.query(
+      `SELECT user_id, (expires_at IS NOT NULL AND expires_at <= clock_timestamp()) AS expired
+       FROM letchat_local_accounts WHERE user_id=ANY($1::text[]) ORDER BY user_id FOR SHARE`,
+      [[req.user.id, recipientId]]
+    );
+    const participants = await client.query(
+      "SELECT user_id,private_message_policy FROM profiles WHERE user_id=ANY($1::text[]) ORDER BY user_id FOR UPDATE",
+      [[req.user.id, recipientId]]
+    );
+    if (!participants.rows.some(row => row.user_id === req.user.id))
+      return res.status(401).json({ error: "Votre compte n’est plus disponible. Reconnectez-vous." });
+    const recipientProfile = participants.rows.find(row => row.user_id === recipientId);
+    if (!recipientProfile)
+      return res.status(404).json({ error: "Ce compte n’existe plus ou n’est pas disponible. Votre message n’a pas été envoyé." });
+    for (const id of [req.user.id, recipientId]) {
+      const account = accounts.rows.find(row => row.user_id === id);
+      if (account?.expired || (/^(?:local|guest):/.test(id) && !account))
+        return res.status(id === req.user.id ? 401 : 410).json({
+          error: id === req.user.id ? "Votre session a expiré. Reconnectez-vous." : "Ce compte a expiré ou n’est plus disponible. Votre message n’a pas été envoyé."
+        });
+    }
+    const blocked = await client.query(
       `SELECT 1 FROM letchat_blocks
        WHERE (blocker_id=$1 AND blocked_id=$2)
           OR (blocker_id=$2 AND blocked_id=$1) LIMIT 1`,
       [req.user.id, recipientId]
     );
     if (blocked.rowCount) return res.status(403).json({ error: "Message impossible : utilisateur bloqué" });
-    const recipientProfile = await pool.query(
-      "SELECT private_message_policy FROM profiles WHERE user_id=$1",
-      [recipientId]
-    );
-    const privateMessagePolicy = recipientProfile.rows[0]?.private_message_policy || "everyone";
+    const privateMessagePolicy = recipientProfile.private_message_policy;
     if (privateMessagePolicy === "nobody") {
       return res.status(403).json({ error: "Cet utilisateur n’accepte pas les messages privés" });
     }
     if (privateMessagePolicy === "friends") {
-      const friendship = await pool.query(
+      const friendship = await client.query(
         `SELECT 1 FROM letchat_friends
          WHERE status='accepted'
            AND ((requester_id=$1 AND addressee_id=$2)
@@ -2131,13 +2167,13 @@ app.post("/api/private", auth, requireAdult, requireRules,
       }
     }
     if (!body && !media) return res.status(400).json({ error: "Message vide" });
-    if (body && await rejectSpamMessage(req, res, body, recipientId)) return;
+    if (body && await rejectSpamMessage(req, res, body, recipientId, client)) return;
     if (viewOnce && (!media || !/^(image|video)\//.test(mediaType))) {
       return res.status(400).json({ error: "Le mode visible une fois est réservé aux photos et vidéos" });
     }
     let reply = null;
     if (replyToId) {
-      const result = await pool.query(
+      const result = await client.query(
         `SELECT id, sender_id AS user_id, sender_name AS author, body FROM letchat_private_messages
          WHERE id=$1 AND expires_at > NOW()
            AND ((sender_id=$2 AND recipient_id=$3) OR (sender_id=$3 AND recipient_id=$2))`,
@@ -2146,38 +2182,53 @@ app.post("/api/private", auth, requireAdult, requireRules,
       if (!result.rowCount) return res.status(400).json({ error: "Message cité introuvable" });
       reply = result.rows[0];
     }
-    const { rows } = await pool.query(
+    const { rows } = await client.query(
       `INSERT INTO letchat_private_messages
        (sender_id,recipient_id,sender_name,sender_photo,body,media_data,media_type,reply_to_id,view_once)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9
+       WHERE NOT EXISTS (
+         SELECT 1 FROM letchat_local_accounts WHERE user_id IN ($1,$2)
+         AND expires_at IS NOT NULL AND expires_at <= clock_timestamp()
+       )
        RETURNING id, sender_id AS user_id, sender_name AS author,
                  sender_photo AS photo, body, media_type, created_at, expires_at, reply_to_id,
                  delivered_at, read_at, view_once, opened_at,
                  (media_data IS NOT NULL) AS has_media`,
       [req.user.id, recipientId, req.user.name, req.user.photo, body, media, mediaType || null, reply?.id || null, viewOnce]
     );
+    if (!rows.length)
+      return res.status(410).json({ error: "Un compte de cette conversation vient d’expirer. Votre message n’a pas été envoyé." });
     const message = { ...rows[0], private: true, recipient_id: recipientId, reply_author: reply?.author || null, reply_user_id: reply?.user_id || null, reply_body: reply?.body || null, reactions: {}, my_reactions: [] };
-    await pool.query(
+    await client.query(
       `INSERT INTO letchat_conversation_preferences (user_id,other_id,archived)
        VALUES ($1,$2,FALSE),($2,$1,FALSE)
        ON CONFLICT (user_id,other_id) DO UPDATE SET archived=FALSE, updated_at=NOW()`,
       [req.user.id, recipientId]
     );
-    const recipientPreference = await pool.query(
+    const recipientPreference = await client.query(
       "SELECT muted FROM letchat_conversation_preferences WHERE user_id=$1 AND other_id=$2",
       [recipientId, req.user.id]
     );
+    let notification;
     if (!recipientPreference.rows[0]?.muted) {
-      await createNotification(
-        recipientId, "private_message", `Message de ${req.user.name}`,
+      notification = await insertNotification(
+        client, recipientId, "private_message", `Message de ${req.user.name}`,
         body ? body.slice(0, 160) : "Vous avez reçu un média.",
         req.user.id, String(message.id)
       );
     }
+    await client.query("COMMIT");
+    inTransaction = false;
+    // No socket or push can announce a message whose transaction failed.
+    if (notification) publishNotification(recipientId, notification);
     io.to(`user:${req.user.id}`).to(`user:${recipientId}`).emit("private-message", message);
     res.status(201).json(message);
   } catch (error) {
     next(error);
+  } finally {
+    let discard = false;
+    if (inTransaction) await client.query("ROLLBACK").catch(() => { discard = true; });
+    client?.release(discard);
   }
 });
 

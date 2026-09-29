@@ -28,7 +28,12 @@ test("client initializes against the delivered HTML and recovery dialogs are rea
     w.eval(socialCode + "\n" + code + `
       window.testAccount = {
         setUser(data) { user = localUser(data, "test-token"); localSessionToken = "test-token"; },
-        openProfile
+        openProfile,
+        async refusedPrivateSend() {
+          currentPrivate = { id: "local:deleted-test", name: "Ancien membre" };
+          privateHomeOpen = false;
+          return send();
+        }
       };
     `);
     w.document.querySelector("#forgotPassword").click();
@@ -67,6 +72,19 @@ test("client initializes against the delivered HTML and recovery dialogs are rea
     assert.match(fileText,/Identifiant de connexion : Identifiant Original/);
     assert.match(fileText,/Code : RECOVERY-TEST/);
     assert.equal(fileText.includes("Nouveau Nom"),false);
+    w.testAccount.setUser({id:"local:test",name:"Expéditeur",loginUsername:"Expéditeur",guest:false});
+    const input=w.document.getElementById("input");
+    input.value="Brouillon à conserver après refus";
+    const messageCount=w.document.getElementById("messages").children.length;
+    w.fetch=async route=>{
+      assert.equal(route,"/api/private");
+      return {ok:false,status:404,json:async()=>({error:"Ce compte n’existe plus. Votre message n’a pas été envoyé."})};
+    };
+    await w.testAccount.refusedPrivateSend();
+    assert.equal(input.value,"Brouillon à conserver après refus");
+    assert.equal(w.document.getElementById("messages").children.length,messageCount);
+    assert.equal(w.document.getElementById("send").disabled,false);
+    assert.match(w.document.body.textContent,/Ce compte n’existe plus/);
     w.testAccount.setUser({id:"guest:test",name:"Invité",guest:true});
     w.testAccount.openProfile(null);
     assert.equal(w.document.getElementById("profileLoginIdentity").hidden,true);
