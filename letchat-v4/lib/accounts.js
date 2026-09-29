@@ -1,12 +1,7 @@
-import { randomBytes, createHash, timingSafeEqual, scryptSync } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
+import { passwordDigest, matchesPassword } from "./passwords.js";
 export const newRecoveryCode = () => randomBytes(24).toString("hex").toUpperCase().match(/.{1,6}/g).join("-");
 export const recoveryHash = code => createHash("sha256").update(String(code).replace(/[-\s]/g, "").toUpperCase()).digest("hex");
-function matchesPassword(password, row) {
-  if (!row?.password_hash || !row.password_salt || password.length > 200) return false;
-  const supplied = scryptSync(password, row.password_salt, 64);
-  const expected = Buffer.from(row.password_hash, "hex");
-  return expected.length === supplied.length && timingSafeEqual(expected, supplied);
-}
 export function installRecoveryRoutes({ app, pool, io, auth, rateLimitPublicAction, rateLimitAction }) {
   app.post("/api/auth/recover", rateLimitPublicAction("recover", 8, 15 * 60000), async (req, res, next) => {
     try {
@@ -16,11 +11,12 @@ export function installRecoveryRoutes({ app, pool, io, auth, rateLimitPublicActi
       if (password.length < 8 || password.length > 200) return res.status(400).json({ error: "Choisissez un mot de passe de 8 à 200 caractères" });
       if (!/^[a-f0-9]{48}$/i.test(code)) return res.status(400).json({ error: "Pseudonyme ou code de récupération incorrect" });
       const salt = randomBytes(16).toString("hex"), recoveryCode = newRecoveryCode();
+      const digest = await passwordDigest(password, salt);
       // Single atomic consume: concurrent resets cannot both use the same code.
       const result = await pool.query(`UPDATE letchat_local_accounts
         SET password_hash=$3,password_salt=$4,recovery_hash=$5,session_version=session_version+1
         WHERE username_key=$1 AND recovery_hash=$2 AND is_guest=FALSE RETURNING user_id,username`,
-      [key, recoveryHash(code), scryptSync(password, salt, 64).toString("hex"), salt, recoveryHash(recoveryCode)]);
+      [key, recoveryHash(code), digest, salt, recoveryHash(recoveryCode)]);
       if (!result.rowCount) return res.status(400).json({ error: "Pseudonyme ou code de récupération incorrect" });
       io.to(`user:${result.rows[0].user_id}`).emit("session-revoked");
       io.in(`user:${result.rows[0].user_id}`).disconnectSockets(true);
@@ -31,7 +27,7 @@ export function installRecoveryRoutes({ app, pool, io, auth, rateLimitPublicActi
     try {
       if (!req.user.local || req.user.guest) return res.status(400).json({ error: "Cette option est réservée aux comptes avec pseudonyme et mot de passe" });
       const row = (await pool.query("SELECT username,password_hash,password_salt,session_version FROM letchat_local_accounts WHERE user_id=$1 AND is_guest=FALSE", [req.user.id])).rows[0];
-      if (!matchesPassword(String(req.body?.password || ""), row)) return res.status(403).json({ error: "Mot de passe incorrect" });
+      if (!await matchesPassword(String(req.body?.password || ""), row)) return res.status(403).json({ error: "Mot de passe incorrect" });
       const recoveryCode = newRecoveryCode();
       const result = await pool.query("UPDATE letchat_local_accounts SET recovery_hash=$2 WHERE user_id=$1 AND session_version=$3", [req.user.id, recoveryHash(recoveryCode), row.session_version]);
       if (!result.rowCount) return res.status(409).json({ error: "La session a changé. Reconnectez-vous." });

@@ -11,7 +11,8 @@ import { newRecoveryCode, recoveryHash, installRecoveryRoutes, purgeExpiredGuest
 import { installAdvertisingPage } from "./lib/advertising.js";
 import helmet from "helmet";
 import http from "node:http";
-import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { passwordDigest, matchesPassword } from "./lib/passwords.js";
 import pg from "pg";
 import { Server } from "socket.io";
 import { createRemoteJWKSet, jwtVerify, SignJWT } from "jose";
@@ -500,12 +501,13 @@ async function verify(token) {
 function normalizeUsername(value) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, 40);
 }
-function passwordDigest(password, salt) {
-  return scryptSync(password, salt, 64).toString("hex");
-}
-async function issueLocalToken(userId, guest = false) {
-  const account = await pool.query("SELECT session_version FROM letchat_local_accounts WHERE user_id=$1", [userId]);
-  return new SignJWT({ guest, ver: account.rows[0]?.session_version || 0 }).setProtectedHeader({ alg: "HS256" }).setSubject(userId)
+async function issueLocalToken(userId, guest = false, expectedVersion = undefined) {
+  const account = await pool.query("SELECT session_version FROM letchat_local_accounts WHERE user_id=$1 AND (expires_at IS NULL OR expires_at>NOW())", [userId]);
+  const version = account.rows[0]?.session_version;
+  if (version === undefined || (expectedVersion !== undefined && version !== expectedVersion))
+    throw Object.assign(new Error("La connexion a changé. Réessayez avec votre mot de passe actuel."), { status: 401, expose: true });
+  // Sign the version actually checked, never a newer version after password verification.
+  return new SignJWT({ guest, ver: version }).setProtectedHeader({ alg: "HS256" }).setSubject(userId)
     .setIssuer("letchat-local").setAudience("letchat").setIssuedAt()
     .setExpirationTime(guest ? "24h" : "30d").sign(localJwtSecret);
 }
@@ -767,10 +769,11 @@ app.post("/api/auth/register", rateLimitPublicAction("register", 10, 60 * 60 * 1
     if (!Number.isInteger(age) || age < 18 || age > 120) return res.status(400).json({ error: "Letchat est réservé aux personnes majeures" });
     if (city.length < 2) return res.status(400).json({ error: "Ville incorrecte" });
     const userId = `local:${randomUUID()}`, salt = randomBytes(16).toString("hex"), recoveryCode = newRecoveryCode();
+    const digest = await passwordDigest(password, salt);
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`INSERT INTO letchat_local_accounts(user_id,username,username_key,password_hash,password_salt,gender,city,recovery_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, [userId,username,key,passwordDigest(password,salt),salt,gender,city,recoveryHash(recoveryCode)]);
+      await client.query(`INSERT INTO letchat_local_accounts(user_id,username,username_key,password_hash,password_salt,gender,city,recovery_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, [userId,username,key,digest,salt,gender,city,recoveryHash(recoveryCode)]);
       await client.query(`INSERT INTO profiles(user_id,email,display_name,region,department,city,gender) VALUES($1,'',$2,'','',$3,$4)`, [userId,username,city,gender]);
       await client.query(`INSERT INTO letchat_age_consents(user_id,over_18) VALUES($1,TRUE) ON CONFLICT(user_id) DO UPDATE SET over_18=TRUE,accepted_at=NOW()`, [userId]);
       await client.query("COMMIT");
@@ -784,12 +787,11 @@ app.post("/api/auth/login", rateLimitPublicAction("login", 12, 15 * 60 * 1000), 
   try {
     const key = normalizeUsername(req.body?.username).toLocaleLowerCase("fr"), password = String(req.body?.password || "");
     if (password.length > 200) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
-    const { rows } = await pool.query(`SELECT a.user_id,a.username,a.password_hash,a.password_salt,COALESCE(p.display_name,a.username) AS display_name,p.photo FROM letchat_local_accounts a LEFT JOIN profiles p ON p.user_id=a.user_id WHERE a.username_key=$1 AND a.is_guest=FALSE`, [key]);
+    const { rows } = await pool.query(`SELECT a.user_id,a.username,a.password_hash,a.password_salt,a.session_version,COALESCE(p.display_name,a.username) AS display_name,p.photo FROM letchat_local_accounts a LEFT JOIN profiles p ON p.user_id=a.user_id WHERE a.username_key=$1 AND a.is_guest=FALSE`, [key]);
     const row = rows[0];
     if (!row?.password_hash || !row.password_salt) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
-    const supplied = Buffer.from(passwordDigest(password,row.password_salt), "hex"), expected = Buffer.from(row.password_hash,"hex");
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied,expected)) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
-    res.json({ token: await issueLocalToken(row.user_id), user: { id:row.user_id, name:row.display_name, loginUsername:row.username, photo:row.photo, guest:false } });
+    if (!await matchesPassword(password, row)) return res.status(401).json({ error: "Pseudonyme ou mot de passe incorrect" });
+    res.json({ token: await issueLocalToken(row.user_id, false, row.session_version), user: { id:row.user_id, name:row.display_name, loginUsername:row.username, photo:row.photo, guest:false } });
   } catch (error) { next(error); }
 });
 
@@ -2444,6 +2446,7 @@ app.use("/api", (_req, res) => {
 app.use((error, _req, res, _next) => {
   console.error(error.expose ? error.message : "Erreur serveur", error.code || error.name);
   const status = error.expose && Number.isInteger(error.status) ? error.status : error.type === "entity.too.large" ? 413 : 500;
+  if (status === 503 && error.code === "AUTH_BUSY") res.set("Retry-After", "2");
   res.status(status).json({ error: error.expose ? error.message : status === 413 ? "Fichier trop volumineux" : "Erreur interne du serveur" });
 });
 
