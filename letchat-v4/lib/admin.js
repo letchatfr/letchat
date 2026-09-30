@@ -20,6 +20,11 @@ export async function installAdmin({ app, pool, io, auth, adminAuth, isAdminUser
       slow_seconds INTEGER NOT NULL DEFAULT 0, notice TEXT NOT NULL DEFAULT '',
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- Existing installations already have room and slow_seconds: CREATE TABLE alone
+    -- does not add the administration columns to those tables.
+    ALTER TABLE letchat_room_settings ADD COLUMN IF NOT EXISTS read_only BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE letchat_room_settings ADD COLUMN IF NOT EXISTS notice TEXT NOT NULL DEFAULT '';
+    ALTER TABLE letchat_room_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
     CREATE INDEX IF NOT EXISTS idx_admin_reports_target ON letchat_reports(reported_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_admin_log_target ON letchat_moderation_log(target_user_id,created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_admin_messages_room ON letchat_messages(room,created_at DESC);
