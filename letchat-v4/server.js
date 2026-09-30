@@ -1,4 +1,5 @@
 import { installAdmin } from "./lib/admin.js";
+import { installCommunity } from "./lib/community.js";
 import { installSurprise } from "./lib/surprise.js";
 import { installSocial } from "./lib/social.js";
 import { installPremiumBenefits } from "./lib/premium-benefits.js";
@@ -506,8 +507,8 @@ async function verify(token) {
 function normalizeUsername(value) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, 40);
 }
-async function issueLocalToken(userId, guest = false, expectedVersion = undefined) {
-  const account = await pool.query("SELECT session_version FROM letchat_local_accounts WHERE user_id=$1 AND (expires_at IS NULL OR expires_at>NOW())", [userId]);
+async function issueLocalToken(userId, guest = false, expectedVersion = undefined, connection = pool) {
+  const account = await connection.query("SELECT session_version FROM letchat_local_accounts WHERE user_id=$1 AND (expires_at IS NULL OR expires_at>NOW())", [userId]);
   const version = account.rows[0]?.session_version;
   if (version === undefined || (expectedVersion !== undefined && version !== expectedVersion))
     throw Object.assign(new Error("La connexion a changé. Réessayez avec votre mot de passe actuel."), { status: 401, expose: true });
@@ -812,11 +813,52 @@ app.post("/api/auth/guest", rateLimitPublicAction("guest", 15, 60 * 60 * 1000), 
     const client = await pool.connect();
     try { await client.query("BEGIN"); await client.query(`INSERT INTO letchat_local_accounts(user_id,username,username_key,is_guest,gender,city,expires_at) VALUES($1,$2,$3,TRUE,$4,$5,$6)`,[userId,username,key,gender,city,expiresAt]); await client.query(`INSERT INTO profiles(user_id,email,display_name,region,department,city,gender) VALUES($1,'',$2,'','',$3,$4)`,[userId,username,city,gender]); await client.query(`INSERT INTO letchat_age_consents(user_id,over_18) VALUES($1,TRUE)`,[userId]); await client.query("COMMIT"); }
     catch(error){await client.query("ROLLBACK");throw error;} finally{client.release();}
-    res.status(201).json({ token:await issueLocalToken(userId,true), user:{id:userId,name:username,guest:true}, expiresAt });
+    res.status(201).json({ token:await issueLocalToken(userId,true), user:{id:userId,name:username,loginUsername:username,guest:true,expiresAt}, expiresAt });
   } catch(error){next(error);}
 });
 
-app.get("/api/auth/me", auth, (req,res) => res.json({ user:{ id:req.user.id,name:req.user.name,loginUsername:req.user.local && !req.user.guest ? req.user.loginUsername : null,photo:req.user.photo,guest:Boolean(req.user.guest) } }));
+app.get("/api/auth/me", auth, (req,res) => res.json({ user:{ id:req.user.id,name:req.user.name,loginUsername:req.user.local ? req.user.loginUsername : null,photo:req.user.photo,guest:Boolean(req.user.guest),expiresAt:req.user.guest ? new Date(req.user.expiresAt).toISOString() : null } }));
+
+// Convert the account in place: friendships, consents, profile and messages keep
+// their existing owner. Expired accounts cannot be resurrected by this route.
+app.post("/api/account/upgrade-guest", auth, requireAdult, requireRules, rateLimitAction("upgrade-guest", 5, 3600000), async (req, res, next) => {
+  try {
+    if (!req.user.local || !req.user.guest) return res.status(409).json({ error: "Ce compte est déjà permanent. Reconnectez-vous si nécessaire." });
+    const username = normalizeUsername(req.body?.username), key = username.toLocaleLowerCase("fr");
+    const password = String(req.body?.password || "");
+    if (username.length < 3) return res.status(400).json({ error: "Choisissez un identifiant de 3 à 40 caractères." });
+    if (password.length < 8 || password.length > 200) return res.status(400).json({ error: "Choisissez un mot de passe de 8 à 200 caractères." });
+    // Fast feedback before hashing; the unique database constraint still handles races.
+    if ((await pool.query("SELECT 1 FROM letchat_local_accounts WHERE username_key=$1 AND user_id<>$2", [key,req.user.id])).rowCount)
+      return res.status(409).json({ error: "Cet identifiant est déjà utilisé. Choisissez-en un autre." });
+    const salt = randomBytes(16).toString("hex"), recoveryCode = newRecoveryCode();
+    const digest = await passwordDigest(password, salt), client = await pool.connect();
+    let result;
+    try {
+      await client.query("BEGIN");
+      const updated = await client.query(`UPDATE letchat_local_accounts
+        SET username=$2,username_key=$3,password_hash=$4,password_salt=$5,recovery_hash=$6,
+          is_guest=FALSE,expires_at=NULL,session_version=session_version+1
+        WHERE user_id=$1 AND is_guest=TRUE AND expires_at>clock_timestamp()
+        RETURNING session_version`, [req.user.id, username, key, digest, salt, recoveryHash(recoveryCode)]);
+      if (!updated.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Ce compte invité a expiré ou a déjà été conservé. Reconnectez-vous." });
+      }
+      const profile = (await client.query("SELECT display_name,photo FROM profiles WHERE user_id=$1", [req.user.id])).rows[0];
+      const token = await issueLocalToken(req.user.id, false, updated.rows[0].session_version, client);
+      result = { token, recoveryCode, user: { id:req.user.id, name:profile?.display_name || username, loginUsername:username, photo:profile?.photo || null, guest:false } };
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      if (error.code === "23505") return res.status(409).json({ error: "Cet identifiant est déjà utilisé. Choisissez-en un autre." });
+      throw error;
+    } finally { client.release(); }
+    // Old guest credentials are revoked; the client reconnects with the new token.
+    io.in(`user:${req.user.id}`).disconnectSockets(true);
+    res.json(result);
+  } catch (error) { next(error); }
+});
 
 app.get("/api/subscription", auth, requireAdult, async (req, res, next) => {
   try {
@@ -2134,6 +2176,8 @@ app.delete("/api/messages/:kind/:id", auth, requireAdult, async (req, res, next)
 });
 
 const online = new Map();
+installCommunity({ app, pool, auth, requireAdult, requireRules, online,
+  isDiscreet: id => premiumBenefits.isDiscreet(id), rooms:roomCatalog });
 
 function userIsOnline(userId) {
   return [...online.values()].some(entry => entry.user.id === userId);
