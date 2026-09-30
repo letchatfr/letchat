@@ -1,4 +1,5 @@
 import { installAdminUI } from "./admin.js";
+import { installCommunityUI } from "./community.js";
 import { installSurpriseUI } from "./surprise.js";
 import { installSocial } from "./social.js";
 import { installPremiumBenefitsUI } from "./premium-benefits.js";
@@ -29,7 +30,7 @@ const config = {
 const auth = getAuth(initializeApp(config)),
   provider = new GoogleAuthProvider(),
   $ = (s) => document.querySelector(s);
-let socialFeatures, premiumFeatures, surpriseFeatures;
+let socialFeatures, premiumFeatures, surpriseFeatures, communityFeatures;
 let localSessionToken = localStorage.getItem("letchatLocalToken") || sessionStorage.getItem("letchatGuestToken") || "";
 let user,
   token,
@@ -241,7 +242,7 @@ getRedirectResult(auth).catch((error) =>
   loginError(`Retour Google impossible (${error.code || "erreur"}) : ${error.message}`),
 );
 function localUser(data, sessionToken) {
-  return { uid:data.id, displayName:data.name, loginUsername:data.loginUsername || "", email:"", photoURL:data.photo || "", guest:Boolean(data.guest), local:true, getIdToken:async()=>sessionToken };
+  return { uid:data.id, displayName:data.name, loginUsername:data.loginUsername || "", email:"", photoURL:data.photo || "", guest:Boolean(data.guest), expiresAt:data.expiresAt || null, local:true, getIdToken:async()=>sessionToken };
 }
 async function activateLocalSession(data, sessionToken, guest = false) {
   localSessionToken = sessionToken;
@@ -383,6 +384,7 @@ async function beginSession() {
     loadProfile();
     loadContactEmail();
     setupAppFeatures();
+    communityFeatures?.start();
   } catch (error) {
     sessionStarted = false;
     showError(error.message);
@@ -1271,6 +1273,7 @@ function openPrivate(id, name) {
   focusPrivateComposer(id);
 }
 function closeMemberPanels() {
+  if ($("#communityHome")?.open) $("#communityHome").close();
   adminUI?.reset();
   ["#searchModal", "#notificationsModal", "#onlineMembersModal", "#publicProfileModal", "#contactPickerModal", "#mobileActionsModal"].forEach(selector => $(selector)?.classList.add("hidden"));
   $(".side")?.classList.remove("open");
@@ -1384,6 +1387,7 @@ $("#rulesForm").onsubmit = async (event) => {
     });
     $("#rulesModal").classList.add("hidden");
     showError("Règles acceptées. Bienvenue sur Letchat !");
+    communityFeatures?.showHome();
   } catch (e) {
     $("#rulesError").textContent = e.message;
   } finally {
@@ -1797,6 +1801,7 @@ function connect() {
     allOnlineMembers = Array.isArray(members) ? members : [];
     renderOnlineMembers();
     refreshContactPresence();
+    communityFeatures?.refresh();
   });
   socket.on(
     "typing",
@@ -3074,16 +3079,9 @@ $("#onlineMembersModal").addEventListener("click", event => {
 });
 $("#onlineMembersSearch").addEventListener("input", renderOnlineMembers);
 
-// Le logo revient au salon d’accueil sans recharger ni perdre les brouillons.
+// L’accueil ouvre les salons actifs sans recharger ni perdre les brouillons.
 $("#homeLink").addEventListener("click", () => {
-  const cafe = roomLinks.find(link => link.dataset.room === "cafe");
-  if (!cafe) return;
-  cafe.closest("details").open = true;
-  $(".people").classList.remove("open");
-  selectRoom(cafe, "cafe");
-  const heading = $(".chat header h1");
-  heading.setAttribute("tabindex", "-1");
-  heading.focus({ preventScroll: true });
+  communityFeatures?.showHome();
 });
 
 // Votre propre identité ouvre vos paramètres de profil.
@@ -3107,5 +3105,20 @@ premiumFeatures = installPremiumBenefitsUI({ api, showProfile, openPrivate, show
   getContext: () => ({uid:user?.uid || "",name:user?.displayName || "",socket}) });
 
 surpriseFeatures = installSurpriseUI({ openPrivate, notify: showError, closePanels: closeMemberPanels,
+  openRooms: () => communityFeatures?.showHome(),
   openHome: id => { if (currentPrivate?.id === id) showPrivateMessagesHome(); },
   report: target => openReport(target), block: blockPrivateUser });
+
+communityFeatures = installCommunityUI({ api, getUser:() => user, openPrivate, openMembers:openOnlineMembers,
+  openProfile:showProfile, closePanels:closeMemberPanels, showRecoveryCode,
+  openRoom:id => { const link = roomLinks.find(item => item.dataset.room === id); if (link) selectRoom(link,id); },
+  upgradeSession:async data => {
+    localStorage.setItem("letchatLocalToken",data.token);
+    sessionStorage.removeItem("letchatGuestToken");
+    localSessionToken = token = data.token;
+    user = localUser(data.user,data.token);
+    $("#meName").textContent = data.user.name;
+    connect();
+    await loadSubscription();
+  },
+});

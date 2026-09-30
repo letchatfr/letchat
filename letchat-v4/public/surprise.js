@@ -1,7 +1,9 @@
-export function installSurpriseUI({ openPrivate, openHome, report, block, closePanels, notify }) {
+import { interests } from "./interests.js";
+export function installSurpriseUI({ openPrivate, openHome, openRooms, report, block, closePanels, notify }) {
   const q = (selector, root = document) => root.querySelector(selector);
   const menu = q("#surpriseLink");
   let socket, current = { status: "idle" }, revision = -1, busy = false, shownMatch = null;
+  const selected = new Set();
   const dialog = document.createElement("dialog");
   dialog.className = "surprise-dialog";
   dialog.setAttribute("aria-labelledby", "surpriseTitle");
@@ -9,7 +11,12 @@ export function installSurpriseUI({ openPrivate, openHome, report, block, closeP
     <div class="surprise-content"><div class="surprise-dice" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" stroke-width="1.7"/><g fill="currentColor"><circle cx="8" cy="8" r="1.5"/><circle cx="16" cy="8" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="8" cy="16" r="1.5"/><circle cx="16" cy="16" r="1.5"/></g></svg></div>
     <h3>Une personne. Une discussion à découvrir.</h3>
     <p>Rencontrez au hasard un membre connecté qui souhaite aussi discuter. Votre pseudo lui sera visible et votre conversation s’ouvrira en privé.</p>
+    <fieldset class="surprise-interests"><legend>Vos centres d’intérêt <small>3 maximum · facultatif</small></legend>
+      <div>${Object.entries(interests).map(([id, label]) => `<button type="button" data-interest="${id}" aria-pressed="false">${label}</button>`).join("")}</div>
+      <p>Un centre d’intérêt commun suffit. Sans choix, vous êtes ouvert à tous les sujets. Vos choix servent uniquement à cette recherche.</p></fieldset>
     <p class="surprise-status" role="status" aria-live="polite"></p>
+    <p class="surprise-elapsed" aria-live="off"></p>
+    <div class="surprise-alternative" hidden><strong>Envie de discuter sans attendre ?</strong><p>Rejoignez un salon pour commencer un échange. Votre recherche Surprise sera alors arrêtée.</p><button type="button" data-browse>Voir les salons disponibles</button></div>
     <p class="surprise-error" role="alert"></p>
     <div class="surprise-actions"><button type="button" data-start class="surprise-primary">Trouver une personne</button><button type="button" data-return hidden>Ouvrir la conversation</button><button type="button" data-stop hidden>Annuler la recherche</button></div>
     <p class="surprise-note">Disponible pour tous les membres. Aucun appel ni caméra ne démarre. Vous pouvez passer ou quitter à tout moment. Les échanges restent dans vos messages privés ; pour empêcher de nouveaux messages, bloquez la personne.</p></div>`;
@@ -38,6 +45,11 @@ export function installSurpriseUI({ openPrivate, openHome, report, block, closeP
       ? waitingLabel + (current.skipped ? " Les personnes passées sont exclues de cette recherche. Pour recommencer avec elles, quittez puis relancez." : "")
       : messages[current.reason] || "Lancez la recherche quand vous êtes prêt à discuter.";
     q(".surprise-status", dialog).textContent = label;
+    q(".surprise-interests", dialog).hidden = matched;
+    q(".surprise-alternative", dialog).hidden = !waiting;
+    for (const button of dialog.querySelectorAll("[data-interest]")) {
+      button.setAttribute("aria-pressed", String(selected.has(button.dataset.interest)));
+    }
     q("[data-status]", bar).textContent = label;
     bar.hidden = !(matched || waiting);
     q("[data-start]", dialog).hidden = matched || waiting;
@@ -49,12 +61,21 @@ export function installSurpriseUI({ openPrivate, openHome, report, block, closeP
     menu.classList.toggle("surprise-active", matched || waiting);
     menu.setAttribute("aria-label", `Rencontre Surprise${waiting ? " — recherche en cours" : matched ? " — rencontre en cours" : ""}`);
     for (const button of [...dialog.querySelectorAll("button:not([data-close])"), ...bar.querySelectorAll("button")]) button.disabled = busy || !socket?.connected;
+    for (const button of dialog.querySelectorAll("[data-interest]")) button.disabled = busy || waiting || (!selected.has(button.dataset.interest) && selected.size >= 3);
+    renderElapsed();
+  }
+  function renderElapsed() {
+    const seconds = Math.max(0, Math.floor((Date.now() - Number(current.joinedAt || Date.now())) / 1000));
+    q(".surprise-elapsed", dialog).textContent = current.status === "waiting"
+      ? `Attente : ${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, "0")} s · Aucun délai de rencontre garanti.`
+      : current.sharedInterests?.length ? `En commun : ${current.sharedInterests.map(id => interests[id]).filter(Boolean).join(", ")}` : "";
   }
   function receive(value) {
     if (!value || value.revision <= revision) return;
     revision = value.revision;
     const previous = current;
     current = value;
+    if (Array.isArray(value.interests)) { selected.clear(); value.interests.forEach(id => selected.add(id)); }
     render();
     if (value.status === "matched" && value.matchId !== shownMatch) {
       shownMatch = value.matchId;
@@ -67,15 +88,16 @@ export function installSurpriseUI({ openPrivate, openHome, report, block, closeP
     }
   }
   async function command(kind) {
-    if (busy) return;
+    if (busy) return false;
     if (!socket?.connected) { q(".surprise-error", dialog).textContent = "Attendez la reconnexion au tchat."; return; }
     const source = socket;
     busy = true; q(".surprise-error", dialog).textContent = ""; render();
     try {
-      const answer = await new Promise((resolve, reject) => source.timeout(8000).emit(`surprise-${kind}`, { matchId: current.matchId }, (error, response) => error ? reject(new Error("La réponse tarde. Réessayez ; votre état sera resynchronisé.")) : resolve(response)));
+      const answer = await new Promise((resolve, reject) => source.timeout(8000).emit(`surprise-${kind}`, { matchId: current.matchId, interests:[...selected] }, (error, response) => error ? reject(new Error("La réponse tarde. Réessayez ; votre état sera resynchronisé.")) : resolve(response)));
       if (source !== socket) return;
       if (!answer?.ok) throw new Error(answer?.error || "La recherche est indisponible.");
       receive(answer.state);
+      return true;
     } catch (error) {
       q(".surprise-error", dialog).textContent = error.message; notify(error.message);
       if (source === socket && source.connected) source.emit("surprise-status", {}, answer => { if (answer?.ok && source === socket) receive(answer.state); });
@@ -86,6 +108,14 @@ export function installSurpriseUI({ openPrivate, openHome, report, block, closeP
   q("[data-close]", dialog).onclick = () => dialog.close();
   q("[data-start]", dialog).onclick = () => command("join");
   q("[data-stop]", dialog).onclick = () => command("leave");
+  dialog.querySelectorAll("[data-interest]").forEach(button => button.onclick = () => {
+    const id = button.dataset.interest;
+    if (selected.has(id)) selected.delete(id); else if (selected.size < 3) selected.add(id);
+    render();
+  });
+  q("[data-browse]", dialog).onclick = async () => {
+    if (await command("leave")) { dialog.close(); openRooms(); }
+  };
   const resume = () => { if (current.partner) { dialog.close(); openPrivate(current.partner.id, current.partner.name); } };
   q("[data-return]", dialog).onclick = resume;
   q("[data-chat]", bar).onclick = resume;
@@ -119,6 +149,7 @@ export function installSurpriseUI({ openPrivate, openHome, report, block, closeP
     });
   }
   setInterval(sync, 7000);
+  setInterval(() => { if (dialog.open) renderElapsed(); }, 1000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) sync(); });
   return { bind };
 }
