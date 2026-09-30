@@ -27,6 +27,7 @@ export async function runBrowserQA({origin,users,request,check}) {
       },users[i].token);
       await page.goto(origin,{waitUntil:'networkidle'});
       await page.locator('.social-toolbar').waitFor({state:'visible'});
+      await page.locator('#communityHome[open] [data-close]').click();
       await page.waitForFunction(()=>document.querySelector('#connectionStatus')?.dataset.state==='online'||document.querySelector('#onlineCount')?.textContent==='5');
       if(await page.locator('#profileModal').isVisible())await page.locator('#closeProfile').click();
     }

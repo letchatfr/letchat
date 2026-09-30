@@ -24,6 +24,7 @@ export async function runSurpriseBrowserQA({ origin, users, request, check }) {
       await page.addInitScript(({ token, theme }) => { localStorage.setItem("letchatLocalToken", token); localStorage.setItem("letchat-theme", theme); }, { token: users[i].token, theme: i ? "dark" : "light" });
       await page.goto(origin, { waitUntil: "networkidle" });
       await page.locator(".social-toolbar").waitFor({ state: "visible" });
+      await page.locator('#communityHome[open] [data-close]').click();
       if (await page.locator("#profileModal").isVisible()) await page.locator("#closeProfile").click();
       await page.waitForFunction(() => document.querySelector("#connectionStatus")?.dataset.state === "online");
     }

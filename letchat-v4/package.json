@@ -15,6 +15,7 @@
     "test:albums": "node test/social-integration.mjs --albums",
     "test:premium-benefits": "node test/social-integration.mjs --premium-benefits",
     "test:surprise": "node test/surprise-integration.mjs",
+    "test:community": "node test/community-integration.mjs",
     "test:admin": "node test/admin-integration.mjs",
     "test:passwords": "node --test test/passwords.test.mjs && node test/password-integration.mjs"
   },
