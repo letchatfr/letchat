@@ -19,11 +19,18 @@ const request=async(path,token,method='GET',body)=>{const r=await fetch(origin+p
 const good=async(path,token,method='GET',body,status=200)=>{const r=await request(path,token,method,body);assert.equal(r.status,status,path+' '+r.text);return r.json;};
 try{
  await bridge.start();const connectionString=`postgresql://postgres:test@127.0.0.1:${dbPort}/postgres`;pool=new pg.Pool({connectionString});
+ // Reproduce the pre-administration schema still present on production upgrades.
+ await pool.query(`CREATE TABLE letchat_room_settings (room TEXT PRIMARY KEY, slow_seconds INTEGER NOT NULL DEFAULT 0);
+   INSERT INTO letchat_room_settings(room,slow_seconds) VALUES ('cafe',10);`);
  child=spawn(process.execPath,['--import','./test/admin-fault-injection.mjs','server.js'],{cwd:process.cwd(),env:{...process.env,DATABASE_URL:connectionString,PORT:String(appPort),JWT_SECRET:secret,NODE_ENV:'test',ADMIN_UID:adminId,ADMIN_EMAIL:'',STRIPE_SECRET_KEY:'',VAPID_PUBLIC_KEY:'',VAPID_PRIVATE_KEY:''},stdio:['ignore','pipe','pipe']});
  child.stdout.on('data',c=>logs+=c);child.stderr.on('data',c=>logs+=c);
  let ready=false;for(let i=0;i<150;i++){try{if((await request('/api/health')).status===200){ready=true;break;}}catch{}if(child.exitCode!==null)break;await wait(100);}assert.ok(ready,logs);
+ const migratedRoom=(await pool.query("SELECT read_only,slow_seconds,notice,updated_at FROM letchat_room_settings WHERE room='cafe'")).rows[0];
+ check(migratedRoom.read_only===false&&migratedRoom.slow_seconds===10&&migratedRoom.notice===''&&Boolean(migratedRoom.updated_at),'legacy room settings gain new columns without losing slow mode');
  const register=async username=>{const r=await good('/api/auth/register',null,'POST',{username,password:'Test-password-123',age:30,city:'Montpellier',gender:'neutral'},201);await good('/api/rules-accept',r.token,'POST',{accepted:true});return r;};
  const a=await register('Alice test'),b=await register('Bob test'),c=await register('Claire test'),d=await register('David test');
+ const moderation=await good('/api/rooms/cafe/moderation',a.token);
+ check(moderation.read_only===false&&moderation.slow_seconds===10&&moderation.notice==='','member moderation endpoint works after a legacy schema upgrade');
  await pool.query("INSERT INTO profiles(user_id,display_name,region,department,city) VALUES($1,'Admin test','','','Montpellier')",[adminId]);
  await pool.query("INSERT INTO letchat_local_accounts(user_id,username,username_key) VALUES($1,'Admin test','admin-test')",[adminId]);
  await pool.query('INSERT INTO letchat_age_consents(user_id,over_18) VALUES($1,TRUE)',[adminId]);
