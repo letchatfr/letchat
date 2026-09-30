@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
+import { normalizeInterests, shareInterests } from "../public/interests.js";
 
 // One opt-in per account, owned by the tab that started the search.
 // All transitions are serialized so two joins cannot reserve the same person.
@@ -18,6 +19,9 @@ export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) 
     partner: entry.partner || null,
     waitingCount: [...entries.values()].filter(e => !e.partner && alive(e)).length,
     skipped: Boolean(entry.avoid?.size),
+    joinedAt: entry.joinedAt,
+    interests: entry.interests,
+    sharedInterests: entry.sharedInterests || [],
   });
   function publish(entry) {
     entry.revision = ++revision;
@@ -55,6 +59,7 @@ export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) 
     const candidates = [...entries.values()].filter(e => e.id !== entry.id && !e.partner);
     while (candidates.length && alive(entry)) {
       const [other] = candidates.splice(randomInt(candidates.length), 1);
+      if (!shareInterests(entry.interests, other.interests)) continue;
       if (entry.avoid?.has(other.id) || other.avoid?.has(entry.id)) continue;
       if (!await eligible(other)) { remove(other.id, "unavailable"); continue; }
       const blocked = await pool.query(`SELECT 1 FROM letchat_blocks
@@ -65,6 +70,7 @@ export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) 
       if (!alive(other) || !alive(entry)) continue;
       const matchId = randomUUID();
       entry.matchId = other.matchId = matchId;
+      entry.sharedInterests = other.sharedInterests = entry.interests.filter(item => other.interests.includes(item));
       entry.partner = { id: other.id, name: io.sockets.sockets.get(other.socketId).user.name };
       other.partner = { id: entry.id, name: io.sockets.sockets.get(entry.socketId).user.name };
       publish(entry); publish(other);
@@ -98,7 +104,8 @@ export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) 
     // search after leaving starts fresh, with no silent 15-minute lockout.
     const avoid = new Set(kind === "next" ? existing.avoid : []);
     if (kind === "next") avoid.add(existing.partner.id);
-    const entry = { id, socketId: socket.id, joinedAt: Date.now(), revision: 0, avoid };
+    const interests = kind === "next" ? existing.interests : normalizeInterests(payload?.interests);
+    const entry = { id, socketId: socket.id, joinedAt: Date.now(), revision: 0, avoid, interests };
     if (!await eligible(entry)) throw new Error("Pour participer, acceptez les règles et autorisez les messages privés de tout le monde dans votre profil.");
     if (kind === "next") remove(id, "next");
     if (!socket.connected) return { revision: ++revision, status: "idle", reason: "disconnected" };
