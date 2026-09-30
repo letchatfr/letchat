@@ -20,6 +20,7 @@ export async function runPremiumBenefitsBrowserQA({origin,users,request,pool,che
       await page.route('https://www.gstatic.com/firebasejs/**',r=>r.fulfill({status:200,contentType:'text/javascript',body:firebase}));
       await page.addInitScript(token=>{localStorage.setItem('letchatLocalToken',token);localStorage.setItem('letchat-theme','light');},user.token);
       await page.goto(origin,{waitUntil:'networkidle'});await page.waitForFunction(()=>document.querySelector('#connectionStatus')?.dataset.state==='online');
+      await page.locator('#communityHome[open] [data-close]').click();
       if(await page.locator('#profileModal').isVisible())await page.locator('#closeProfile').click();
     }
     const [paid,free]=pages;
