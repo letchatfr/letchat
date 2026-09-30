@@ -463,6 +463,11 @@ app.use("/api", (req, res, next) => {
   next();
 });
 app.use("/api", (_req, res, next) => { res.set("Cache-Control", "private, no-store"); next(); });
+// Consolidate the homepage URL while preserving authentication and payment parameters.
+app.get("/index.html", (req, res) => {
+  const queryIndex = req.originalUrl.indexOf("?");
+  res.redirect(301, "/" + (queryIndex === -1 ? "" : req.originalUrl.slice(queryIndex)));
+});
 app.get("/privacy.html", (_req, res) => res.redirect(301, "/confidentialite.html"));
 await installAdvertisingPage(app);
 app.use(express.static("public", {
