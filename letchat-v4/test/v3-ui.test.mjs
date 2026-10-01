@@ -7,7 +7,9 @@ const waitFor = async predicate => { for (let n = 0; n < 100; n++) { if (predica
 async function setup(t, responder) {
   const dom = new JSDOM('<!doctype html><html lang="fr"><body><div class="social-toolbar"></div><a id="spacesLink"></a><a id="surpriseLink"></a><dialog id="communityHome"><button data-spaces></button></dialog></body></html>', { url: 'http://localhost/', runScripts: 'outside-only', pretendToBeVisual: true });
   t.after(() => dom.window.close());
-  const w = dom.window, requests = [], notices = []; let reloads = 0;
+  const w = dom.window, requests = [], notices = [], intervals = new Map(); let reloads = 0;
+  const schedule = w.setInterval.bind(w);
+  w.setInterval = (fn, ms) => { intervals.set(ms, fn); return schedule(fn, ms); };
   w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   w.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new w.Event('close')); };
   for (const [file, name] of [['spaces.js', 'installSpacesUI'], ['v3-tools.js', 'installV3Tools']]) {
@@ -19,8 +21,33 @@ async function setup(t, responder) {
   const tools = w.installV3Tools({ api, getContext: () => ctx, notify: s => notices.push(s), reload: async () => reloads++, report() {}, closePanels() {} });
   const q = selector => w.document.querySelector(selector);
   const submit = selector => q(selector).dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
-  return { w, q, ctx, tools, requests, notices, submit, reloads: () => reloads };
+  return { w, q, ctx, tools, requests, notices, submit, intervals, reloads: () => reloads };
 }
+
+test('community refresh keeps the draft during a transient failure, then recovers; revoked access hides it', async t => {
+  const community = { id: 'stable-space', name: 'Une communauté', theme: 'general', description: 'Une discussion de test', rules: 'Respectez les autres.', rules_version: 1, owner_id: 'self', member_count: 1, joined: true, accepted_version: 1, role: 'member', paused: false, archived: false };
+  let failure;
+  const f = await setup(t, req => {
+    if (req.path.startsWith('/api/spaces?')) return { items: [community], next: null };
+    if (failure) throw failure;
+    if (req.path.endsWith('/messages')) return { items: [], next: null };
+    return community;
+  });
+  f.q('#spacesLink').click(); await waitFor(() => f.q('[data-space]'));
+  f.q('[data-space]').click(); await waitFor(() => f.q('.space-composer'));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const composer = f.q('.space-composer textarea'); composer.value = 'Mon brouillon à conserver';
+  failure = new TypeError('Failed to fetch');
+  await f.intervals.get(15000)();
+  assert.equal(f.q('.space-composer textarea')?.value, 'Mon brouillon à conserver');
+  assert.match(f.q('.space-error').textContent, /connexion|actualis/i);
+  failure = null; await f.intervals.get(15000)();
+  assert.equal(f.q('.space-composer textarea').value, 'Mon brouillon à conserver');
+  assert.equal(f.q('.space-error').textContent, '');
+  failure = Object.assign(new Error('Accès refusé'), { status: 403 }); await f.intervals.get(15000)();
+  assert.equal(f.q('.space-composer'), null);
+  assert.match(f.q('.space-error').textContent, /Accès refusé/);
+});
 
 test('message search uses the active conversation, escapes text and discards a late response after closing', async t => {
   let resolve;
