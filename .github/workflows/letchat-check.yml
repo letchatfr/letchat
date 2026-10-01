@@ -4,14 +4,19 @@ on:
   pull_request:
     paths:
       - "letchat-v4/**"
+      - "package.json"
+      - "package-lock.json"
+      - "server.js"
+      - "render.yaml"
       - ".github/workflows/letchat-check.yml"
 
 permissions:
   contents: read
 
 jobs:
-  syntax:
+  validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: letchat-v4
@@ -23,4 +28,13 @@ jobs:
           cache: npm
           cache-dependency-path: letchat-v4/package-lock.json
       - run: npm ci
+      - run: npm run build
       - run: npm run check
+      - run: node --check ../server.js
+      - run: npm test
+      - run: npm run test:v3
+      - run: npm run test:integration
+      - run: npm run test:admin
+      - run: npm run test:community
+      - run: npm run test:surprise
+      - run: npm run test:social

@@ -17,7 +17,8 @@
     "test:surprise": "node test/surprise-integration.mjs",
     "test:community": "node test/community-integration.mjs",
     "test:admin": "node test/admin-integration.mjs",
-    "test:passwords": "node --test test/passwords.test.mjs && node test/password-integration.mjs"
+    "test:passwords": "node --test test/passwords.test.mjs && node test/password-integration.mjs",
+    "test:v3": "node test/v3-integration.mjs"
   },
   "engines": {
     "node": ">=20.9.0"

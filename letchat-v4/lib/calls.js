@@ -2,8 +2,8 @@ const types = new Set(["invite", "join", "offer", "answer", "ice", "decline", "l
 export const callUser = user => ({ id: user.id, name: user.name, photo: user.photo || null });
 
 export class CallRegistry {
-  constructor({ sockets, permitted, now = Date.now }) {
-    this.sockets = sockets; this.permitted = permitted; this.now = now;
+  constructor({ sockets, permitted, now = Date.now, sameScope = (a, b) => a.room === b.room }) {
+    this.sameScope = sameScope; this.sockets = sockets; this.permitted = permitted; this.now = now;
     this.calls = new Map(); this.bySocket = new Map(); this.invites = new Map();
   }
   end(socketId, reason = "ended") {
@@ -40,12 +40,12 @@ export class CallRegistry {
       if (recent.length >= 6) return socket.emit("webrtc-error", { error: "Trop d’appels. Patientez une minute." });
       recent.push(this.now()); this.invites.set(socket.user.id, recent);
     }
-    if (socket.room !== recipient.room || !await this.permitted(socket, recipient)) {
+    if (!this.sameScope(socket, recipient) || !await this.permitted(socket, recipient)) {
       if (call && this.bySocket.get(socket.id) === callId) this.end(socket.id, "forbidden");
       return socket.emit("webrtc-error", { error: "Appel indisponible pour ce membre." });
     }
     // Recheck after asynchronous authorization (disconnect/room change/concurrent invite).
-    if (!this.sockets.has(socket.id) || !this.sockets.has(recipient.id) || socket.room !== recipient.room) return;
+    if (!this.sockets.has(socket.id) || !this.sockets.has(recipient.id) || !this.sameScope(socket, recipient)) return;
     call = this.calls.get(callId);
     if (type === "invite") {
       if (call || this.bySocket.has(socket.id) || this.bySocket.has(recipient.id))
@@ -57,7 +57,7 @@ export class CallRegistry {
       this.bySocket.set(socket.id, callId); this.bySocket.set(recipient.id, callId);
     } else {
       if (!call || this.bySocket.get(socket.id) !== callId || this.bySocket.get(recipient.id) !== callId
-        || call.room !== socket.room) return;
+        || !this.sameScope(socket, recipient)) return;
       if (!call.accepted && this.now() >= call.expires) return this.end(socket.id, "timeout");
       if (type === "join") {
         if (call.accepted || call.callee !== socket.id || call.caller !== recipient.id) return;

@@ -1,4 +1,4 @@
-import { interests } from "./interests.js";
+import { interests } from "./interests.f0d0445c3515.js";
 export function installSurpriseUI({ startCall, preparePrompt, openPrivate, openHome, openRooms, report, block, closePanels, notify }) {
   const q = (selector, root = document) => root.querySelector(selector);
   const menu = q("#surpriseLink");
