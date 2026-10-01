@@ -257,13 +257,30 @@ async function activateLocalSession(data, sessionToken, guest = false) {
 }
 async function restoreLocalSession() {
   if (!localSessionToken) return false;
+  const savedToken = localSessionToken, controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch("/api/auth/me",{headers:{Authorization:`Bearer ${localSessionToken}`}});
+    const response = await fetch("/api/auth/me",{headers:{Authorization:`Bearer ${savedToken}`},signal:controller.signal});
+    if (localSessionToken !== savedToken) return Boolean(localSessionToken);
+    if (response.status === 401 || response.status === 403) {
+      localStorage.removeItem("letchatLocalToken"); sessionStorage.removeItem("letchatGuestToken"); localSessionToken = "";
+      return false;
+    }
     if (!response.ok) throw new Error();
     const data = await response.json();
+    if (localSessionToken !== savedToken) return Boolean(localSessionToken);
     await activateLocalSession(data.user,localSessionToken,Boolean(data.user.guest));
     return true;
-  } catch { localStorage.removeItem("letchatLocalToken"); sessionStorage.removeItem("letchatGuestToken"); localSessionToken=""; return false; }
+  } catch {
+    if (localSessionToken !== savedToken) return Boolean(localSessionToken);
+    // A network failure does not prove that a saved credential has expired.
+    localSessionToken = "";
+    loginError("Connexion interrompue. Votre session est conservée. Vérifiez votre réseau puis réessayez. ");
+    const retry = document.createElement("button"); retry.type = "button"; retry.id = "retrySessionRestore";
+    retry.textContent = "Réessayer"; retry.onclick = () => location.reload();
+    $("#loginError").append(retry);
+    return false;
+  } finally { clearTimeout(timeout); }
 }
 const localRestorePromise = restoreLocalSession();
 onAuthStateChanged(auth, async (u) => {
@@ -365,7 +382,7 @@ const api = async (path, opt = {}) => {
       const data = await r.json();
       if (data?.error) message = data.error;
     } catch {}
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: r.status });
   }
   return r;
 };
@@ -2565,7 +2582,7 @@ async function showPrivateMessagesHome() {
   await loadPrivateConversations();
   renderPrivateMessagesHome();
 }
-document.querySelector(".new").onclick = () => openContactPicker("message");
+document.querySelector(".new").onclick = () => { closeMemberPanels(); openContactPicker("message"); };
 $("#privateMessagesLink").onclick = async (event) => {
   event.preventDefault();
   await showPrivateMessagesHome();

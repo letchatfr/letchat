@@ -132,7 +132,15 @@ export function installSpacesUI({ api, getContext, notify, report, dialog, close
       const changed = String(s.rules_version) !== body.dataset.rulesVersion || String(s.joined) !== body.dataset.joined || String(s.paused || s.archived || !s.owner_id) !== body.dataset.paused || String(manager(s)) !== body.dataset.manage;
       if (changed) { const draft = q('.space-composer textarea', body)?.value || ''; renderSpace(s); if (q('.space-composer textarea', body)) q('.space-composer textarea', body).value = draft; }
       await messages();
-    } catch (e) { if (valid(revision)) { body.innerHTML = '<button type="button" data-back>← Les communautés</button><p class="space-error" role="alert"></p>'; q('.space-error', body).textContent = e.message; q('[data-back]', body).onclick = browse; } }
+    } catch (e) {
+      if (!valid(revision)) return;
+      if ([401, 403, 404, 410].includes(e.status)) {
+        body.innerHTML = '<button type="button" data-back>← Les communautés</button><p class="space-error" role="alert"></p>';
+        q('.space-error', body).textContent = e.message; q('[data-back]', body).onclick = browse;
+      } else {
+        q('.space-error', body).textContent = 'Actualisation interrompue. Votre brouillon est conservé ; la discussion sera actualisée au retour de la connexion.';
+      }
+    }
     finally { refreshing = false; if (pending) { pending = false; refresh(); } }
   }
   root.addEventListener('close', () => { ticket++; active = null; body.replaceChildren(); if (sub.open) sub.close(); });

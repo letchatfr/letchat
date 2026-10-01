@@ -42,7 +42,7 @@
 .welcome-password { display: flex; align-items: center; position: relative; min-width: 0; }
 #login .welcome-password input { padding-right: 84px; }
 #login .welcome-password button { position: absolute; right: 5px; width: 75px; height: 38px; min-height: 0; margin: 0 !important; padding: 0 5px; border-radius: 7px; background: transparent !important; color: var(--v3-accent) !important; font-size: 11px; }
-#login .welcome-card .local-auth-form > button[type="submit"] { min-height: 46px; height: auto; margin: 11px 0 0 !important; padding: 13px; border-radius: 11px; background: #b84430 !important; color: #fff !important; font-size: 13px; }
+#login .welcome-card .local-auth-form > button[type="submit"], #login .welcome-card #retrySessionRestore { min-height: 46px; height: auto; margin: 11px 0 0 !important; padding: 13px; border-radius: 11px; background: #b84430 !important; color: #fff !important; font-size: 13px; }
 #login .welcome-card #forgotPassword { height: auto; min-height: 35px; margin: 0 !important; background: transparent !important; color: var(--v3-accent) !important; font-size: 11px; }
 .welcome-form-row { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.4fr); gap: 12px; }
 .welcome-form-row > div { min-width: 0; }
