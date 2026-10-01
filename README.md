@@ -27,7 +27,7 @@ Le démarrage nécessite `DATABASE_URL` et `JWT_SECRET` (au moins 32 caractères
 - `letchat-v4/templates/` : pages reconstruites au démarrage.
 - `letchat-v4/scripts/build-assets.mjs` : empreintes des ressources, feuille de style commune, cache public.
 - `letchat-v4/test/` : tests unitaires et d’intégration, bases locales temporaires.
-- `archive/` : imports historiques, jamais servis par l’application et à ne pas déployer.
+- `archive/versions-historiques.zip` : les 99 fichiers historiques conservés avec leurs chemins et leur contenu, jamais servis par l’application et à ne pas déployer.
 - `render.yaml` : seul Blueprint actif, ciblant `letchat-v4` et la base existante.
 
 ## Déploiement et retour arrière
