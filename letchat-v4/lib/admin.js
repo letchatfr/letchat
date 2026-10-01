@@ -206,13 +206,18 @@ export async function installAdmin({ app, pool, io, auth, adminAuth, isAdminUser
     if (kind === 'public') row = (await db.query('DELETE FROM letchat_messages WHERE id=$1 RETURNING user_id,room', [id])).rows[0];
     else if (kind === 'private') row = (await db.query('DELETE FROM letchat_private_messages WHERE id=$1 RETURNING sender_id AS user_id,recipient_id', [id])).rows[0];
     else if (kind === 'group') row = (await db.query('DELETE FROM letchat_group_messages WHERE id=$1 RETURNING sender_id AS user_id,group_id', [id])).rows[0];
+    else if (kind === 'community') row = (await db.query('DELETE FROM letchat_space_messages WHERE id=$1 RETURNING user_id,space_id', [id])).rows[0];
     else fail('Type de message incorrect');
-    if (kind !== 'group') await db.query('DELETE FROM letchat_message_reactions WHERE message_kind=$1 AND message_id=$2', [kind,id]);
+    if (!['group','community'].includes(kind)) await db.query('DELETE FROM letchat_message_reactions WHERE message_kind=$1 AND message_id=$2', [kind,id]);
     await db.query('UPDATE letchat_reports SET content_removed_at=NOW() WHERE message_kind=$1 AND message_id=$2', [kind,id]);
     return row;
   }
   async function emitDeleted(kind, id, row) {
     if (!row) return;
+    if (kind === 'community') {
+      for (const m of (await pool.query('SELECT user_id FROM letchat_space_members WHERE space_id=$1 AND NOT banned',[row.space_id])).rows) io.to(`user:${m.user_id}`).emit('space-update',{id:row.space_id});
+      return;
+    }
     if (kind === 'group') {
       const members = (await pool.query('SELECT user_id FROM letchat_group_members WHERE group_id=$1', [row.group_id])).rows;
       for (const m of members) io.to(`user:${m.user_id}`).emit('social-update', { kind: 'group', id: row.group_id });

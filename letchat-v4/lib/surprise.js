@@ -3,7 +3,7 @@ import { normalizeInterests, shareInterests } from "../public/interests.js";
 
 // One opt-in per account, owned by the tab that started the search.
 // All transitions are serialized so two joins cannot reserve the same person.
-export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) {
+export function installSurprise({ io, pool, socketSessionValid, rulesVersion, onEnd = () => {} }) {
   const entries = new Map(), attempts = new Map();
   let pending = Promise.resolve(), revision = 0;
   const serial = fn => {
@@ -21,6 +21,7 @@ export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) 
     skipped: Boolean(entry.avoid?.size),
     joinedAt: entry.joinedAt,
     interests: entry.interests,
+    mode: entry.mode,
     sharedInterests: entry.sharedInterests || [],
   });
   function publish(entry) {
@@ -36,6 +37,7 @@ export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) 
     const entry = entries.get(id);
     if (!entry) return;
     entries.delete(id);
+    onEnd(entry.socketId);
     idle(entry.socketId, reason);
     if (entry.partner) {
       const other = entries.get(entry.partner.id);
@@ -59,7 +61,7 @@ export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) 
     const candidates = [...entries.values()].filter(e => e.id !== entry.id && !e.partner);
     while (candidates.length && alive(entry)) {
       const [other] = candidates.splice(randomInt(candidates.length), 1);
-      if (!shareInterests(entry.interests, other.interests)) continue;
+      if (entry.mode !== other.mode || !shareInterests(entry.interests, other.interests)) continue;
       if (entry.avoid?.has(other.id) || other.avoid?.has(entry.id)) continue;
       if (!await eligible(other)) { remove(other.id, "unavailable"); continue; }
       const blocked = await pool.query(`SELECT 1 FROM letchat_blocks
@@ -71,8 +73,8 @@ export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) 
       const matchId = randomUUID();
       entry.matchId = other.matchId = matchId;
       entry.sharedInterests = other.sharedInterests = entry.interests.filter(item => other.interests.includes(item));
-      entry.partner = { id: other.id, name: io.sockets.sockets.get(other.socketId).user.name };
-      other.partner = { id: entry.id, name: io.sockets.sockets.get(entry.socketId).user.name };
+      entry.partner = { id: other.id, name: io.sockets.sockets.get(other.socketId).user.name, ...(entry.mode === "video" ? { socketId: other.socketId } : {}) };
+      other.partner = { id: entry.id, name: io.sockets.sockets.get(entry.socketId).user.name, ...(entry.mode === "video" ? { socketId: entry.socketId } : {}) };
       publish(entry); publish(other);
       return;
     }
@@ -105,7 +107,8 @@ export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) 
     const avoid = new Set(kind === "next" ? existing.avoid : []);
     if (kind === "next") avoid.add(existing.partner.id);
     const interests = kind === "next" ? existing.interests : normalizeInterests(payload?.interests);
-    const entry = { id, socketId: socket.id, joinedAt: Date.now(), revision: 0, avoid, interests };
+    const mode = kind === "next" ? existing.mode : payload?.mode === "video" ? "video" : "text";
+    const entry = { id, socketId: socket.id, joinedAt: Date.now(), revision: 0, avoid, interests, mode };
     if (!await eligible(entry)) throw new Error("Pour participer, acceptez les règles et autorisez les messages privés de tout le monde dans votre profil.");
     if (kind === "next") remove(id, "next");
     if (!socket.connected) return { revision: ++revision, status: "idle", reason: "disconnected" };
@@ -146,6 +149,12 @@ export function installSurprise({ io, pool, socketSessionValid, rulesVersion }) 
   timer.unref?.();
   return {
     attach,
+    isVideoPair(a, b) {
+      const sa = io.sockets.sockets.get(a), sb = io.sockets.sockets.get(b);
+      const ea = entries.get(sa?.user.id), eb = entries.get(sb?.user.id);
+      return Boolean(ea && eb && ea.socketId === a && eb.socketId === b && ea.mode === "video" && eb.mode === "video"
+        && ea.partner?.id === eb.id && eb.partner?.id === ea.id && ea.matchId === eb.matchId && alive(ea) && alive(eb));
+    },
     endBetween: (a, b) => serial(() => {
       if (entries.get(a)?.partner?.id === b) remove(a, "blocked");
     }),
