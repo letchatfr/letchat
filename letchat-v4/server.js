@@ -1,3 +1,6 @@
+import { installMessageTools } from "./lib/message-tools.js";
+import { installSpaces } from "./lib/spaces.js";
+import { createDiagnostics, installDiagnostics } from "./lib/diagnostics.js";
 import { installAdmin } from "./lib/admin.js";
 import { installCommunity } from "./lib/community.js";
 import { installSurprise } from "./lib/surprise.js";
@@ -22,6 +25,8 @@ import webpush from "web-push";
 import { validatePushSubscription, sendValidatedPush, MAX_PUSH_SUBSCRIPTIONS } from "./lib/push-security.js";
 
 const app = express();
+const diagnostics = createDiagnostics();
+app.use(diagnostics.middleware);
 app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 100000 });
@@ -589,6 +594,11 @@ async function createNotification(userId, type, title, body = "", actorId = null
 
 async function sendPushNotification(userId, payload) {
   if (!pushConfigured) return;
+  const preferences = await messageTools.preferences(userId);
+  if (preferences.quiet_until && new Date(preferences.quiet_until).getTime() > Date.now()) return;
+  if (payload.type === "private_message" && !preferences.private_messages) return;
+  if (payload.type.startsWith("friend") && !preferences.friendships) return;
+  if (!preferences.preview) payload = { type: payload.type, title: "Letchat", body: "Vous avez une nouvelle notification." };
   const { rows } = await pool.query(
     `SELECT endpoint,p256dh,auth FROM letchat_push_subscriptions WHERE user_id=$1
      ORDER BY updated_at DESC LIMIT ${MAX_PUSH_SUBSCRIPTIONS}`,
@@ -762,7 +772,11 @@ installRecoveryRoutes({ app, pool, io, auth, rateLimitPublicAction, rateLimitAct
 const premiumBenefits = await installPremiumBenefits({ app, pool, auth, requireAdult, requireRules, rateLimitAction, hasPremiumAccess,
   onlineIds: () => [...new Set([...online.values()].filter(e => !premiumBenefits.isDiscreet(e.user.id)).map(e => e.user.id))], changed: refreshPremiumIdentity });
 const social = await installSocial({ app, pool, io, auth, requireAdult, requireRules, rateLimitAction, hasPremiumAccess, roomCatalog, socketSessionValid });
-const surprise = installSurprise({ io, pool, socketSessionValid, rulesVersion: RULES_VERSION });
+const surprise = installSurprise({ io, pool, socketSessionValid, rulesVersion: RULES_VERSION,
+  onEnd: socketId => calls.end(socketId, "surprise-ended") });
+const messageTools = await installMessageTools({ app, pool, io, auth, requireAdult, requireRules, rateLimitAction, hasPremiumAccess, roomCatalog, validateMessageContent });
+const spaces = await installSpaces({ app, pool, io, auth, requireAdult, requireRules, adminAuth, isAdminUser, rateLimitAction, validateMessageContent });
+installDiagnostics({ app, pool, auth, adminAuth, requireAdult, rateLimitAction, diagnostics });
 
 app.post("/api/auth/register", rateLimitPublicAction("register", 10, 60 * 60 * 1000), async (req, res, next) => {
   try {
@@ -997,6 +1011,8 @@ app.get("/api/account-export", auth, requireAdult, rateLimitAction("export", 3, 
       consents: consents.rows,
       conversationPreferences: conversationPreferences.rows,
       social: await social.exportData(uid),
+      communities: await spaces.exportData(uid),
+      notificationPreferences: await messageTools.preferences(uid),
       premiumPreferences: (await pool.query("SELECT accent,frame,badge,discreet FROM letchat_premium_preferences WHERE user_id=$1",[uid])).rows[0] || null,
       note: "Les fichiers image et vidéo binaires ne sont pas inclus dans cet export JSON. Leurs types sont indiqués."
     };
@@ -1440,7 +1456,7 @@ app.post("/api/reports", auth, requireAdult, requireRules, rateLimitAction("repo
     const reason = String(req.body.reason || "");
     const details = String(req.body.details || "").trim().slice(0, 1000);
     const rawKind = req.body.messageKind;
-    const messageKind = ["public", "private", "group"].includes(rawKind) ? rawKind : null;
+    const messageKind = ["public", "private", "group", "community"].includes(rawKind) ? rawKind : null;
     const messageId = /^[1-9]\d{0,17}$/.test(String(req.body.messageId || "")) ? String(req.body.messageId) : null;
     if ((rawKind && !messageKind) || Boolean(messageKind) !== Boolean(messageId))
       return res.status(400).json({ error: "Référence du message incorrecte" });
@@ -1456,6 +1472,13 @@ app.post("/api/reports", auth, requireAdult, requireRules, rateLimitAction("repo
       } else if (messageKind === "private") {
         evidence = await pool.query(`SELECT sender_id AS author_id,LEFT(COALESCE(NULLIF(body,''),'[Média]'),2000) AS body,'Conversation privée' AS context
           FROM letchat_private_messages WHERE id=$1 AND expires_at>NOW() AND (sender_id=$2 OR recipient_id=$2)`, [messageId, req.user.id]);
+      } else if (messageKind === "community") {
+        evidence = await pool.query(`SELECT m.user_id AS author_id,LEFT(m.body,2000) AS body,s.name AS context
+          FROM letchat_space_messages m JOIN letchat_spaces s ON s.id=m.space_id
+          JOIN letchat_space_members sm ON sm.space_id=s.id AND sm.user_id=$2 AND NOT sm.banned
+          WHERE m.id=$1 AND m.expires_at>NOW()
+          AND NOT EXISTS(SELECT 1 FROM letchat_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=s.owner_id) OR (b.blocked_id=$2 AND b.blocker_id=s.owner_id))
+          AND NOT EXISTS(SELECT 1 FROM letchat_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=m.user_id) OR (b.blocked_id=$2 AND b.blocker_id=m.user_id))`, [messageId,req.user.id]);
       } else {
         evidence = await pool.query(`SELECT m.sender_id AS author_id,LEFT(COALESCE(NULLIF(m.body,''),'[Média]'),2000) AS body,g.name AS context
           FROM letchat_group_messages m JOIN letchat_groups g ON g.id=m.group_id
@@ -1611,7 +1634,7 @@ app.get("/api/messages", auth, requireAdult, async (req, res, next) => {
       return res.status(403).json({ error: "Ce salon est réservé aux membres Premium." });
     const { rows } = await pool.query(`
       SELECT m.id, m.user_id, m.author, m.room, m.photo, m.body, m.media_type, m.pinned,
-             m.created_at, m.expires_at, m.reply_to_id,
+             m.created_at, m.expires_at, m.edited_at, m.reply_to_id,
              parent.author AS reply_author, parent.user_id AS reply_user_id, parent.body AS reply_body,
              (m.media_data IS NOT NULL) AS has_media,
              COALESCE((SELECT jsonb_object_agg(x.emoji, x.total) FROM (
@@ -1824,7 +1847,7 @@ app.get("/api/private/:otherId", auth, requireAdult, async (req, res, next) => {
     if (blocked.rowCount) return res.status(403).json({ error: "Conversation bloquée" });
     const { rows } = await pool.query(
       `SELECT m.id, m.sender_id AS user_id, m.recipient_id, m.sender_name AS author,
-              m.sender_photo AS photo, m.body, m.media_type, m.created_at, m.expires_at,
+              m.sender_photo AS photo, m.body, m.media_type, m.created_at, m.expires_at, m.edited_at,
               m.delivered_at, m.read_at, m.view_once, m.opened_at,
               m.reply_to_id, parent.sender_name AS reply_author, parent.sender_id AS reply_user_id, parent.body AS reply_body,
               (m.media_data IS NOT NULL) AS has_media,
@@ -2302,7 +2325,7 @@ io.use(async (socket, next) => {
   }
 });
 
-const calls = new CallRegistry({ sockets: io.sockets.sockets, permitted: async (a, b) => {
+const calls = new CallRegistry({ sockets: io.sockets.sockets, sameScope: (a, b) => a.room === b.room || surprise.isVideoPair(a.id, b.id), permitted: async (a, b) => {
   if (!await socketSessionValid(a) || !await socketSessionValid(b)) return false;
   if (isPremiumRoom(a.room) && (!await hasPremiumAccess(a.user.id) || !await hasPremiumAccess(b.user.id))) return false;
   const blocked = await pool.query(`SELECT 1 FROM letchat_blocks
@@ -2441,6 +2464,7 @@ async function deleteExpiredMessages() {
     for (const userId of premiumOccupants) await moveExpiredPremiumSockets(userId);
     calls.prune();
     await social.prune();
+    await spaces.purge();
     await purgeExpiredGuests(pool, io);
     const bucketCutoff = Date.now() - 24 * 60 * 60 * 1000;
     for (const [key, times] of actionBuckets) {
