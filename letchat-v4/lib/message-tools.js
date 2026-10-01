@@ -1,14 +1,29 @@
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status, expose: true }); };
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 const escapeLike = value => value.replace(/[\\%_]/g, c => `\\${c}`);
-export async function installMessageTools({ app, pool, io, auth, requireAdult, requireRules, rateLimitAction, hasPremiumAccess, roomCatalog, validateMessageContent }) {
-  await pool.query(`ALTER TABLE letchat_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
-    ALTER TABLE letchat_private_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
-    CREATE TABLE IF NOT EXISTS letchat_notification_preferences (
+export async function migrateNotificationPreferences(pool) {
+  await pool.query(`CREATE TABLE IF NOT EXISTS letchat_notification_preferences (
       user_id TEXT PRIMARY KEY REFERENCES profiles(user_id) ON DELETE CASCADE,
       private_messages BOOLEAN NOT NULL DEFAULT TRUE, friendships BOOLEAN NOT NULL DEFAULT TRUE,
       preview BOOLEAN NOT NULL DEFAULT TRUE, quiet_until TIMESTAMPTZ
-    );`);
+    );
+    ALTER TABLE letchat_notification_preferences
+      ADD COLUMN IF NOT EXISTS friendships BOOLEAN,
+      ADD COLUMN IF NOT EXISTS preview BOOLEAN NOT NULL DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS quiet_until TIMESTAMPTZ;
+    -- Older deployments called this setting "friends". Copy it only for rows
+    -- that have not been migrated; never overwrite a later V3 preference.
+    UPDATE letchat_notification_preferences AS p
+      SET friendships=COALESCE((to_jsonb(p)->>'friends')::boolean, TRUE)
+      WHERE friendships IS NULL;
+    ALTER TABLE letchat_notification_preferences
+      ALTER COLUMN friendships SET DEFAULT TRUE,
+      ALTER COLUMN friendships SET NOT NULL;`);
+}
+export async function installMessageTools({ app, pool, io, auth, requireAdult, requireRules, rateLimitAction, hasPremiumAccess, roomCatalog, validateMessageContent }) {
+  await pool.query(`ALTER TABLE letchat_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+    ALTER TABLE letchat_private_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
+  await migrateNotificationPreferences(pool);
   const base = [auth, requireAdult, requireRules];
   async function preferences(id) {
     const row = (await pool.query('SELECT private_messages,friendships,preview,quiet_until FROM letchat_notification_preferences WHERE user_id=$1', [id])).rows[0];
@@ -78,3 +93,4 @@ export async function installMessageTools({ app, pool, io, auth, requireAdult, r
   }));
   return { preferences };
 }
+
