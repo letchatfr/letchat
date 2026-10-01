@@ -2,7 +2,7 @@ import { installSpacesUI } from './spaces.js';
 const q = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export function installV3Tools({ api, getContext, notify, reload, report, closePanels }) {
-  const json = async (path, method = 'GET', body) => (await api(path, { method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) })).json();
+  const json = async (path, method = 'GET', body, options = {}) => (await api(path, { ...options, method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) })).json();
   function dialog(title, name) {
     const d = document.createElement('dialog'); d.className = 'v3-dialog'; d.id = name;
     d.setAttribute('aria-labelledby', `${name}Title`);
@@ -57,11 +57,49 @@ export function installV3Tools({ api, getContext, notify, reload, report, closeP
     finally { q('[type=submit]', edit).disabled = false; }
   };
   edit.addEventListener('close', () => { editing = null; });
+  let preferenceRequest;
+  const networkFailure = error => ['AbortError', 'TimeoutError'].includes(error?.name) || error?.code === 'auth/network-request-failed' || /failed to fetch|networkerror|network request failed|load failed/i.test(error?.message || '');
+  const preferenceError = (error, saving = false) => networkFailure(error)
+    ? (saving ? 'Enregistrement non confirmé. Vos choix restent affichés : réessayez dans quelques instants.' : 'Impossible de joindre Letchat pour le moment. Vérifiez votre connexion et réessayez.')
+    : error?.message || 'Impossible de charger vos préférences. Réessayez.';
+  async function requestPreferences(method = 'GET', body) {
+    const controller = new AbortController();
+    preferenceRequest = controller;
+    let timer, onAbort;
+    const interrupted = new Promise((_, reject) => {
+      onAbort = () => reject(Object.assign(new Error('Requête interrompue'), { name: 'AbortError' }));
+      controller.signal.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(() => controller.abort(), 12000);
+    });
+    try { return await Promise.race([json('/api/notification-preferences', method, body, { signal: controller.signal }), interrupted]); }
+    finally {
+      clearTimeout(timer); controller.signal.removeEventListener('abort', onAbort);
+      if (preferenceRequest === controller) preferenceRequest = null;
+    }
+  }
+  prefs.addEventListener('close', () => { preferenceTicket++; preferenceRequest?.abort(); });
+  window.addEventListener('online', () => {
+    if (prefs.open && q('[data-retry-preferences]', prefs)) showPreferences();
+  });
   async function showPreferences() {
     const ticket = ++preferenceTicket, ctx = getContext();
-    q('.v3-dialog-body', prefs).innerHTML = '<p>Chargement…</p>'; open(prefs);
+    if (!ctx.uid) return;
+    preferenceRequest?.abort();
+    const current = () => prefs.open && ticket === preferenceTicket && valid(ctx);
+    q('.v3-dialog-body', prefs).innerHTML = '<p role="status">Chargement de vos préférences…</p>'; open(prefs);
     try {
-      const data = await json('/api/notification-preferences'); if (!prefs.open || ticket !== preferenceTicket || !valid(ctx)) return;
+      let data;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try { data = await requestPreferences(); break; }
+        catch (error) {
+          if (!current()) return;
+          if (attempt || !networkFailure(error) || navigator.onLine === false) throw error;
+          q('.v3-dialog-body', prefs).innerHTML = '<p role="status">Connexion interrompue. Nouvelle tentative…</p>';
+          await new Promise(resolve => setTimeout(resolve, 500));
+          if (!current()) return;
+        }
+      }
+      if (!current()) return;
       q('.v3-dialog-body', prefs).innerHTML = `<p>Choisissez les notifications push envoyées à vos appareils. L’historique reste disponible dans le tchat.</p><form>
         <label class="v3-check"><input name="private_messages" type="checkbox" ${data.private_messages ? 'checked' : ''}> Messages privés</label>
         <label class="v3-check"><input name="friendships" type="checkbox" ${data.friendships ? 'checked' : ''}> Demandes et réponses d’amis</label>
@@ -73,11 +111,17 @@ export function installV3Tools({ api, getContext, notify, reload, report, closeP
         e.preventDefault(); if (!valid(ctx)) return prefs.close();
         const form = e.currentTarget, submit = q('[type=submit]', form); submit.disabled = true;
         try {
-          await json('/api/notification-preferences', 'PATCH', { private_messages: form.elements.private_messages.checked, friendships: form.elements.friendships.checked, preview: form.elements.preview.checked, quietHours: Number(form.elements.quietHours.value) });
-          q('.v3-feedback', prefs).textContent = 'Vos préférences sont enregistrées.';
-        } catch (error) { q('.v3-feedback', prefs).textContent = error.message; } finally { submit.disabled = false; }
+          await requestPreferences('PATCH', { private_messages: form.elements.private_messages.checked, friendships: form.elements.friendships.checked, preview: form.elements.preview.checked, quietHours: Number(form.elements.quietHours.value) });
+          if (current()) q('.v3-feedback', prefs).textContent = 'Vos préférences sont enregistrées.';
+        } catch (error) { if (current()) q('.v3-feedback', prefs).textContent = preferenceError(error, true); } finally { submit.disabled = false; }
       };
-    } catch (e) { if (ticket === preferenceTicket) q('.v3-dialog-body', prefs).textContent = e.message; }
+    } catch (error) {
+      if (!current()) return;
+      const body = q('.v3-dialog-body', prefs);
+      body.innerHTML = '<p role="alert"></p><button type="button" class="v3-primary" data-retry-preferences>Réessayer</button>';
+      q('[role=alert]', body).textContent = preferenceError(error);
+      q('[data-retry-preferences]', body).onclick = showPreferences;
+    }
   }
   const spaces = installSpacesUI({ api, getContext, notify, report, dialog, closePanels });
   const toolbar = document.createElement('nav'); toolbar.className = 'v3-tools'; toolbar.setAttribute('aria-label', 'Outils de discussion');
