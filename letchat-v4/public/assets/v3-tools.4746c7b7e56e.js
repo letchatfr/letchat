@@ -1,4 +1,4 @@
-import { installSpacesUI } from './spaces.js';
+import { installSpacesUI } from "./spaces.4dda9fded898.js";
 const q = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export function installV3Tools({ api, getContext, notify, reload, report, closePanels }) {

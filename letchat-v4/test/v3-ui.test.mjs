@@ -59,6 +59,81 @@ test('notification controls save push preferences and pause without disclosing p
   await waitFor(() => /enregistrées/.test(f.q('#notificationPreferences .v3-feedback').textContent));
 });
 
+const notificationDefaults = { private_messages: true, friendships: true, preview: true, quiet_until: null };
+function fastPreferenceTimers(f, timeout = false) {
+  const schedule = f.w.setTimeout.bind(f.w);
+  f.w.setTimeout = (fn, ms, ...args) => schedule(fn, ms === 500 || (timeout && ms === 12000) ? 1 : ms, ...args);
+}
+
+test('notification loading recovers automatically after a transient fetch failure', async t => {
+  let attempts = 0;
+  const f = await setup(t, () => { if (++attempts === 1) throw new TypeError('Failed to fetch'); return notificationDefaults; });
+  fastPreferenceTimers(f);
+  f.q('[data-preferences]').click();
+  await waitFor(() => f.q('#notificationPreferences form'));
+  assert.equal(attempts, 2);
+  assert.doesNotMatch(f.q('#notificationPreferences').textContent, /Failed to fetch/);
+});
+
+test('persistent notification network failure offers a working manual retry', async t => {
+  let disconnected = true;
+  const f = await setup(t, () => { if (disconnected) throw new TypeError('Failed to fetch'); return notificationDefaults; });
+  fastPreferenceTimers(f);
+  f.q('[data-preferences]').click();
+  await waitFor(() => f.q('[data-retry-preferences]'));
+  assert.equal(f.requests.length, 2);
+  assert.match(f.q('#notificationPreferences [role=alert]').textContent, /Impossible de joindre Letchat/);
+  disconnected = false; f.q('[data-retry-preferences]').click();
+  await waitFor(() => f.q('#notificationPreferences form'));
+  assert.equal(f.requests.length, 3);
+});
+
+test('notification settings resume when the browser comes online and never retry HTTP refusals automatically', async t => {
+  let allowed = false;
+  const f = await setup(t, () => { if (!allowed) throw new Error('Connexion requise'); return notificationDefaults; });
+  f.q('[data-preferences]').click();
+  await waitFor(() => f.q('[data-retry-preferences]'));
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.q('#notificationPreferences [role=alert]').textContent, 'Connexion requise');
+  allowed = true; f.w.dispatchEvent(new f.w.Event('online'));
+  await waitFor(() => f.q('#notificationPreferences form'));
+  assert.equal(f.requests.length, 2);
+});
+
+test('a stalled notification request times out without leaving a permanent loading screen', async t => {
+  const f = await setup(t, () => new Promise(() => {}));
+  fastPreferenceTimers(f, true);
+  f.q('[data-preferences]').click();
+  await waitFor(() => f.q('[data-retry-preferences]'));
+  assert.equal(f.requests.length, 2);
+  assert.match(f.q('#notificationPreferences [role=alert]').textContent, /Impossible de joindre/);
+});
+
+test('closing notification settings cancels recovery and discards late responses', async t => {
+  let reject;
+  const f = await setup(t, () => new Promise((_, r) => reject = r));
+  fastPreferenceTimers(f);
+  f.q('[data-preferences]').click(); await waitFor(() => reject);
+  f.q('#notificationPreferences').close(); reject(new TypeError('Failed to fetch'));
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.q('#notificationPreferences').open, false);
+  assert.equal(f.q('[data-retry-preferences]'), null);
+});
+
+test('failed preference saves retain the choices and are never replayed automatically', async t => {
+  const f = await setup(t, req => { if (req.method === 'PATCH') throw new TypeError('Failed to fetch'); return notificationDefaults; });
+  fastPreferenceTimers(f);
+  f.q('[data-preferences]').click(); await waitFor(() => f.q('#notificationPreferences form'));
+  f.q('[name=private_messages]').checked = false; f.q('[name=quietHours]').value = '8';
+  f.submit('#notificationPreferences form');
+  await waitFor(() => /Enregistrement non confirmé/.test(f.q('#notificationPreferences .v3-feedback').textContent));
+  assert.equal(f.requests.filter(req => req.method === 'PATCH').length, 1);
+  assert.equal(f.q('[name=private_messages]').checked, false);
+  assert.equal(f.q('[name=quietHours]').value, '8');
+  assert.equal(f.q('#notificationPreferences [type=submit]').disabled, false);
+});
+
 test('community creation, rules, composer and pause are reachable from the new navigation', async t => {
   let community = { id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', name: 'Les mélomanes', theme: 'musique', description: 'Nos découvertes musicales', rules: 'Respectez les autres membres.', rules_version: 1, owner_id: 'self', owner_name: 'Moi', member_count: 1, joined: true, accepted_version: 1, role: 'member', paused: false, archived: false };
   const f = await setup(t, req => {
