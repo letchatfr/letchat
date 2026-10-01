@@ -1,3 +1,4 @@
+#surpriseLink{ text-decoration:none; }
 .surprise-dialog{box-sizing:border-box;width:min(540px,calc(100% - 24px));max-height:90dvh;padding:0;border:1px solid var(--line,#dce1e7);border-radius:22px;background:var(--panel,#fff);color:var(--text,#202838);box-shadow:0 24px 90px #0005;overflow:auto}
 .surprise-dialog::backdrop{background:#101827b8;backdrop-filter:blur(3px)}
 .surprise-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line,#dce1e7)}
