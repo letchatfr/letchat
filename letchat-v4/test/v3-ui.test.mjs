@@ -1,0 +1,121 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { JSDOM } from 'jsdom';
+
+const waitFor = async predicate => { for (let n = 0; n < 100; n++) { if (predicate()) return; await new Promise(r => setTimeout(r, 5)); } assert.ok(predicate(), 'expected UI state'); };
+async function setup(t, responder) {
+  const dom = new JSDOM('<!doctype html><html lang="fr"><body><div class="social-toolbar"></div><a id="spacesLink"></a><a id="surpriseLink"></a><dialog id="communityHome"><button data-spaces></button></dialog></body></html>', { url: 'http://localhost/', runScripts: 'outside-only', pretendToBeVisual: true });
+  t.after(() => dom.window.close());
+  const w = dom.window, requests = [], notices = []; let reloads = 0;
+  w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  w.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new w.Event('close')); };
+  for (const [file, name] of [['spaces.js', 'installSpacesUI'], ['v3-tools.js', 'installV3Tools']]) {
+    const source = (await readFile(`public/${file}`, 'utf8')).replace(/^import.*;$/gm, '').replace(/^export /gm, '');
+    w.eval(`{${source}\nwindow.${name}=${name};}`);
+  }
+  const ctx = { uid: 'self', room: 'cafe', roomTitle: 'Le Café', private: null };
+  const api = async (path, options = {}) => { const req = { path, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null }; requests.push(req); return { json: async () => responder(req) }; };
+  const tools = w.installV3Tools({ api, getContext: () => ctx, notify: s => notices.push(s), reload: async () => reloads++, report() {}, closePanels() {} });
+  const q = selector => w.document.querySelector(selector);
+  const submit = selector => q(selector).dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+  return { w, q, ctx, tools, requests, notices, submit, reloads: () => reloads };
+}
+
+test('message search uses the active conversation, escapes text and discards a late response after closing', async t => {
+  let resolve;
+  const f = await setup(t, req => req.path.includes('message-search') ? new Promise(r => resolve = r) : {});
+  f.ctx.private = { id: 'other:id', name: 'Autre membre' };
+  f.q('[data-search]').click(); assert.equal(f.q('#messageSearch').open, true);
+  f.q('#messageSearch input').value = 'bonjour'; f.submit('#messageSearch form');
+  await waitFor(() => resolve);
+  assert.ok(f.requests[0].path.includes('kind=private') && f.requests[0].path.includes('scope=other%3Aid'));
+  resolve({ items: [{ id: 1, author: '<script>bad</script>', body: '<img src=x onerror=bad()>', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 50000).toISOString() }], next: null });
+  await waitFor(() => f.q('.v3-results article'));
+  assert.equal(f.q('.v3-results img'), null); assert.match(f.q('.v3-results').textContent, /<img src=x/);
+  f.submit('#messageSearch form'); await waitFor(() => f.requests.length === 2);
+  f.q('#messageSearch').close(); resolve({ items: [{ body: 'Must not reappear' }], next: null });
+  await new Promise(r => setTimeout(r, 10)); assert.equal(f.q('.v3-results').children.length, 0);
+});
+
+test('editing keeps the original text for conflict detection and does not submit after account change', async t => {
+  const f = await setup(t, () => ({}));
+  f.tools.editMessage({ id: '7', private: false, body: 'Original' });
+  f.q('#messageEdit textarea').value = 'Corrigé'; f.submit('#messageEdit form');
+  await waitFor(() => f.reloads() === 1);
+  assert.equal(f.requests[0].path, '/api/messages/public/7'); assert.deepEqual(f.requests[0].body, { body: 'Corrigé', previousBody: 'Original' });
+  assert.equal(f.q('#messageEdit').open, false);
+  f.tools.editMessage({ id: '8', private: true, body: 'Privé' }); f.ctx.uid = 'another'; f.submit('#messageEdit form');
+  assert.equal(f.requests.length, 1);
+});
+
+test('notification controls save push preferences and pause without disclosing previews', async t => {
+  const f = await setup(t, () => ({ private_messages: true, friendships: true, preview: true, quiet_until: null }));
+  f.q('[data-preferences]').click(); await waitFor(() => f.q('#notificationPreferences form'));
+  f.q('[name=preview]').checked = false; f.q('[name=private_messages]').checked = false; f.q('[name=quietHours]').value = '8';
+  f.submit('#notificationPreferences form');
+  await waitFor(() => f.requests.length === 2);
+  assert.deepEqual(f.requests[1].body, { private_messages: false, friendships: true, preview: false, quietHours: 8 });
+  await waitFor(() => /enregistrées/.test(f.q('#notificationPreferences .v3-feedback').textContent));
+});
+
+test('community creation, rules, composer and pause are reachable from the new navigation', async t => {
+  let community = { id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', name: 'Les mélomanes', theme: 'musique', description: 'Nos découvertes musicales', rules: 'Respectez les autres membres.', rules_version: 1, owner_id: 'self', owner_name: 'Moi', member_count: 1, joined: true, accepted_version: 1, role: 'member', paused: false, archived: false };
+  const f = await setup(t, req => {
+    if (req.path.startsWith('/api/spaces?')) return { items: [], next: null };
+    if (req.path === '/api/spaces' && req.method === 'POST') { community = { ...community, ...req.body }; return community; }
+    if (req.path.endsWith('/messages') && req.method === 'GET') return { items: [], next: null };
+    if (req.path.endsWith('/messages') && req.method === 'POST') return { id: '10' };
+    return community;
+  });
+  f.q('[data-spaces].nonexistent')?.click(); f.q('.v3-tools [data-spaces]').click(); await waitFor(() => f.q('[data-create]'));
+  f.q('[data-create]').click(); assert.equal(f.q('#spaceSettings').open, true);
+  f.q('#spaceSettings [name=name]').value = 'Les mélomanes'; f.q('#spaceSettings [name=theme]').value = 'musique'; f.q('#spaceSettings [name=description]').value = 'Nos découvertes musicales';
+  f.submit('#spaceSettings form'); await waitFor(() => f.q('.space-composer'));
+  assert.equal(f.q('#spacesDialog h2').textContent, 'Les mélomanes'); assert.ok(f.q('.space-rules summary').textContent.includes('version 1'));
+  f.q('.space-composer textarea').value = 'Une découverte à partager'; f.submit('.space-composer');
+  await waitFor(() => f.requests.some(r => r.method === 'POST' && r.path.endsWith('/messages')));
+  assert.equal(f.requests.find(r => r.method === 'POST' && r.path.endsWith('/messages')).body.body, 'Une découverte à partager');
+  f.q('[data-settings]').click(); await waitFor(() => f.q('#spaceSettings [name=archived]'));
+  assert.ok(f.q('#spaceSettings [name=archived]'));
+  f.q('#spacesDialog').close(); assert.equal(f.q('#spaceSettings').open, false);
+});
+
+test('Surprise video is opt-in and matching never starts a camera or sends a suggested message', async t => {
+  const f = await setup(t, () => ({})); let invited = 0, prepared = '', opened = 0; const events = new Map(), commands = [];
+  const source = (await readFile('public/interests.js', 'utf8')).replace(/^export /gm, '') + '\n' + (await readFile('public/surprise.js', 'utf8')).replace(/^import.*;$/gm, '').replace(/^export /gm, '');
+  f.w.eval(`{${source}\nwindow.installSurpriseUI=installSurpriseUI;}`);
+  const surprise = f.w.installSurpriseUI({ openPrivate: () => opened++, startCall: () => invited++, preparePrompt: text => prepared = text, openHome() {}, openRooms() {}, report() {}, block() {}, closePanels() {}, notify() {} });
+  let revision = 0;
+  const socket = { connected: true, on: (name, fn) => events.set(name, fn), timeout() { return this; }, emit(name, payload, ack) { commands.push({ name, payload }); ack(null, { ok: true, state: { revision: ++revision, status: 'waiting', mode: payload.mode, waitingCount: 1, interests: [], joinedAt: Date.now() } }); } };
+  surprise.bind(socket); f.q('#surpriseLink').click();
+  const radio = f.q('[name=surpriseMode][value=video]'); radio.checked = true; radio.dispatchEvent(new f.w.Event('change'));
+  f.q('.surprise-dialog [data-start]').click(); await waitFor(() => commands.length);
+  assert.equal(commands[0].payload.mode, 'video'); assert.equal(invited, 0);
+  events.get('surprise-state')({ revision: ++revision, status: 'matched', mode: 'video', matchId: 'one', partner: { id: 'other', name: 'Un membre', socketId: 'socket-other' }, sharedInterests: ['musique'] });
+  assert.equal(opened, 1); assert.equal(invited, 0);
+  f.q('[data-prompt]').click(); assert.match(prepared, /morceau|concert/); assert.equal(commands.length, 1);
+  f.q('[data-call]').click(); assert.equal(invited, 1);
+});
+
+test('community administration keeps cursor pagination and stops on the last page', async t => {
+  const f = await setup(t, () => ({})), paths = [];
+  f.w.document.body.insertAdjacentHTML('beforeend', '<button id="adminBtn">Administration</button>');
+  const source = (await readFile('public/admin.js', 'utf8')).replace(/^export /gm, '');
+  f.w.eval(`{${source}\nwindow.installAdminUI=installAdminUI;}`);
+  f.w.installAdminUI({ getUser: () => ({ id: 'self', admin: true }), api: async path => {
+    paths.push(path);
+    return { json: async () => path.includes('/spaces?') ? { items: [{ id: 'one', name: '<Communauté>', theme: 'general' }], next: path.includes('page=1') ? 2 : null } : {} };
+  }});
+  f.q('#adminBtn').click();
+  f.q('[data-tab=spaces]').click();
+  await waitFor(() => f.q('.adm-footer [data-do=next]'));
+  assert.equal(f.q('.adm-footer').textContent.includes('NaN'), false);
+  assert.equal(f.q('.adm-footer [data-do=prev]').disabled, true);
+  assert.equal(f.q('.adm-footer [data-do=next]').disabled, false);
+  f.q('.adm-footer [data-do=next]').click();
+  await waitFor(() => f.q('.adm-footer [data-do=next]')?.disabled);
+  assert.ok(paths.includes('/api/admin/spaces?page=2'));
+  assert.equal(f.q('.adm-footer [data-do=prev]').disabled, false);
+  assert.match(f.q('.adm-content').textContent, /<Communauté>/);
+});

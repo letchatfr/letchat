@@ -25,6 +25,10 @@ test("client initializes against the delivered HTML and recovery dialogs are rea
     code=code.replace(/^import\s+[\s\S]*?from\s+["'][^"']+["'];\s*/gm,"");
     const socialModules = await Promise.all(["social-voice.js", "social-live.js", "social-album.js", "social.js", "premium-benefits.js", "interests.js", "surprise.js", "community.js"].map(file => readFile(`public/${file}`, "utf8")));
     const socialCode = socialModules.map(source => source.replace(/^import\s+.*?;\s*$/gm, "").replace(/^export\s+/gm, "")).join("\n");
+    for (const [file, exported] of [["spaces.js", "installSpacesUI"], ["v3-tools.js", "installV3Tools"]]) {
+      const source = (await readFile(`public/${file}`, "utf8")).replace(/^import.*;$/gm, "").replace(/^export /gm, "");
+      w.eval(`{${source}\nwindow.${exported}=${exported};}`);
+    }
     w.eval((await readFile("public/admin.js", "utf8")).replace(/^export /gm, "") + "\n" + socialCode + "\n" + code + `
       window.testAccount = {
         setUser(data) { user = localUser(data, "test-token"); localSessionToken = "test-token"; },

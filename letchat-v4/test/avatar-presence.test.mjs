@@ -28,6 +28,8 @@ async function setup(t) {
   w.installSocial = () => ({ live: { leave() {} } });
   w.installPremiumBenefitsUI = () => ({ refresh: async () => {} });
   w.installSurpriseUI = () => ({ bind() {} });
+  w.installCommunityUI = () => ({ start() {}, refresh() {}, showHome() {} });
+  w.installV3Tools = () => ({ bind() {}, record() {} });
   const socket = { connected: true, on: (name, callback) => events.set(name, callback), emit() {},
     disconnect() { this.connected = false; events.get("disconnect")?.(); } };
   w.io = () => socket;
