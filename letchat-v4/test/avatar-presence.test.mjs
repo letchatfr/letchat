@@ -7,12 +7,14 @@ import { rooms } from "../public/room-catalog.js";
 
 // Exécute le client livré et ses vrais gestionnaires DOM/Socket.IO,
 // avec des réponses serveur locales : aucun appel au site public.
-async function setup(t) {
+async function setup(t, options = {}) {
   const dom = new JSDOM(await readFile("public/index.html", "utf8"), {
     url: "https://www.letchat.fr", runScripts: "outside-only", pretendToBeVisual: true,
   });
   const w = dom.window, events = new Map();
   t.after(() => w.close());
+  if (options.savedSession) (options.guest ? w.sessionStorage : w.localStorage).setItem(options.guest ? 'letchatGuestToken' : 'letchatLocalToken', options.savedSession);
+  if (options.fastTimeout) { const schedule = w.setTimeout.bind(w); w.setTimeout = (fn, ms) => schedule(fn, ms === 12000 ? 1 : ms); }
   w.rooms = rooms;
   w.initializeApp = () => ({}); w.getAuth = () => ({ currentUser: null });
   w.GoogleAuthProvider = class { setCustomParameters() {} };
@@ -36,6 +38,7 @@ async function setup(t) {
   let profile = { user_id: "self", display_name: "Test Letchat", photo: "", city: "Test", gender: "neutral" };
   const serverResponses = new Map();
   w.fetch = async (url, options = {}) => {
+    if (url === '/api/auth/me' && restoreResponse) return restoreResponse(options);
     let data = [];
     if (url === "/api/age-status") data = { accepted: false };
     if (url === "/api/public-config") data = { contactEmail: "test@example.invalid" };
@@ -46,12 +49,14 @@ async function setup(t) {
     }
     return { ok: true, json: async () => serverResponses.has(url) ? serverResponses.get(url) : data };
   };
+  const restoreResponse = options.restoreResponse;
   let code = await readFile("public/app-v4-cafe-v2.js", "utf8");
   code = code.replace(/^import\s+[\s\S]*?from\s+["'][^"']+["'];\s*/gm, "");
   const cityCode = (await Promise.all(["city-search.js", "city-autocomplete.js"].map(file => readFile(`public/${file}`, "utf8"))))
     .map(source => source.replace(/^import .*;\s*$/gm, "").replace(/^export /gm, "")).join("\n");
   w.eval(cityCode);
   w.eval(code + `\nwindow.fixture = {
+    restoration: localRestorePromise,
     activate: data => activateLocalSession(data, "local-test-token", true),
     openProfile, showPrivateMessagesHome, openContactPicker, openOnlineMembers, renderMeetingProfiles,
     setData: data => {
@@ -64,6 +69,7 @@ async function setup(t) {
     clearIdentity: () => { user = null; },
     connect,
   };`);
+  await w.fixture.restoration;
   w.fixture.setData({}); w.fixture.connect();
   return {
     w, document: w.document, fixture: w.fixture,
@@ -77,6 +83,31 @@ const member = (id, extra = {}) => ({ id, name: `Membre ${id}`, photo: "", gende
 const conversation = id => ({ user_id: id, display_name: `Membre ${id}`, last_body: "Bonjour", last_message_at: "2026-09-28T10:00:00Z" });
 const card = (doc, id) => doc.querySelector(`[data-home-private="${id}"]`);
 const avatarSvg = img => decodeURIComponent(img.src.slice(img.src.indexOf(",") + 1));
+
+for (const guest of [false, true]) {
+  test(`a temporary session-check failure preserves the ${guest ? 'guest' : 'permanent'} credential and offers retry`, async t => {
+    const s = await setup(t, { guest, savedSession: 'saved-session', restoreResponse: () => { throw new TypeError('Failed to fetch'); } });
+    assert.equal((guest ? s.w.sessionStorage : s.w.localStorage).getItem(guest ? 'letchatGuestToken' : 'letchatLocalToken'), 'saved-session');
+    assert.match(s.document.querySelector('#loginError').textContent, /session.*conservée/i);
+    assert.equal(s.document.querySelector('#retrySessionRestore')?.textContent, 'Réessayer');
+  });
+}
+
+test('temporary server errors preserve the saved session; an expired credential is removed', async t => {
+  for (const status of [503, 401, 403]) {
+    const s = await setup(t, { savedSession: 'saved-session', restoreResponse: async () => ({ ok: false, status }) });
+    assert.equal(s.w.localStorage.getItem('letchatLocalToken'), status === 503 ? 'saved-session' : null);
+    assert.equal(Boolean(s.document.querySelector('#retrySessionRestore')), status === 503);
+  }
+});
+
+test('a stalled restoration times out with a retry and keeps its credential', async t => {
+  const s = await setup(t, { savedSession: 'saved-session', fastTimeout: true, restoreResponse: ({signal}) => new Promise((resolve,reject) => {
+    signal.addEventListener('abort', () => reject(new Error('Aborted')), {once:true});
+  }) });
+  assert.equal(s.w.localStorage.getItem('letchatLocalToken'), 'saved-session');
+  assert.ok(s.document.querySelector('#retrySessionRestore'));
+});
 
 test("reconnection catches up missed private messages and notifications without losing a draft", async t => {
   const s = await setup(t);

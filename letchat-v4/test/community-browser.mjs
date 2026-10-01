@@ -18,8 +18,17 @@ export async function runCommunityBrowserQA({origin,users,request,check}) {
       await page.route("https://www.gstatic.com/firebasejs/**",route=>route.fulfill({status:200,contentType:"text/javascript",body:firebase}));
       await page.route(/googlesyndication|doubleclick|google-analytics/,route=>route.abort());
       await page.addInitScript(({token,guest,theme})=>{(guest?sessionStorage:localStorage).setItem(guest?"letchatGuestToken":"letchatLocalToken",token);localStorage.setItem("letchat-theme",theme);},{token:users[i].token,guest:users[i].user.guest,theme:i?"dark":"light"});
+      if(i) await page.route('**/api/auth/me',route=>route.abort(),{times:1});
       await page.goto(origin,{waitUntil:"networkidle"});
+      if(i) {
+        await page.locator('#retrySessionRestore').waitFor();
+        check(await page.evaluate(()=>Boolean(sessionStorage.getItem('letchatGuestToken'))),'interrupted restoration keeps the mobile guest session');
+        check(await page.locator('#retrySessionRestore').evaluate(e=>getComputedStyle(e).color!==getComputedStyle(e).backgroundColor),'retry label stays readable in the dark theme');
+        await page.screenshot({path:output+'/reconnexion-interrompue-mobile.png',animations:'disabled'});
+        await page.locator('#retrySessionRestore').click();
+      }
       await page.waitForFunction(()=>document.querySelector('#connectionStatus')?.dataset.state==='online');
+      if(i) check(true,'retry restores the same mobile session without asking for credentials');
       await page.locator('#communityHome[open]').waitFor();
       await page.locator('[data-community-room="cafe"]').waitFor();
       check(await page.locator('#communityHome').evaluate(e=>e.scrollWidth<=e.clientWidth+1),`home fits ${i?'mobile dark':'desktop light'} viewport`);
@@ -29,6 +38,13 @@ export async function runCommunityBrowserQA({origin,users,request,check}) {
     await mobile.screenshot({path:output+'/accueil-mobile-sombre.png'});
     await desktop.locator('[data-community-room="cafe"]').click();
     await mobile.locator('[data-community-room="cafe"]').click();
+    await mobile.locator('[data-destination="rooms"]').click();
+    await mobile.locator('#communityHome [data-all-rooms]').click();
+    await mobile.locator('.side .new').click();
+    await mobile.locator('#contactPickerModal:not(.hidden)').waitFor();
+    check(await mobile.locator('.side').evaluate(e=>!e.classList.contains('open')),'new private message closes the mobile drawer');
+    await mobile.screenshot({path:output+'/nouveau-message-mobile.png',animations:'disabled'});
+    await mobile.locator('#closeContactPicker').click();
     check(await mobile.locator('.community-mobile-nav button').count()===4,'mobile bottom navigation exposes all four destinations');
     const before=await request('/api/private',users[0].token,'POST',{recipientId:users[1].user.id,body:'Un message à conserver avec le profil'});
     check(before.status===201,'test recipient has a conversation before guest conversion');
