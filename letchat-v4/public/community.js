@@ -7,7 +7,7 @@ export function installCommunityUI({ api, getUser, openRoom, openPrivate, openMe
   home.innerHTML = `<div class="community-heading"><div><span class="community-eyebrow">VOTRE COMMUNAUTÉ</span><h2 id="communityTitle">On discute ?</h2></div><button type="button" data-close aria-label="Fermer l’accueil">×</button></div>
     <div class="community-body"><p class="community-intro">Rejoignez une discussion, retrouvez vos contacts ou faites une nouvelle rencontre.</p>
     <div class="community-live" role="status">Connexion à la communauté…</div>
-    <div class="community-quick"><button type="button" data-join class="community-primary">Rejoindre une discussion</button><button type="button" data-surprise>Rencontre Surprise <span aria-hidden="true">↗</span></button></div>
+    <div class="community-quick"><button type="button" data-join class="community-primary">Rejoindre une discussion</button><button type="button" data-spaces>Explorer les communautés</button><button type="button" data-surprise>Rencontre Surprise <span aria-hidden="true">↗</span></button></div>
     <section><div class="community-section-heading"><h3>Les salons maintenant</h3><button type="button" data-all-rooms>Tous les salons</button></div><div class="community-rooms"></div></section>
     <section><div class="community-section-heading"><h3>Disponibles pour discuter</h3><button type="button" data-members>Voir les membres</button></div><div class="community-members"></div></section>
     <section class="community-empty-tip" hidden><h3>Vous ouvrez la discussion</h3><p>Le Café accueille les nouveaux échanges. Présentez-vous ou partagez une question ; les prochains membres pourront vous répondre.</p><button type="button" data-cafe>Entrer au Café</button></section>

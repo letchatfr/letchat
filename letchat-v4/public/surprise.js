@@ -1,9 +1,10 @@
 import { interests } from "./interests.js";
-export function installSurpriseUI({ openPrivate, openHome, openRooms, report, block, closePanels, notify }) {
+export function installSurpriseUI({ startCall, preparePrompt, openPrivate, openHome, openRooms, report, block, closePanels, notify }) {
   const q = (selector, root = document) => root.querySelector(selector);
   const menu = q("#surpriseLink");
   let socket, current = { status: "idle" }, revision = -1, busy = false, shownMatch = null;
   const selected = new Set();
+  let mode = "text";
   const dialog = document.createElement("dialog");
   dialog.className = "surprise-dialog";
   dialog.setAttribute("aria-labelledby", "surpriseTitle");
@@ -11,6 +12,7 @@ export function installSurpriseUI({ openPrivate, openHome, openRooms, report, bl
     <div class="surprise-content"><div class="surprise-dice" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" stroke-width="1.7"/><g fill="currentColor"><circle cx="8" cy="8" r="1.5"/><circle cx="16" cy="8" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="8" cy="16" r="1.5"/><circle cx="16" cy="16" r="1.5"/></g></svg></div>
     <h3>Une personne. Une discussion à découvrir.</h3>
     <p>Rencontrez au hasard un membre connecté qui souhaite aussi discuter. Votre pseudo lui sera visible et votre conversation s’ouvrira en privé.</p>
+    <fieldset class="surprise-mode"><legend>Votre façon de faire connaissance</legend><label><input type="radio" name="surpriseMode" value="text" checked> Par messages</label><label><input type="radio" name="surpriseMode" value="video"> Avec la webcam</label><p>En webcam, vous rencontrez uniquement d’autres volontaires pour la vidéo. L’appel nécessite ensuite une invitation et une acceptation.</p></fieldset>
     <fieldset class="surprise-interests"><legend>Vos centres d’intérêt <small>3 maximum · facultatif</small></legend>
       <div>${Object.entries(interests).map(([id, label]) => `<button type="button" data-interest="${id}" aria-pressed="false">${label}</button>`).join("")}</div>
       <p>Un centre d’intérêt commun suffit. Sans choix, vous êtes ouvert à tous les sujets. Vos choix servent uniquement à cette recherche.</p></fieldset>
@@ -23,7 +25,7 @@ export function installSurpriseUI({ openPrivate, openHome, openRooms, report, bl
   document.body.append(dialog);
   const bar = document.createElement("section");
   bar.className = "surprise-bar"; bar.hidden = true; bar.setAttribute("aria-label", "Rencontre Surprise en cours");
-  bar.innerHTML = `<div><strong><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" stroke-width="1.7"/><g fill="currentColor"><circle cx="8" cy="8" r="1.5"/><circle cx="16" cy="8" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="8" cy="16" r="1.5"/><circle cx="16" cy="16" r="1.5"/></g></svg> Rencontre Surprise</strong><span data-status role="status" aria-live="polite"></span></div><div class="surprise-actions"><button type="button" data-chat>Conversation</button><button type="button" data-next>Passer</button><button type="button" data-leave>Quitter</button><button type="button" data-block>Bloquer</button><button type="button" data-report>Signaler</button></div>`;
+  bar.innerHTML = `<div><strong><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="4" stroke="currentColor" stroke-width="1.7"/><g fill="currentColor"><circle cx="8" cy="8" r="1.5"/><circle cx="16" cy="8" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="8" cy="16" r="1.5"/><circle cx="16" cy="16" r="1.5"/></g></svg> Rencontre Surprise</strong><span data-status role="status" aria-live="polite"></span></div><div class="surprise-actions"><button type="button" data-chat>Conversation</button><button type="button" data-call>Proposer un appel</button><button type="button" data-prompt>Une idée pour commencer</button><button type="button" data-next>Passer</button><button type="button" data-leave>Quitter</button><button type="button" data-block>Bloquer</button><button type="button" data-report>Signaler</button></div>`;
   q(".social-toolbar").after(bar);
   const messages = {
     left: "Vous avez quitté Rencontre Surprise.",
@@ -46,6 +48,10 @@ export function installSurpriseUI({ openPrivate, openHome, openRooms, report, bl
       : messages[current.reason] || "Lancez la recherche quand vous êtes prêt à discuter.";
     q(".surprise-status", dialog).textContent = label;
     q(".surprise-interests", dialog).hidden = matched;
+    q(".surprise-mode", dialog).hidden = matched;
+    for (const input of dialog.querySelectorAll('[name="surpriseMode"]')) { input.checked = input.value === mode; input.disabled = waiting || busy; }
+    q("[data-call]", bar).hidden = !matched || current.mode !== "video";
+    q("[data-prompt]", bar).hidden = !matched;
     q(".surprise-alternative", dialog).hidden = !waiting;
     for (const button of dialog.querySelectorAll("[data-interest]")) {
       button.setAttribute("aria-pressed", String(selected.has(button.dataset.interest)));
@@ -75,6 +81,7 @@ export function installSurpriseUI({ openPrivate, openHome, openRooms, report, bl
     revision = value.revision;
     const previous = current;
     current = value;
+    if (value.mode) mode = value.mode;
     if (Array.isArray(value.interests)) { selected.clear(); value.interests.forEach(id => selected.add(id)); }
     render();
     if (value.status === "matched" && value.matchId !== shownMatch) {
@@ -93,7 +100,7 @@ export function installSurpriseUI({ openPrivate, openHome, openRooms, report, bl
     const source = socket;
     busy = true; q(".surprise-error", dialog).textContent = ""; render();
     try {
-      const answer = await new Promise((resolve, reject) => source.timeout(8000).emit(`surprise-${kind}`, { matchId: current.matchId, interests:[...selected] }, (error, response) => error ? reject(new Error("La réponse tarde. Réessayez ; votre état sera resynchronisé.")) : resolve(response)));
+      const answer = await new Promise((resolve, reject) => source.timeout(8000).emit(`surprise-${kind}`, { matchId: current.matchId, interests:[...selected], mode }, (error, response) => error ? reject(new Error("La réponse tarde. Réessayez ; votre état sera resynchronisé.")) : resolve(response)));
       if (source !== socket) return;
       if (!answer?.ok) throw new Error(answer?.error || "La recherche est indisponible.");
       receive(answer.state);
@@ -106,6 +113,20 @@ export function installSurpriseUI({ openPrivate, openHome, openRooms, report, bl
   function show() { closePanels(); if (!dialog.open) dialog.showModal(); render(); }
   menu.onclick = event => { event.preventDefault(); show(); };
   q("[data-close]", dialog).onclick = () => dialog.close();
+  dialog.querySelectorAll('[name="surpriseMode"]').forEach(input => input.onchange = () => { mode = input.value; });
+  q("[data-call]", bar).onclick = () => { if (current.partner && current.mode === "video") startCall(current.partner); };
+  let promptIndex = 0;
+  const prompts = {
+    musique: ["Quel morceau écoutes-tu en boucle en ce moment ?", "Quel concert aimerais-tu voir ?"],
+    cinema: ["Quel film ou quelle série recommandes-tu en ce moment ?", "Plutôt comédie, thriller ou science-fiction ?"],
+    gaming: ["À quel jeu joues-tu en ce moment ?", "Quel jeu t’a laissé le meilleur souvenir ?"],
+    default: ["Qu’est-ce qui t’a fait sourire aujourd’hui ?", "Si tu pouvais découvrir un endroit ce week-end, lequel choisirais-tu ?", "De quoi aimerais-tu parler ?"]
+  };
+  q("[data-prompt]", bar).onclick = () => {
+    if (!current.partner) return;
+    const suggestions = prompts[current.sharedInterests?.[0]] || prompts.default;
+    preparePrompt(suggestions[promptIndex++ % suggestions.length]);
+  };
   q("[data-start]", dialog).onclick = () => command("join");
   q("[data-stop]", dialog).onclick = () => command("leave");
   dialog.querySelectorAll("[data-interest]").forEach(button => button.onclick = () => {

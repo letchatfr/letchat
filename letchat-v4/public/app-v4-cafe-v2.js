@@ -1,3 +1,4 @@
+import { installV3Tools } from "./v3-tools.js";
 import { installAdminUI } from "./admin.js";
 import { installCommunityUI } from "./community.js";
 import { installSurpriseUI } from "./surprise.js";
@@ -30,7 +31,7 @@ const config = {
 const auth = getAuth(initializeApp(config)),
   provider = new GoogleAuthProvider(),
   $ = (s) => document.querySelector(s);
-let socialFeatures, premiumFeatures, surpriseFeatures, communityFeatures;
+let socialFeatures, premiumFeatures, surpriseFeatures, communityFeatures, v3Features;
 let localSessionToken = localStorage.getItem("letchatLocalToken") || sessionStorage.getItem("letchatGuestToken") || "";
 let user,
   token,
@@ -823,6 +824,14 @@ function addMessage(m, force = false, followScroll = true) {
       ? `<div class="message-quote"><strong>${memberLink(m.reply_user_id, m.reply_author, safe(m.reply_author || "Message supprimé"))}</strong><span>${safe(m.reply_body || "Message original indisponible")}</span></div>`
       : "";
   a.innerHTML = `${memberLink(m.user_id, m.author, m.photo ? `<img src="${safe(m.photo)}" alt="">` : safe(initials(m.author)), "avatar member-avatar-link")}<div class="message-content"><p class="meta"><strong>${memberLink(m.user_id, m.author, mine ? "Vous" : safe(m.author))}</strong><time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time>${m.pinned ? '<span class="pinned-label">📌 Épinglé</span>' : ""}</p>${quote}${m.body ? `<p class="bubble">${safe(m.body)}</p>` : ""}${media}<div class="reaction-summary">${reactionHtml(m.reactions, m.my_reactions || [])}</div>${m.private && mine ? `<div class="message-status">${receiptText(m.delivered_at, m.read_at)}</div>` : ""}<div class="message-actions"><button class="reply-action" title="Répondre">↩ Répondre</button><button class="react-action" title="Réagir">☺</button>${isAdmin && !m.private && m.room === "cafe" ? `<button class="pin-action" title="${m.pinned ? "Désépingler" : "Épingler"}">${m.pinned ? "Désépingler" : "📌 Épingler"}</button>` : ""}${mine ? '<button class="delete-action" title="Supprimer">Supprimer</button>' : '<button class="report-message-action" title="Signaler ce message">⚑ Signaler</button>'}<div class="reaction-picker hidden">${["👍", "❤️", "😂", "😮"].map((emoji) => `<button data-pick-reaction="${emoji}">${emoji}</button>`).join("")}</div></div></div>`;
+  if (m.edited_at) {
+    const edited = document.createElement("span"); edited.className = "message-edited"; edited.textContent = "Modifié";
+    edited.title = new Date(m.edited_at).toLocaleString("fr-FR"); a.querySelector(".meta").append(edited);
+  }
+  if (mine && m.body) {
+    const edit = document.createElement("button"); edit.type = "button"; edit.className = "edit-message-action"; edit.textContent = "Modifier";
+    edit.onclick = () => v3Features?.editMessage(m); a.querySelector(".message-actions").prepend(edit);
+  }
   const messageDate = messageDayInfo(m.created_at);
   if (messageDate) {
     const time = a.querySelector(".meta time");
@@ -1711,6 +1720,7 @@ function connect() {
     catch { callback({ token: "" }); }
   }, transports: ["websocket", "polling"] });
   surpriseFeatures?.bind(socket);
+  v3Features?.bind(socket);
   socket.on("session-expired", async () => {
     hang();
     if (localSessionToken) return logoutSession();
@@ -1779,6 +1789,10 @@ function connect() {
     }
   });
   socket.on("message-reactions", updateMessageReactions);
+  socket.on("message-updated", payload => {
+    const key = `${payload.private ? "p" : "m"}-${payload.id}`;
+    if (document.querySelector(`[data-key="${CSS.escape(key)}"]`)) load();
+  });
   socket.on("room-moderated", (data) => { if (data.room === currentRoom && !currentPrivate) showRoomModeration({read_only:data.readOnly,slow_seconds:data.slowSeconds,notice:data.notice}); });
   socket.on("message-deleted", (payload) => {
     removeMessage(payload.id, payload.private);
@@ -2583,6 +2597,7 @@ async function prepareIce() {
       .catch((error) => {
         icePromise = null;
         console.warn("TURN indisponible, utilisation du relais direct/STUN :", error);
+        v3Features?.record("turn_unavailable");
         iceServers = fallbackIceServers;
         return iceServers;
       });
@@ -2601,6 +2616,7 @@ function peer(id, participantName = "Participant") {
   pc.ontrack = (e) => addRemote(id, e.streams[0], participantName);
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === "connected") {
+      v3Features?.record("call_connected");
       $("#error").classList.add("hidden");
       setCallStatus("Connecté");
       setCameraStatus();
@@ -2613,7 +2629,7 @@ function peer(id, participantName = "Participant") {
       peers.delete(id);
       if (pc.connectionState === "failed")
         showError("Connexion vidéo interrompue");
-      if (pc.connectionState === "failed") setCallStatus("Connexion interrompue");
+      if (pc.connectionState === "failed") { setCallStatus("Connexion interrompue"); v3Features?.record("call_failed"); }
     }
   };
   peers.set(id, pc);
@@ -3104,7 +3120,7 @@ premiumFeatures = installPremiumBenefitsUI({ api, showProfile, openPrivate, show
   },
   getContext: () => ({uid:user?.uid || "",name:user?.displayName || "",socket}) });
 
-surpriseFeatures = installSurpriseUI({ openPrivate, notify: showError, closePanels: closeMemberPanels,
+surpriseFeatures = installSurpriseUI({ openPrivate, startCall: partner => startDirectCall(partner.socketId, partner.name), preparePrompt: text => { if ($("#input").value.trim()) return showError("Votre brouillon est déjà en cours. Envoyez-le ou effacez-le avant de choisir une suggestion."); $("#input").value = text; $("#input").focus(); }, notify: showError, closePanels: closeMemberPanels,
   openRooms: () => communityFeatures?.showHome(),
   openHome: id => { if (currentPrivate?.id === id) showPrivateMessagesHome(); },
   report: target => openReport(target), block: blockPrivateUser });
@@ -3122,3 +3138,7 @@ communityFeatures = installCommunityUI({ api, getUser:() => user, openPrivate, o
     await loadSubscription();
   },
 });
+
+// V3 tools share the current session, room and privacy checks.
+v3Features = installV3Tools({ api, notify:showError, reload:load, report:openReport, closePanels:closeMemberPanels,
+  getContext:() => ({uid:user?.uid || "", private:currentPrivate, privateHome:privateHomeOpen, room:currentRoom, roomTitle:rooms[currentRoom]?.title || currentRoom}) });
