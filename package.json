@@ -1,1 +1,17 @@
-{"name":"letchat-v4-google","version":"4.0.0","private":true,"type":"module","scripts":{"start":"node server.js","check":"node --check server.js && node --check public/app.js"},"engines":{"node":">=20"},"dependencies":{"express":"^5.1.0","helmet":"^8.1.0","jose":"^6.1.0","pg":"^8.16.0","socket.io":"^4.8.1"}}
+{
+  "name": "letchat",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "postinstall": "npm ci --prefix letchat-v4",
+    "start": "node server.js",
+    "build": "npm --prefix letchat-v4 run build",
+    "check": "npm --prefix letchat-v4 run check",
+    "test": "npm --prefix letchat-v4 test",
+    "test:v3": "npm --prefix letchat-v4 run test:v3"
+  }
+}
