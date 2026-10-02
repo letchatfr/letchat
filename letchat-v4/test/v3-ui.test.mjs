@@ -49,6 +49,64 @@ test('community refresh keeps the draft during a transient failure, then recover
   assert.match(f.q('.space-error').textContent, /Accès refusé/);
 });
 
+const stableCommunity = { id: 'stable-space', name: 'Une communauté', theme: 'general', description: 'Une discussion de test', rules: 'Respectez les autres.', rules_version: 1, owner_id: 'self', member_count: 1, joined: true, accepted_version: 1, role: 'member', paused: false, archived: false };
+const spaceHistory = { items: [{ id: 1, user_id: 'self', author: 'Test', body: 'Message déjà reçu', created_at: '2026-10-02T08:00:00Z', expires_at: new Date(Date.now() + 3600000).toISOString() }], next: null };
+async function openStableCommunity(f) {
+  f.q('#spacesLink').click(); await waitFor(() => f.q('[data-space]'));
+  f.q('[data-space]').click(); await waitFor(() => f.q('.space-message'));
+}
+
+test('community history survives an interrupted message refresh and identical recovery', async t => {
+  let failure;
+  const f = await setup(t, req => {
+    if (req.path.startsWith('/api/spaces?')) return { items: [stableCommunity], next: null };
+    if (req.path.endsWith('/messages')) { if (failure) throw failure; return spaceHistory; }
+    return stableCommunity;
+  });
+  await openStableCommunity(f);
+  f.q('.space-composer textarea').value = 'Brouillon à conserver';
+  failure = new TypeError('Failed to fetch'); await f.intervals.get(15000)();
+  assert.match(f.q('.space-messages').textContent, /Message déjà reçu/);
+  assert.equal(f.q('.space-composer textarea').value, 'Brouillon à conserver');
+  failure = null; await f.intervals.get(15000)();
+  assert.match(f.q('.space-messages').textContent, /Message déjà reçu/);
+  assert.equal(f.q('.space-error').textContent, '');
+});
+
+test('community send keeps text typed while the server confirms the preceding message', async t => {
+  let confirm;
+  const f = await setup(t, req => {
+    if (req.path.startsWith('/api/spaces?')) return { items: [stableCommunity], next: null };
+    if (req.method === 'POST') return new Promise(resolve => confirm = resolve);
+    if (req.path.endsWith('/messages')) return spaceHistory;
+    return stableCommunity;
+  });
+  await openStableCommunity(f);
+  const input = f.q('.space-composer textarea'); input.value = 'Premier message';
+  f.submit('.space-composer'); await waitFor(() => confirm);
+  input.value = 'Début du message suivant';
+  confirm({ id: 2 }); await waitFor(() => !f.q('.space-composer button').disabled);
+  assert.equal(input.value, 'Début du message suivant');
+  assert.equal(f.requests.find(req => req.method === 'POST').body.body, 'Premier message');
+});
+
+test('community send ignores repeated submits and clears only the confirmed text', async t => {
+  let confirm;
+  const f = await setup(t, req => {
+    if (req.path.startsWith('/api/spaces?')) return { items: [stableCommunity], next: null };
+    if (req.method === 'POST') return new Promise(resolve => confirm = resolve);
+    if (req.path.endsWith('/messages')) return spaceHistory;
+    return stableCommunity;
+  });
+  await openStableCommunity(f);
+  f.q('.space-composer textarea').value = 'Un seul message';
+  f.submit('.space-composer'); await waitFor(() => confirm);
+  f.submit('.space-composer');
+  assert.equal(f.requests.filter(req => req.method === 'POST').length, 1);
+  confirm({ id: 2 }); await waitFor(() => !f.q('.space-composer button').disabled);
+  assert.equal(f.q('.space-composer textarea').value, '');
+});
+
 test('message search uses the active conversation, escapes text and discards a late response after closing', async t => {
   let resolve;
   const f = await setup(t, req => req.path.includes('message-search') ? new Promise(r => resolve = r) : {});
