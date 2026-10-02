@@ -64,10 +64,18 @@ export function installSpacesUI({ api, getContext, notify, report, dialog, close
     q('[data-latest]', body).onclick = () => { cursor = null; messages(); };
     const composer = q('.space-composer', body);
     if (composer) composer.onsubmit = action(async e => {
-      e.preventDefault(); const button = q('[type=submit]', composer); button.disabled = true;
+      e.preventDefault(); const button = q('[type=submit]', composer);
+      if (button.disabled) return;
+      const revision = ticket, input = composer.elements.body, text = input.value;
+      button.disabled = true;
       try {
-        await json(`/api/spaces/${s.id}/messages`, 'POST', { body: composer.elements.body.value });
-        composer.reset(); cursor = null; await messages(); composer.elements.body.focus();
+        await json(`/api/spaces/${s.id}/messages`, 'POST', { body: text });
+        if (!valid(revision) || active !== s.id || !composer.isConnected) return;
+        if (input.value === text) input.value = '';
+        cursor = null; await messages();
+        if (valid(revision) && composer.isConnected) input.focus();
+      } catch (error) {
+        if (valid(revision) && active === s.id && composer.isConnected) throw error;
       } finally { button.disabled = false; }
     });
   }
@@ -88,7 +96,15 @@ export function installSpacesUI({ api, getContext, notify, report, dialog, close
       }
       q('[data-older]', body).hidden = !nextMessages; q('[data-latest]', body).hidden = !cursor; q('.space-error', body).textContent = '';
     } catch (e) {
-      if (valid(revision)) { q('.space-messages', body)?.replaceChildren(); q('.space-error', body).textContent = e.message; }
+      if (valid(revision) && active === spaceId && cursor === oldCursor) refreshError(e);
+    }
+  }
+  function refreshError(error) {
+    if ([401, 403, 404, 410].includes(error.status)) {
+      body.innerHTML = '<button type="button" data-back>← Les communautés</button><p class="space-error" role="alert"></p>';
+      q('.space-error', body).textContent = error.message; q('[data-back]', body).onclick = browse;
+    } else {
+      q('.space-error', body).textContent = 'Actualisation interrompue. Vos messages et votre brouillon sont conservés ; la discussion sera actualisée au retour de la connexion.';
     }
   }
   function subForm(title, html, save, buttonLabel = 'Enregistrer') {
@@ -134,12 +150,7 @@ export function installSpacesUI({ api, getContext, notify, report, dialog, close
       await messages();
     } catch (e) {
       if (!valid(revision)) return;
-      if ([401, 403, 404, 410].includes(e.status)) {
-        body.innerHTML = '<button type="button" data-back>← Les communautés</button><p class="space-error" role="alert"></p>';
-        q('.space-error', body).textContent = e.message; q('[data-back]', body).onclick = browse;
-      } else {
-        q('.space-error', body).textContent = 'Actualisation interrompue. Votre brouillon est conservé ; la discussion sera actualisée au retour de la connexion.';
-      }
+      refreshError(e);
     }
     finally { refreshing = false; if (pending) { pending = false; refresh(); } }
   }

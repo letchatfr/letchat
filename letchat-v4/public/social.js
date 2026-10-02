@@ -18,7 +18,7 @@ export function installSocial({ getContext, api, notify, report, sendVoice, befo
     q("[data-close]", d).onclick = () => d.close(); document.body.append(d); return d;
   }
   const groupDialog = dialog("Mes groupes", "social-groups"), gameDialog = dialog("Jeux à deux", "social-games"), profileDialog = dialog("Mon profil enrichi", "social-profile");
-  let groups = [], games = [], activeGroup = null, currentGame = null, socket, owner = "", currentContext = "", refreshing = null, refreshAgain = false, lastGroupMessages = "", generation = 0, groupOpenRevision = 0;
+  let groups = [], games = [], activeGroup = null, currentGame = null, socket, owner = "", currentContext = "", refreshing = null, refreshAgain = false, lastGroupMessages = "", generation = 0, groupOpenRevision = 0, groupMessageRevision = 0;
   const objectUrls = new Map();
   function clearUrls(root) { for (const [el, url] of objectUrls) if (root.contains(el) || !el.isConnected) { if (el.pause) el.pause(); URL.revokeObjectURL(url); objectUrls.delete(el); } }
   async function media(root) {
@@ -106,6 +106,7 @@ export function installSocial({ getContext, api, notify, report, sendVoice, befo
     activeGroup = group; lastGroupMessages = ""; drawGroupList();
     box.innerHTML = `<div class="social-group-heading"><div><h3>${escape(group.name)}</h3><small>${group.members.filter(m => m.status === "accepted").map(m => escape(m.display_name)).join(", ")}</small></div><button type="button" data-group-call>▣ Appel de groupe</button><button type="button" data-leave-group>${group.owner_id === uid ? "Supprimer le groupe" : "Quitter"}</button></div>
       <p class="social-note">Messages effacés après 48 h · ${group.members.filter(m => m.status === "pending").length} invitation(s) en attente</p>
+      <p class="social-note" data-group-status role="status" hidden></p>
       <div class="social-group-messages" data-group-messages role="log" aria-label="Messages du groupe"></div>
       <form class="social-group-composer" data-group-form><textarea name="message" maxlength="4000" rows="2" aria-label="Message au groupe" placeholder="Écrire au groupe…"></textarea><div class="social-actions"><button type="button" data-group-photo>Photo</button><input type="file" accept="image/*" data-group-file hidden><button type="button" data-group-voice>Vocal</button><button type="submit">Envoyer</button></div></form>`;
     q("[data-group-call]", box).onclick = attempt(async () => { groupDialog.close(); await live.join(`group:${id}`, group.name); });
@@ -125,17 +126,31 @@ export function installSocial({ getContext, api, notify, report, sendVoice, befo
   }
   async function loadGroupMessages(scroll = false) {
     if (!activeGroup || !groupDialog.open) return;
-    const id = activeGroup.id, uid = getContext().uid;
+    const id = activeGroup.id, uid = getContext().uid, revision = groupOpenRevision, request = ++groupMessageRevision;
+    const current = () => groupDialog.open && activeGroup?.id === id && getContext().uid === uid && revision === groupOpenRevision && request === groupMessageRevision;
     if (!groups.some(g => g.id === id && g.status === "accepted")) { activeGroup = null; clearUrls(groupDialog); q("[data-group-detail]", groupDialog).textContent = "Ce groupe n’est plus accessible."; return; }
     let rows;
-    try { rows = await json(`/groups/${id}/messages`); } catch (e) { activeGroup = null; clearUrls(groupDialog); q("[data-group-detail]", groupDialog).textContent = e.message; return; }
-    if (activeGroup?.id !== id || getContext().uid !== uid) return;
+    try { rows = await json(`/groups/${id}/messages`); }
+    catch (e) {
+      if (!current()) return;
+      if ([401, 403, 404, 410].includes(e.status)) {
+        activeGroup = null; clearUrls(groupDialog); q("[data-group-detail]", groupDialog).textContent = e.message;
+      } else {
+        const status = q('[data-group-status]', groupDialog);
+        status.hidden = false;
+        status.textContent = 'Actualisation interrompue. Vos messages et votre brouillon sont conservés ; la discussion reprendra au retour de la connexion.';
+      }
+      return;
+    }
+    if (!current()) return;
+    const status = q('[data-group-status]', groupDialog); status.textContent = ''; status.hidden = true;
     const signature = JSON.stringify(rows); if (signature === lastGroupMessages) return; lastGroupMessages = signature;
     const box = q("[data-group-messages]", groupDialog); if (!box) return;
     const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
     clearUrls(box);
     box.innerHTML = rows.length ? rows.map(m => `<article class="social-bubble ${m.sender_id === uid ? "mine" : ""}"><header><strong>${escape(m.sender_name)}</strong><time>${new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time>${m.sender_id !== uid && report ? `<button data-report-message="${m.id}" type="button" aria-label="Signaler le message">Signaler</button>` : ""}${m.sender_id === uid || activeGroup.owner_id === uid ? `<button data-delete-message="${m.id}" type="button" aria-label="Supprimer le message">×</button>` : ""}</header><p>${escape(m.body)}</p>${m.media_type ? m.media_type.startsWith("image/") ? `<img alt="Photo partagée" data-social-media="/api/social/group-media/${m.id}">` : `<${m.media_type.startsWith("audio/") ? "audio" : "video"} controls preload="metadata" data-social-media="/api/social/group-media/${m.id}"></${m.media_type.startsWith("audio/") ? "audio" : "video"}>` : ""}</article>`).join("") : '<p class="social-empty">Votre conversation commence ici.</p>';
     box.querySelectorAll("[data-delete-message]").forEach(b => b.onclick = attempt(async () => { await json(`/groups/${id}/messages/${b.dataset.deleteMessage}`, "DELETE"); await loadGroupMessages(); }));
+    [...box.querySelectorAll('.social-bubble')].forEach((el, index) => { el.dataset.expires = rows[index].expires_at; });
     box.querySelectorAll("[data-report-message]").forEach(b => b.onclick = () => {
       const m = rows.find(m => String(m.id) === b.dataset.reportMessage); if (!m) return;
       groupDialog.close(); report({ id: m.sender_id, name: m.sender_name }, { id: m.id, kind: "group" });
@@ -257,8 +272,12 @@ export function installSocial({ getContext, api, notify, report, sendVoice, befo
     await sendVoice({ mediaBase64: await blobBase64(blob), mediaType: blob.type.split(";")[0] });
   });
   for (const d of [groupDialog, gameDialog, profileDialog]) d.addEventListener("close", () => clearUrls(d));
+  groupDialog.addEventListener('close', () => { groupOpenRevision++; activeGroup = null; });
   const onUpdate = () => { refresh().catch(() => {}); };
   function sync() {
+    for (const el of groupDialog.querySelectorAll('[data-expires]')) {
+      if (new Date(el.dataset.expires).getTime() <= Date.now()) { clearUrls(el); el.remove(); }
+    }
     const c = getContext();
     if (c.uid !== owner) {
       generation++; groupOpenRevision++; owner = c.uid; activeGroup = null; groups = []; games = []; currentGame = null;
