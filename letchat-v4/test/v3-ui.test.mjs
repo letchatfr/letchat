@@ -107,6 +107,40 @@ test('community send ignores repeated submits and clears only the confirmed text
   assert.equal(f.q('.space-composer textarea').value, '');
 });
 
+for (const lateResult of ['history', 'access-error']) {
+  test(`a late community ${lateResult} cannot replace the history refreshed after sending`, async t => {
+    let delayNext = false, finishOld;
+    const newHistory = { items: [...spaceHistory.items, { ...spaceHistory.items[0], id: 2, body: 'Nouveau message confirmé' }], next: null };
+    const f = await setup(t, req => {
+      if (req.path.startsWith('/api/spaces?')) return { items: [stableCommunity], next: null };
+      if (req.method === 'POST') return { id: 2 };
+      if (req.path.endsWith('/messages')) {
+        if (delayNext) {
+          delayNext = false;
+          return new Promise((resolve, reject) => finishOld = () => lateResult === 'history'
+            ? resolve(spaceHistory)
+            : reject(Object.assign(new Error('Ancien refus d’accès'), { status: 403 })));
+        }
+        return finishOld ? newHistory : spaceHistory;
+      }
+      return stableCommunity;
+    });
+    await openStableCommunity(f);
+    delayNext = true;
+    const oldRefresh = f.intervals.get(15000)();
+    await waitFor(() => finishOld);
+    f.q('.space-composer textarea').value = 'Nouveau message confirmé';
+    f.submit('.space-composer');
+    await waitFor(() => !f.q('.space-composer button').disabled);
+    assert.match(f.q('.space-messages').textContent, /Nouveau message confirmé/);
+    f.q('.space-composer textarea').value = 'Brouillon suivant';
+    finishOld(); await oldRefresh;
+    assert.match(f.q('.space-messages')?.textContent || '', /Nouveau message confirmé/);
+    assert.equal(f.q('.space-composer textarea')?.value, 'Brouillon suivant');
+    assert.equal(f.q('.space-error').textContent, '');
+  });
+}
+
 test('message search uses the active conversation, escapes text and discards a late response after closing', async t => {
   let resolve;
   const f = await setup(t, req => req.path.includes('message-search') ? new Promise(r => resolve = r) : {});
