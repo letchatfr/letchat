@@ -6,7 +6,7 @@ export function installSpacesUI({ api, getContext, notify, report, dialog, close
   root.classList.add('v3-spaces');
   const body = q('.v3-dialog-body', root), subBody = q('.v3-dialog-body', sub);
   const json = async (path, method = 'GET', data) => (await api(path, { method, ...(data === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }) })).json();
-  let active = null, ticket = 0, owner = '', page = 1, nextPage = null, filter = {}, cursor = null, nextMessages = null, refreshing = false, pending = false, socket;
+  let active = null, ticket = 0, messageRevision = 0, owner = '', page = 1, nextPage = null, filter = {}, cursor = null, nextMessages = null, refreshing = false, pending = false, socket;
   const valid = revision => revision === ticket && root.open && owner === getContext().uid;
   const manager = s => s.owner_id === getContext().uid || (s.role === 'moderator' && s.joined);
   const action = fn => async (...args) => { try { await fn(...args); } catch (error) { notify(error.message); const el = q('.space-error', root); if (el) el.textContent = error.message; } };
@@ -81,10 +81,11 @@ export function installSpacesUI({ api, getContext, notify, report, dialog, close
   }
   async function messages() {
     if (!active || body.dataset.joined !== 'true' || !q('.space-messages', body)) return;
-    const revision = ticket, spaceId = active, oldCursor = cursor;
+    const revision = ticket, spaceId = active, oldCursor = cursor, request = ++messageRevision;
+    const current = () => valid(revision) && active === spaceId && cursor === oldCursor && request === messageRevision;
     try {
       const data = await json(`/api/spaces/${spaceId}/messages${cursor ? `?before=${cursor}` : ''}`);
-      if (!valid(revision) || active !== spaceId || cursor !== oldCursor) return;
+      if (!current()) return;
       nextMessages = data.next; const list = q('.space-messages', body), fingerprint = JSON.stringify(data.items);
       if (list.dataset.fingerprint !== fingerprint) {
         const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 80;
@@ -96,7 +97,7 @@ export function installSpacesUI({ api, getContext, notify, report, dialog, close
       }
       q('[data-older]', body).hidden = !nextMessages; q('[data-latest]', body).hidden = !cursor; q('.space-error', body).textContent = '';
     } catch (e) {
-      if (valid(revision) && active === spaceId && cursor === oldCursor) refreshError(e);
+      if (current()) refreshError(e);
     }
   }
   function refreshError(error) {
