@@ -33,6 +33,7 @@ test("client initializes against the delivered HTML and recovery dialogs are rea
       window.testAccount = {
         setUser(data) { user = localUser(data, "test-token"); localSessionToken = "test-token"; },
         openProfile,
+        loadMessageMedia,
         async refusedPrivateSend() {
           currentPrivate = { id: "local:deleted-test", name: "Ancien membre" };
           privateHomeOpen = false;
@@ -89,6 +90,23 @@ test("client initializes against the delivered HTML and recovery dialogs are rea
     assert.equal(w.document.getElementById("messages").children.length,messageCount);
     assert.equal(w.document.getElementById("send").disabled,false);
     assert.match(w.document.body.textContent,/Ce compte n’existe plus/);
+    const video = w.document.createElement("video");
+    video.dataset.mediaPath = "/api/media/legacy-video";
+    w.document.getElementById("messages").append(video);
+    const mediaRequests = [], revoked = [];
+    w.URL.revokeObjectURL = url => revoked.push(url);
+    w.URL.createObjectURL = () => `blob:media-${mediaRequests.length}`;
+    w.fetch = async route => { mediaRequests.push(route); return { ok: true, blob: async () => new w.Blob(["video"]) }; };
+    await w.testAccount.loadMessageMedia(video, "local:test");
+    assert.equal(video.src, "blob:media-1");
+    video.dispatchEvent(new w.Event("error"));
+    for (let i = 0; i < 10 && video.src !== "blob:media-2"; i++) await new Promise(r => setTimeout(r, 0));
+    assert.deepEqual(mediaRequests, ["/api/media/legacy-video", "/api/media/legacy-video?compatible=1"]);
+    assert.ok(revoked.includes("blob:media-1"));
+    video.dispatchEvent(new w.Event("error"));
+    assert.equal(video.isConnected, false);
+    assert.equal(mediaRequests.length, 2, "failed playback does not create a conversion retry loop");
+    assert.match(w.document.getElementById("messages").textContent, /ne peut pas être lu/);
     w.testAccount.setUser({id:"guest:test",name:"Invité",guest:true});
     w.testAccount.openProfile(null);
     assert.equal(w.document.getElementById("profileLoginIdentity").hidden,true);

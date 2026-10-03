@@ -1,4 +1,4 @@
-import { blobBase64 } from "./social-voice.js";
+import { blobBase64 } from "./social-voice.e9c6f0e283d0.js";
 
 export function createAlbum({ getContext, json, dialog, media, clearUrls, notify, after }) {
   const q = (s, root) => root.querySelector(s);

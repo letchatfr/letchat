@@ -58,12 +58,12 @@ test("parallel invitations cannot reserve the same participant twice", async () 
   await Promise.all([send("a", "b", "invite", randomUUID()), send("c", "b", "invite", randomUUID())]);
   assert.equal(registry.calls.size, 1); registry.end("b");
 });
-test("SVG, HTML with image MIME, invalid base64 and wrong MIME are rejected", async () => {
+test("SVG, HTML with image MIME and invalid base64 are rejected; actual image bytes override MIME hints", async () => {
   for (const [body, mime] of [["<svg onload='alert(1)'></svg>", "image/svg+xml"], ["<html>test</html>", "image/png"]])
     await assert.rejects(validateMedia(Buffer.from(body).toString("base64"), mime), { status: 415 });
   await assert.rejects(validateMedia("not-base64!", "image/png"), { status: 415 });
   const png = await sharp({ create: { width: 4, height: 4, channels: 3, background: "red" } }).png().toBuffer();
-  await assert.rejects(validateMedia(png.toString("base64"), "image/jpeg"), { status: 415 });
+  assert.equal((await validateMedia(png.toString("base64"), "image/jpeg")).mediaType, "image/webp");
 });
 test("valid image is decoded and re-encoded without appended active content", async () => {
   const png = await sharp({ create: { width: 4, height: 4, channels: 3, background: "red" } }).png().toBuffer();

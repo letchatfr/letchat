@@ -1,9 +1,18 @@
 import sharp from "sharp";
 import { fileTypeFromBuffer } from "file-type";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { writeFile, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { convertibleMedia, transcodeMedia, transcodeBitmap, withMediaWorkspace } from "./media-transcode.js";
+
+const execute = promisify(execFile);
+const imageTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif", "image/tiff", "image/heic", "image/heif"]);
 
 const allowed = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
   "video/mp4", "video/webm", "video/quicktime", "audio/mpeg", "audio/wav", "audio/ogg", "audio/opus", "audio/mp4", "audio/webm"]);
-function invalid(message = "Format non accepté. Choisissez une photo, une vidéo MP4/WebM ou un fichier audio.", status = 415) {
+function invalid(message = "Format non pris en charge ou fichier endommagé. Choisissez une photo, une vidéo ou un fichier audio.", status = 415) {
   return Object.assign(new Error(message), { status, expose: true });
 }
 export async function validateMedia(base64, declaredType = "") {
@@ -14,17 +23,18 @@ export async function validateMedia(base64, declaredType = "") {
   if (!buffer.length || buffer.length > 8e6) throw invalid("Fichier vide ou trop volumineux (8 Mo maximum)", 413);
   let detected;
   try { detected = await fileTypeFromBuffer(buffer); } catch { throw invalid(); }
-  if (detected?.mime === "audio/x-m4a") detected.mime = "audio/mp4";
-  if (!detected || !allowed.has(detected.mime)) throw invalid();
-  const declared = String(declaredType).split(";")[0].toLowerCase().replace(/^audio\/x-m4a$/, "audio/mp4");
-  // WebM/MP4 containers may carry audio only (browser voice recordings).
-  const audioContainer = declared === "audio/webm" && detected.mime === "video/webm"
-    || declared === "audio/mp4" && detected.mime === "video/mp4";
-  if (declared && declared !== detected.mime && !audioContainer
-    && !(declared === "audio/ogg" && detected.mime === "audio/opus")
-    && !(declared === "audio/x-wav" && detected.mime === "audio/wav")) throw invalid();
-  if (detected.mime.startsWith("image/")) {
+  // Browser MIME and filename are hints only; decode the bytes to establish the real format.
+  if (!detected) throw invalid();
+  if (detected.mime === "image/bmp") return transcodeBitmap(buffer);
+  if (imageTypes.has(detected.mime)) {
     try {
+      if (["image/heic", "image/heif"].includes(detected.mime)) return await withMediaWorkspace(async directory => {
+        const input = join(directory, "input.heic"), output = join(directory, "output.webp");
+        await writeFile(input, buffer, { mode: 0o600 });
+        await execute(process.execPath, ["--max-old-space-size=192", fileURLToPath(new URL("./heic-worker.js", import.meta.url)), input, output],
+          { timeout: 30000, killSignal: "SIGKILL", maxBuffer: 262144 });
+        return { media: await readFile(output), mediaType: "image/webp" };
+      });
       // Decoding/re-encoding strips metadata and any appended active document.
       const media = await sharp(buffer, { animated: true, limitInputPixels: 40e6, failOn: "warning" })
         .rotate().resize({ width: 2560, height: 2560, fit: "inside", withoutEnlargement: true })
@@ -33,7 +43,8 @@ export async function validateMedia(base64, declaredType = "") {
       return { media, mediaType: "image/webp" };
     } catch (error) { if (error.expose) throw error; throw invalid("Image endommagée ou dimensions trop grandes"); }
   }
-  return { media: buffer, mediaType: audioContainer ? declared : detected.mime };
+  if (convertibleMedia(detected.ext)) return transcodeMedia(buffer, detected.ext);
+  throw invalid();
 }
 export function serveMedia(res, media, type) {
   // Also protects historical uploads made before the allowlist existed.

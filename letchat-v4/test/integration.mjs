@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
+import ffmpeg from "ffmpeg-static";
 import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import net from "node:net";
@@ -120,6 +121,17 @@ try {
   const media=await request(`/api/media/${photo.json.id}`,b.token);
   check(media.status===200&&media.headers.get("content-security-policy").includes("sandbox"),"media is authenticated and sandboxed");
   check((await request(`/api/media/${photo.json.id}?t=${encodeURIComponent(b.token)}`)).status===401,"session tokens in media URLs are rejected");
+  const videoPath = path.join(temporary, "phone.mov");
+  execFileSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=64x48:d=0.2",
+    "-c:v", "libx265", "-x265-params", "pools=none:frame-threads=1:log-level=error", "-tag:v", "hvc1", videoPath]);
+  const phoneVideo = await readFile(videoPath);
+  const video = await request("/api/messages", a.token, "POST", { room: "cafe", mediaBase64: phoneVideo.toString("base64"), mediaType: "application/octet-stream" });
+  check(video.status === 201 && video.json.media_type === "video/mp4", "real MOV/HEVC upload becomes browser-compatible MP4");
+  // Historical uploads are converted only on an authenticated playback retry.
+  await pool.query("UPDATE letchat_messages SET media_data=$2,media_type='video/quicktime' WHERE id=$1", [video.json.id, phoneVideo]);
+  const legacy = await request(`/api/media/${video.json.id}?compatible=1`, b.token);
+  check(legacy.status === 200 && legacy.headers.get("content-type").startsWith("video/mp4"), "old MOV videos have an authenticated compatibility fallback");
+  check((await request(`/api/media/${video.json.id}?compatible=1`)).status === 401, "compatibility fallback cannot bypass authentication");
   const incomingNotification=once(sb,"notification",{signal:AbortSignal.timeout(5000)});
   const pm=await request("/api/private",a.token,"POST",{recipientId:b.user.id,mediaBase64:png.toString("base64"),mediaType:"image/png",viewOnce:true});
   check(pm.status===201,"private view-once photo created");
@@ -132,6 +144,18 @@ try {
   check((await request(`/api/private-media/${pm.json.id}`,c.token)).status===404,"third account cannot fetch private media");
   const readings=await Promise.all([request(`/api/private-media/${pm.json.id}`,b.token),request(`/api/private-media/${pm.json.id}`,b.token)]);
   check(readings.filter(r=>r.status===200).length===1&&readings.filter(r=>r.status===410).length===1,"concurrent view-once reads consume the photo once");
+
+  const onceVideo = await request("/api/private", a.token, "POST", { recipientId: b.user.id, mediaBase64: phoneVideo.toString("base64"), mediaType: "video/quicktime", viewOnce: true });
+  check(onceVideo.status === 201 && onceVideo.json.media_type === "video/mp4", "private view-once videos use the same conversion as public messages");
+  await pool.query("UPDATE letchat_private_messages SET media_data=$2,media_type='video/quicktime' WHERE id=$1", [onceVideo.json.id, Buffer.from("damaged-video")]);
+  const failedVideo = await request(`/api/private-media/${onceVideo.json.id}?compatible=1`, b.token);
+  check(failedVideo.status === 415, "damaged historical view-once video returns an actionable conversion error");
+  const retainedVideo = (await pool.query("SELECT opened_at,media_data IS NOT NULL AS retained FROM letchat_private_messages WHERE id=$1", [onceVideo.json.id])).rows[0];
+  check(!retainedVideo.opened_at && retainedVideo.retained, "failed preparation does not consume a view-once video");
+  await pool.query("UPDATE letchat_private_messages SET media_data=$2 WHERE id=$1", [onceVideo.json.id, phoneVideo]);
+  const convertedRead = await request(`/api/private-media/${onceVideo.json.id}?compatible=1`, b.token);
+  check(convertedRead.status === 200 && convertedRead.headers.get("content-type").startsWith("video/mp4"), "historical private MOV is prepared before being consumed");
+  check((await request(`/api/private-media/${onceVideo.json.id}?compatible=1`, b.token)).status === 410, "converted view-once video cannot be reopened");
 
   check((await request("/api/account/recovery-code",a.token,"POST",{password:"wrong"})).status===403,"recovery rotation requires the current password");
   const resetBody={username:"Audit A",recoveryCode:a.recoveryCode,password:"Changed-password-456"};

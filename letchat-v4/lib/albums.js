@@ -33,7 +33,7 @@ export async function installAlbums({ app, pool, base, write, wrap, blocked, tra
   }));
   app.post("/api/social/albums", ...write, rateLimitAction("album-upload", 48, 60000), wrap(async (req, res) => {
     const { media, mediaType } = await validateMedia(req.body.mediaBase64, req.body.mediaType);
-    if (!media || !mediaType.startsWith("image/")) fail("Choisissez une photo JPG, PNG, WebP, GIF ou AVIF", 415);
+    if (!media || !mediaType.startsWith("image/")) fail("Choisissez une photo JPG, PNG, WebP, GIF, AVIF, TIFF ou HEIC", 415);
     // Store a static, metadata-free image and a small thumbnail for the profile grid.
     const image = await sharp(media).resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
     if (image.length > 2e6) fail("Cette photo est trop volumineuse. Choisissez une image plus petite.", 413);

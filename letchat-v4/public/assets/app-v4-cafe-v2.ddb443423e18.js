@@ -1,11 +1,11 @@
-import { installV3Tools } from "./v3-tools.js";
-import { installAdminUI } from "./admin.js";
-import { installCommunityUI } from "./community.js";
-import { installSurpriseUI } from "./surprise.js";
-import { installSocial } from "./social.js";
-import { installPremiumBenefitsUI } from "./premium-benefits.js";
-import { rooms } from "./room-catalog.js?v=20260927-premium-xxx";
-import { messageDayInfo, shouldSendOnEnter } from "./chat-comfort.js";
+import { installV3Tools } from "./v3-tools.64b42d49c1ea.js";
+import { installAdminUI } from "./admin.e3b57a9f6a66.js";
+import { installCommunityUI } from "./community.abd3cc5ea7bf.js";
+import { installSurpriseUI } from "./surprise.f9b6433637cf.js";
+import { installSocial } from "./social.1710beb80eab.js";
+import { installPremiumBenefitsUI } from "./premium-benefits.2025742d7f1f.js";
+import { rooms } from "./room-catalog.2ef7971ebb04.js";
+import { messageDayInfo, shouldSendOnEnter } from "./chat-comfort.bbaf8a24a95b.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
 import {
   getAuth,
