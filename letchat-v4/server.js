@@ -1673,7 +1673,11 @@ app.get("/api/media/:id", auth, requireAdult, async (req, res, next) => {
     if (isPremiumRoom(rows[0]?.room) && !await hasPremiumAccess(req.user.id))
       return res.status(403).json({ error: "Ce salon est réservé aux membres Premium." });
     if (!rows[0]?.media_data) return res.sendStatus(404);
-    serveMedia(res, rows[0].media_data, rows[0].media_type);
+    const original = rows[0];
+    const prepared = req.query.compatible === "1" && /^(video|audio)\//.test(original.media_type)
+      ? await validateMedia(original.media_data.toString("base64"), original.media_type)
+      : { media: original.media_data, mediaType: original.media_type };
+    serveMedia(res, prepared.media, prepared.mediaType);
   } catch (error) {
     next(error);
   }
@@ -1909,6 +1913,10 @@ app.get("/api/private-media/:id", auth, requireAdult, async (req, res, next) => 
         error: media.view_once ? "Ce média a déjà été ouvert" : "Média introuvable"
       });
     }
+    // Prepare before consuming a view-once message: a failed conversion must remain retryable.
+    const prepared = req.query.compatible === "1" && /^(video|audio)\//.test(media.media_type)
+      ? await validateMedia(media.media_data.toString("base64"), media.media_type)
+      : { media: media.media_data, mediaType: media.media_type };
     let openedAt = media.opened_at;
     if (media.view_once && media.recipient_id === req.user.id) {
       openedAt = new Date();
@@ -1921,7 +1929,7 @@ app.get("/api/private-media/:id", auth, requireAdult, async (req, res, next) => 
     }
     await client.query("COMMIT");
     if (openedAt) res.set("X-Letchat-Opened-At", new Date(openedAt).toISOString());
-    serveMedia(res, media.media_data, media.media_type);
+    serveMedia(res, prepared.media, prepared.mediaType);
     if (media.view_once && media.recipient_id === req.user.id) {
       io.to(`user:${media.sender_id}`).emit("view-once-opened", {
         id: String(req.params.id), opened_at: new Date(openedAt).toISOString()
