@@ -61,7 +61,7 @@ export function createAlbum({ getContext, json, dialog, media, clearUrls, notify
       albumLimit = album.limit;
       content.innerHTML = `<p class="social-album-intro">Vos photos sont visibles directement par tous les membres connectés.</p>
         <div class="social-album-tools"><strong data-count></strong><button type="button" data-add>+ Ajouter des photos</button></div>
-        <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple hidden aria-label="Choisir des photos">
+        <input type="file" accept="image/*,.heic,.heif,.tif,.tiff" multiple hidden aria-label="Choisir des photos">
         <p class="social-note">${album.limit} photos avec votre formule · 8 Mo maximum par fichier · JPG, PNG, WebP, GIF ou AVIF.${album.limit === 12 ? " Avec Premium : jusqu’à 36 photos." : ""}</p>
         <p class="social-album-status" role="status" aria-live="polite"></p><div data-album-grid></div>`;
       q("[data-count]", content).textContent = `${album.photos.length} / ${album.limit} photos`;

@@ -113,18 +113,38 @@ const fallbackIceServers = [
 ];
 
 const mediaUrls = new Map();
+function mediaUnavailable(element, message) {
+  if (element.isConnected) element.replaceWith(Object.assign(document.createElement("p"), {
+    className: "media-unavailable", textContent: message || "Média indisponible ou expiré"
+  }));
+}
+async function loadMessageMedia(element, owner, compatible = false) {
+  try {
+    const path = element.dataset.mediaPath + (compatible ? "?compatible=1" : "");
+    const blob = await (await api(path)).blob();
+    if (!element.isConnected || user?.uid !== owner) return;
+    const oldUrl = mediaUrls.get(element);
+    if (oldUrl) URL.revokeObjectURL(oldUrl);
+    const url = URL.createObjectURL(blob);
+    mediaUrls.set(element, url);
+    element.onerror = () => {
+      if (!element.isConnected || user?.uid !== owner) return;
+      element.onerror = null;
+      if (!compatible && ["VIDEO", "AUDIO"].includes(element.tagName)) {
+        element.setAttribute("aria-label", "Préparation du média pour votre navigateur…");
+        void loadMessageMedia(element, owner, true);
+      } else mediaUnavailable(element, "Ce média ne peut pas être lu. Essayez de le renvoyer.");
+    };
+    element.src = url;
+  } catch (error) {
+    if (user?.uid === owner) mediaUnavailable(element, error.message);
+  }
+}
 const mediaObserver = new IntersectionObserver(entries => {
   for (const { target: element, isIntersecting } of entries) if (isIntersecting) {
     mediaObserver.unobserve(element);
     const owner = user?.uid;
-    api(element.dataset.mediaPath).then(response => response.blob()).then(blob => {
-      if (!element.isConnected || user?.uid !== owner) return;
-      const url = URL.createObjectURL(blob);
-      mediaUrls.set(element, url); element.src = url;
-    }).catch(() => {
-      if (!element.isConnected) return;
-      element.replaceWith(Object.assign(document.createElement("p"), { className: "media-unavailable", textContent: "Média indisponible ou expiré" }));
-    });
+    void loadMessageMedia(element, owner);
   }
 }, { rootMargin: "400px" });
 new MutationObserver(() => {
@@ -930,7 +950,7 @@ async function openViewOnceMedia(event) {
   const button = event.currentTarget;
   button.disabled = true;
   try {
-    const response = await api(`/api/private-media/${encodeURIComponent(button.dataset.viewOnceId)}`);
+    const response = await api(`/api/private-media/${encodeURIComponent(button.dataset.viewOnceId)}?compatible=1`);
     const blob = await response.blob(), url = URL.createObjectURL(blob);
     const element = button.dataset.viewOnceType.startsWith("video/")
       ? document.createElement("video") : document.createElement("img");
@@ -956,7 +976,9 @@ async function openViewOnceMedia(event) {
     wrapper.append(note);
     button.replaceWith(wrapper);
   } catch (e) {
-    button.replaceWith(Object.assign(document.createElement("div"), { className: "view-once-expired", textContent: "◉ Média déjà ouvert" }));
+    if ([404, 410].includes(e.status)) {
+      button.replaceWith(Object.assign(document.createElement("div"), { className: "view-once-expired", textContent: "◉ Média déjà ouvert ou expiré" }));
+    } else button.disabled = false;
     showError(e.message);
   }
 }
@@ -999,6 +1021,8 @@ async function send(media) {
   sendingMessage = true;
   button.disabled = true;
   button.setAttribute("aria-busy", "true");
+  if (media) button.setAttribute("aria-label", "Préparation et envoi du média…");
+  $("#mediaSendingStatus")?.classList.toggle("hidden", !media);
   saveDraft();
   try {
     const path = selectedPrivate ? "/api/private" : "/api/messages";
@@ -1028,6 +1052,8 @@ async function send(media) {
     sendingMessage = false;
     button.disabled = false;
     button.removeAttribute("aria-busy");
+    button.removeAttribute("aria-label");
+    $("#mediaSendingStatus")?.classList.add("hidden");
   }
 }
 $("#send").onclick = () => send();
@@ -1130,7 +1156,7 @@ $("#file").onchange = $("#camera").onchange = async (e) => {
   if (!f) return;
   if (sendingMessage) return showError("Un envoi est déjà en cours. Réessayez ensuite.");
   if (f.size > 8e6) return showError("8 Mo maximum");
-  if (!/^(image|video|audio)\//.test(f.type)) return showError("Choisissez une photo, une vidéo ou un fichier audio.");
+  // Some phones report an empty/generic MIME for MOV, MKV or HEIC. The server decodes the actual bytes.
   try {
     const b64 = await new Promise((resolve, reject) => {
       const reader = new FileReader();
