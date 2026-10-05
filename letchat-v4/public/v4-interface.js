@@ -115,7 +115,7 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') { $('.side').classList.remove('open'); $('.people').classList.remove('open'); }
   });
-  const peopleMedia = matchMedia('(max-width: 1180px)'), sideMedia = matchMedia('(max-width: 760px)');
+  const peopleMedia = matchMedia('all'), sideMedia = matchMedia('(max-width: 760px)');
   function syncPanels() {
     $('.side').inert = sideMedia.matches && !$('.side').classList.contains('open');
     $('.people').inert = peopleMedia.matches && !$('.people').classList.contains('open');
