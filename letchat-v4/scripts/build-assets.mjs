@@ -5,7 +5,7 @@ import path from "node:path";
 const hash = content => createHash("sha256").update(content).digest("hex").slice(0, 12);
 await mkdir("public/assets", { recursive: true });
 const built = new Map();
-const interfaceStyles = ['style.css','v3-modern.css','v2-community.css','v4-polish.css','audit-fixes.css','premium-benefits.css','social.css','surprise.css','city-autocomplete.css','welcome.css','admin.css','community.css','v3-experience.css'];
+const interfaceStyles = ['style.css','v3-modern.css','v2-community.css','v4-polish.css','audit-fixes.css','premium-benefits.css','social.css','surprise.css','city-autocomplete.css','welcome.css','admin.css','community.css','v3-experience.css','refonte.css'];
 const styles = await Promise.all(interfaceStyles.map(async name => `/* Component: ${name} */\n${await readFile(`public/${name}`, 'utf8')}`));
 await writeFile('public/interface.css', styles.join('\n'));
 
